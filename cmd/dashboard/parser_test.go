@@ -274,29 +274,26 @@ func TestParseProjectsConcurrentOnce(t *testing.T) {
 	}
 
 	// 验证星期统计
-	if aggregate.WeekdayData == nil {
-		t.Error("WeekdayData should not be nil")
-	}
-	if len(aggregate.WeekdayData) != 7 {
-		t.Errorf("Expected 7 weekdays, got %d", len(aggregate.WeekdayData))
+	if aggregate.WeekdayStats == nil {
+		t.Error("WeekdayStats should not be nil")
 	}
 
 	// 验证每日活动
-	if aggregate.DailyActivity == nil {
-		t.Error("DailyActivity should not be nil")
+	if aggregate.DailyActivityList == nil {
+		t.Error("DailyActivityList should not be nil")
 	}
 
 	// 验证小时统计
-	if aggregate.HourlyCounts == nil {
-		t.Error("HourlyCounts should not be nil")
+	if aggregate.HourlyData == nil {
+		t.Error("HourlyData should not be nil")
 	}
-	if len(aggregate.HourlyCounts) != 24 {
-		t.Errorf("Expected 24 hours, got %d", len(aggregate.HourlyCounts))
+	if len(aggregate.HourlyData) != 24 {
+		t.Errorf("Expected 24 hours, got %d", len(aggregate.HourlyData))
 	}
 
 	// 验证模型使用
-	if aggregate.ModelUsage == nil {
-		t.Error("ModelUsage should not be nil")
+	if aggregate.ModelUsageList == nil {
+		t.Error("ModelUsageList should not be nil")
 	}
 
 	// 验证工作时段统计
@@ -306,12 +303,12 @@ func TestParseProjectsConcurrentOnce(t *testing.T) {
 
 	// 数据一致性检查
 	totalMessages := 0
-	for _, proj := range aggregate.ProjectStats {
+	for _, proj := range aggregate.Projects {
 		totalMessages += proj.MessageCount
 	}
 
 	totalFromDaily := 0
-	for _, day := range aggregate.DailyActivity {
+	for _, day := range aggregate.DailyActivityList {
 		totalFromDaily += day.MessageCount
 	}
 
@@ -320,8 +317,8 @@ func TestParseProjectsConcurrentOnce(t *testing.T) {
 	}
 
 	t.Logf("✅ 一次遍历成功获取所有统计数据:")
-	t.Logf("  项目数: %d", len(aggregate.ProjectStats))
+	t.Logf("  项目数: %d", len(aggregate.Projects))
 	t.Logf("  总消息数: %d", totalMessages)
-	t.Logf("  天数: %d", len(aggregate.DailyActivity))
-	t.Logf("  模型数: %d", len(aggregate.ModelUsage))
+	t.Logf("  天数: %d", len(aggregate.DailyActivityList))
+	t.Logf("  模型数: %d", len(aggregate.ModelUsageList))
 }
