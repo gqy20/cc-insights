@@ -39,18 +39,10 @@ cc-insights 是一个基于 Go + go-echarts 的 Claude Code 使用数据分析�
 
 ## 📦 快速开始
 
-### 1. 构建（默认：静态链接 + UPX 压缩）
+### 1. 构建
 
 ```bash
-cd dashboard
 make build-static-compress
-```
-
-**构建选项：**
-```bash
-make build-static-compress  # 静态+UPX压缩（~2MB，推荐）
-make build-static           # 静态链接（~7MB，开发调试）
-make build                  # 动态链接（~6MB）
 ```
 
 ### 2. 运行
