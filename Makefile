@@ -67,7 +67,7 @@ clean:
 # 测试
 test:
 	@echo "🧪 运行测试..."
-	@go test -v ./...
+	@go test $(BUILD_TAGS) -v ./...
 
 # 性能测试
 bench:
