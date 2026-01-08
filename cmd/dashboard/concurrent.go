@@ -144,13 +144,21 @@ func ParseDebugLogsConcurrent(tf TimeFilter) ([]MCPToolStats, error) {
 	for _, entry := range entries {
 		if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".txt") {
 			info, _ := entry.Info()
-			fileInfo := DebugFileInfo{
-				Path:    filepath.Join(debugDir, entry.Name()),
-				ModTime: info.ModTime(),
+			filePath := filepath.Join(debugDir, entry.Name())
+
+			// 读取文件第一行获取时间戳
+			fileTime, err := extractTimestampFromFile(filePath)
+			if err != nil {
+				// 如果无法提取时间戳，使用文件修改时间作为后备
+				fileTime = info.ModTime()
 			}
+
 			// 时间过滤
-			if tf.Contains(info.ModTime()) {
-				fileInfos = append(fileInfos, fileInfo)
+			if tf.Contains(fileTime) {
+				fileInfos = append(fileInfos, DebugFileInfo{
+					Path:    filePath,
+					ModTime: fileTime,
+				})
 			}
 		}
 	}
@@ -206,6 +214,41 @@ func ParseDebugLogsConcurrent(tf TimeFilter) ([]MCPToolStats, error) {
 	})
 
 	return toolStats, nil
+}
+
+// extractTimestampFromFile 从debug文件中提取时间戳
+func extractTimestampFromFile(filePath string) (time.Time, error) {
+	f, err := os.Open(filePath)
+	if err != nil {
+		return time.Time{}, err
+	}
+	defer f.Close()
+
+	// 读取第一行
+	scanner := bufio.NewScanner(f)
+	if scanner.Scan() {
+		line := scanner.Text()
+
+		// debug文件格式：2025-11-23T06:41:03.513Z [DEBUG] ...
+		// 提取前面的时间戳
+		if idx := strings.Index(line, " [DEBUG]"); idx > 0 {
+			timestampStr := line[:idx]
+			// 尝试多种时间格式
+			formats := []string{
+				"2006-01-02T15:04:05.999Z07:00",
+				"2006-01-02T15:04:05.999Z",
+				"2006-01-02T15:04:05Z",
+			}
+
+			for _, format := range formats {
+				if t, err := time.Parse(format, timestampStr); err == nil {
+					return t, nil
+				}
+			}
+		}
+	}
+
+	return time.Time{}, fmt.Errorf("无法提取时间戳")
 }
 
 // parseDebugFileOptimized 优化的 debug 文件解析

@@ -407,6 +407,9 @@ function initSessionChart(sessionData) {
                     { type: 'max', name: '峰值' },
                     { type: 'min', name: '谷值' }
                 ]
+            },
+            label: {
+                show: false
             }
         }]
     };
