@@ -25,14 +25,16 @@ type TimeFilter struct {
 // NewTimeFilterFromPreset 从预设创建时间过滤器
 func NewTimeFilterFromPreset(preset RangePreset) TimeFilter {
 	now := time.Now()
+	// 归一化到今天开始（00:00:00），避免时间部分影响日期比较
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 	var start time.Time
 
 	switch preset {
 	case Range7Days:
-		start = now.AddDate(0, 0, -7)
+		start = today.AddDate(0, 0, -7)
 		return TimeFilter{
 			Start: &start,
-			End:   &now,
+			End:   &today,
 		}
 	case Range24Hours:
 		start = now.Add(-24 * time.Hour)
@@ -41,16 +43,16 @@ func NewTimeFilterFromPreset(preset RangePreset) TimeFilter {
 			End:   &now,
 		}
 	case Range30Days:
-		start = now.AddDate(0, 0, -30)
+		start = today.AddDate(0, 0, -30)
 		return TimeFilter{
 			Start: &start,
-			End:   &now,
+			End:   &today,
 		}
 	case Range90Days:
-		start = now.AddDate(0, 0, -90)
+		start = today.AddDate(0, 0, -90)
 		return TimeFilter{
 			Start: &start,
-			End:   &now,
+			End:   &today,
 		}
 	case RangeAll:
 		return TimeFilter{
