@@ -86,6 +86,24 @@ type ModelUsageItem struct {
 	Tokens int    `json:"tokens"`
 }
 
+// WorkHoursStats 工作时段统计
+type WorkHoursStats struct {
+	HourlyData     []HourlyItem `json:"hourly_data"` // 每小时数据
+	WorkHoursCount int          `json:"work_hours"`  // 工作时段(9-18点)总次数
+	OffHoursCount  int          `json:"off_hours"`   // 非工作时段总次数
+	WorkHoursRatio float64      `json:"work_ratio"`  // 工作时段占比
+	PeakHour       int          `json:"peak_hour"`   // 峰值小时
+	PeakHourCount  int          `json:"peak_count"`  // 峰值小时次数
+}
+
+// HourlyItem 单小时数据
+type HourlyItem struct {
+	Hour       int    `json:"hour"`         // 小时(0-23)
+	HourLabel  string `json:"hour_label"`   // 标签 "09:00"
+	Count      int    `json:"count"`        // 次数
+	IsWorkHour bool   `json:"is_work_hour"` // 是否工作时段
+}
+
 // ProjectRecord projects/*.jsonl 记录
 type ProjectRecord struct {
 	ParentUUID  string          `json:"parentUuid"`
@@ -1048,4 +1066,58 @@ func parseProjectJSONLForModelUsage(filePath string, tf TimeFilter, modelStats m
 	}
 
 	return nil
+}
+
+// ParseWorkHoursStats 解析工作时段统计
+func ParseWorkHoursStats(tf TimeFilter) (*WorkHoursStats, error) {
+	// 复用现有的小时统计
+	hourlyCounts, err := ParseHourlyCountsFromProjects(tf)
+	if err != nil {
+		return nil, err
+	}
+
+	// 构建小时数据
+	hourlyData := make([]HourlyItem, 24)
+	for i := 0; i < 24; i++ {
+		hourKey := fmt.Sprintf("%02d", i)
+		count := hourlyCounts[hourKey]
+		hourlyData[i] = HourlyItem{
+			Hour:       i,
+			HourLabel:  fmt.Sprintf("%02d:00", i),
+			Count:      count,
+			IsWorkHour: i >= 9 && i <= 18,
+		}
+	}
+
+	// 计算工作时段统计
+	var workHoursCount, offHoursCount int
+	var peakHour, peakCount int
+
+	for _, item := range hourlyData {
+		if item.IsWorkHour {
+			workHoursCount += item.Count
+		} else {
+			offHoursCount += item.Count
+		}
+
+		if item.Count > peakCount {
+			peakCount = item.Count
+			peakHour = item.Hour
+		}
+	}
+
+	total := workHoursCount + offHoursCount
+	var workRatio float64
+	if total > 0 {
+		workRatio = float64(workHoursCount) / float64(total) * 100
+	}
+
+	return &WorkHoursStats{
+		HourlyData:     hourlyData,
+		WorkHoursCount: workHoursCount,
+		OffHoursCount:  offHoursCount,
+		WorkHoursRatio: workRatio,
+		PeakHour:       peakHour,
+		PeakHourCount:  peakCount,
+	}, nil
 }

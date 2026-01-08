@@ -214,6 +214,9 @@ function renderCharts(data) {
     // 模型使用分析图
     container.appendChild(createChartDiv('modelChart', '1000px', '500px'));
 
+    // 工作时段热力图
+    container.appendChild(createChartDiv('workHoursChart', '1200px', '450px'));
+
     // 初始化 go-echarts 图表
     initDailyTrendChart(data.daily_trend);
     initCommandsChart(data.commands);
@@ -222,6 +225,7 @@ function renderCharts(data) {
     initProjectChart(data.project_stats);
     initWeekdayChart(data.weekday_stats);
     initModelChart(data.model_usage);
+    initWorkHoursChart(data.work_hours_stats);
 
     container.style.display = 'block';
 }
@@ -776,4 +780,109 @@ function initModelChart(modelData) {
         `总计 <strong>${totalRequests.toLocaleString()}</strong> 次请求，` +
         `消耗 <strong>${(totalTokens / 1000000).toFixed(1)}M</strong> Tokens，` +
         `平均每次请求 <strong>${avgTokensPerRequest.toLocaleString()}</strong> Tokens。`;
+}
+
+// 初始化工作时段热力图
+function initWorkHoursChart(workHoursData) {
+    if (!workHoursData || !workHoursData.hourly_data || workHoursData.hourly_data.length === 0) {
+        document.getElementById('workHoursChart-insight').innerHTML =
+            '<strong>💡 数据洞察:</strong> 该时间范围内暂无工作时段数据';
+        return;
+    }
+
+    const chart = echarts.init(document.getElementById('workHoursChart'), 'wonderland');
+
+    const hours = workHoursData.hourly_data;
+    const hourLabels = hours.map(h => h.hour_label);
+    const counts = hours.map(h => h.count);
+
+    // 工作时段高亮色
+    const colors = hours.map(h => {
+        if (h.is_work_hour) {
+            return '#5470c6';
+        }
+        return '#bdc3c7';
+    });
+
+    const option = {
+        title: {
+            text: '工作时段热力图',
+            subtext: '数据来源: projects/*.jsonl',
+            left: 'center'
+        },
+        tooltip: {
+            trigger: 'axis',
+            formatter: function(params) {
+                const idx = params[0].dataIndex;
+                const item = hours[idx];
+                const timeType = item.is_work_hour ? '工作时间' : '非工作时间';
+                return `${item.hour_label}<br/>` +
+                       `${timeType}<br/>` +
+                       `活动次数: ${item.count.toLocaleString()}`;
+            }
+        },
+        xAxis: {
+            type: 'category',
+            data: hourLabels,
+            axisLabel: {
+                interval: 2,
+                rotate: 0
+            }
+        },
+        yAxis: {
+            type: 'value',
+            name: '活动次数'
+        },
+        visualMap: {
+            show: false,
+            dimension: 0,
+            pieces: [
+                {lte: 8, color: '#bdc3c7'},
+                {gt: 8, lte: 18, color: '#5470c6'},
+                {gt: 18, color: '#bdc3c7'}
+            ]
+        },
+        series: [{
+            name: '活动次数',
+            type: 'bar',
+            data: counts.map((count, idx) => ({
+                value: count,
+                itemStyle: { color: colors[idx] }
+            })),
+            label: {
+                show: true,
+                position: 'top',
+                formatter: function(v) {
+                    return v.data.value.toLocaleString();
+                }
+            },
+            markArea: {
+                silent: true,
+                itemStyle: {
+                    color: 'rgba(84, 112, 198, 0.1)'
+                },
+                data: [[{
+                    name: '工作时段',
+                    xAxis: '09:00'
+                }, {
+                    xAxis: '18:00'
+                }]]
+            }
+        }]
+    };
+
+    chart.setOption(option);
+
+    // 生成数据洞察
+    const peakHour = workHoursData.peak_hour;
+    const peakCount = workHoursData.peak_count.toLocaleString();
+    const workRatio = workHoursData.work_ratio.toFixed(1);
+    const workCount = workHoursData.work_hours.toLocaleString();
+    const offCount = workHoursData.off_hours.toLocaleString();
+
+    document.getElementById('workHoursChart-insight').innerHTML =
+        `<strong>💡 数据洞察:</strong> 峰值在 <strong>${peakHour}:00</strong>（${peakCount} 次），` +
+        `工作时段(9-18点)占比 <strong>${workRatio}%</strong>（${workCount} 次），` +
+        `非工作时段 <strong>${offCount}</strong> 次。` +
+        (workRatio > 60 ? ' 主要在工作时段活动。' : workRatio < 40 ? ' 经常在非工作时间工作。' : '');
 }

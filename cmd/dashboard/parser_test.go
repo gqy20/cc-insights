@@ -223,3 +223,27 @@ func TestParseModelUsageFromProjects(t *testing.T) {
 		t.Logf("  %s: %d requests, %d tokens", item.Model, item.Count, item.Tokens)
 	}
 }
+
+// TestParseWorkHoursStats 测试工作时段统计
+func TestParseWorkHoursStats(t *testing.T) {
+	// Arrange
+	tf := TimeFilter{Start: nil, End: nil}
+
+	// Act
+	stats, err := ParseWorkHoursStats(tf)
+
+	// Assert
+	if err != nil {
+		t.Fatalf("ParseWorkHoursStats failed: %v", err)
+	}
+
+	if stats == nil {
+		t.Fatal("Expected non-nil stats")
+	}
+
+	t.Logf("工作时段统计:")
+	t.Logf("  工作时段(9-18点): %d 次", stats.WorkHoursCount)
+	t.Logf("  非工作时段: %d 次", stats.OffHoursCount)
+	t.Logf("  工作时段占比: %.1f%%", stats.WorkHoursRatio)
+	t.Logf("  峰值小时: %d点 (%d 次)", stats.PeakHour, stats.PeakHourCount)
+}
