@@ -156,6 +156,7 @@ func dashboardPageHandler(w http.ResponseWriter, r *http.Request) {
             <h2>⏱️ 时间范围</h2>
             <h3>快捷选择</h3>
             <div class="preset-buttons">
+                <button class="preset-btn" data-preset="24h">最近 24 小时</button>
                 <button class="preset-btn" data-preset="7d">最近 7 天</button>
                 <button class="preset-btn" data-preset="30d">最近 30 天</button>
                 <button class="preset-btn" data-preset="90d">最近 90 天</button>

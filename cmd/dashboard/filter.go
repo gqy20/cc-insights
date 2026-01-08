@@ -13,6 +13,7 @@ const (
 	Range90Days  RangePreset = "90d"
 	RangeAll     RangePreset = "all"
 	RangeCustom  RangePreset = "custom"
+	Range24Hours RangePreset = "24h"
 )
 
 // TimeFilter 时间过滤器
@@ -29,6 +30,12 @@ func NewTimeFilterFromPreset(preset RangePreset) TimeFilter {
 	switch preset {
 	case Range7Days:
 		start = now.AddDate(0, 0, -7)
+		return TimeFilter{
+			Start: &start,
+			End:   &now,
+		}
+	case Range24Hours:
+		start = now.Add(-24 * time.Hour)
 		return TimeFilter{
 			Start: &start,
 			End:   &now,

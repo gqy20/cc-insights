@@ -89,6 +89,8 @@ function updateStatsInfo(data) {
     let rangeText = '全部';
     if (data.time_range.preset === 'custom') {
         rangeText = `${data.time_range.start} 至 ${data.time_range.end}`;
+    } else if (data.time_range.preset === '24h') {
+        rangeText = '最近 24 小时';
     } else if (data.time_range.preset === '7d') {
         rangeText = '最近 7 天';
     } else if (data.time_range.preset === '30d') {
@@ -125,9 +127,6 @@ function renderCharts(data) {
     // 命令统计图
     container.appendChild(createChartDiv('commands', '1200px', '500px'));
 
-    // 小时分布图
-    container.appendChild(createChartDiv('hourly', '1200px', '400px'));
-
     // MCP 工具图
     container.appendChild(createChartDiv('mcpTools', '900px', '700px'));
 
@@ -137,7 +136,6 @@ function renderCharts(data) {
     // 初始化 go-echarts 图表
     initDailyTrendChart(data.daily_trend);
     initCommandsChart(data.commands);
-    initHourlyChart(data.hourly_counts);
     initMCPToolsChart(data.mcp_tools);
     initSessionChart(data.sessions);
 
@@ -146,16 +144,43 @@ function renderCharts(data) {
 
 // 创建图表容器
 function createChartDiv(id, width, height) {
-    const div = document.createElement('div');
-    div.className = 'chart-wrapper';
-    div.id = id;
-    div.style.width = width;
-    div.style.height = height;
-    return div;
+    const wrapper = document.createElement('div');
+    wrapper.className = 'chart-wrapper';
+    wrapper.style.width = width;
+    wrapper.style.marginBottom = '20px';
+
+    const chartDiv = document.createElement('div');
+    chartDiv.id = id;
+    chartDiv.style.width = width;
+    chartDiv.style.height = height;
+
+    const insightDiv = document.createElement('div');
+    insightDiv.id = `${id}-insight`;
+    insightDiv.className = 'chart-insight';
+    insightDiv.style.cssText = `
+        margin-top: 15px;
+        padding: 12px 15px;
+        background: #f8f9fa;
+        border-left: 4px solid #3498db;
+        border-radius: 4px;
+        font-size: 13px;
+        line-height: 1.6;
+        color: #555;
+    `;
+
+    wrapper.appendChild(chartDiv);
+    wrapper.appendChild(insightDiv);
+    return wrapper;
 }
 
 // 初始化每日趋势图
 function initDailyTrendChart(trendData) {
+    if (!trendData || !trendData.counts || !trendData.dates || trendData.counts.length === 0) {
+        document.getElementById('dailyTrend-insight').innerHTML =
+            '<strong>💡 数据洞察:</strong> 该时间范围内暂无数据';
+        return;
+    }
+
     const chart = echarts.init(document.getElementById('dailyTrend'), 'wonderland');
 
     const option = {
@@ -181,18 +206,33 @@ function initDailyTrendChart(trendData) {
             smooth: true,
             areaStyle: {
                 opacity: 0.2
-            },
-            label: {
-                show: true
             }
         }]
     };
 
     chart.setOption(option);
+
+    // 生成数据洞察
+    const totalCount = trendData.counts.reduce((a, b) => a + b, 0);
+    const avgCount = Math.round(totalCount / trendData.counts.length);
+    const maxCount = Math.max(...trendData.counts);
+    const maxIndex = trendData.counts.indexOf(maxCount);
+    const peakDate = trendData.dates[maxIndex];
+
+    document.getElementById('dailyTrend-insight').innerHTML =
+        `<strong>💡 数据洞察:</strong> 统计期间共产生 <strong>${totalCount.toLocaleString()}</strong> 条消息，` +
+        `日均 <strong>${avgCount.toLocaleString()}</strong> 条。` +
+        `活动峰值在 <strong>${peakDate}</strong>，达到 <strong>${maxCount.toLocaleString()}</strong> 条消息。`;
 }
 
 // 初始化命令统计图
 function initCommandsChart(commands) {
+    if (!commands || commands.length === 0) {
+        document.getElementById('commands-insight').innerHTML =
+            '<strong>💡 数据洞察:</strong> 该时间范围内暂无命令数据';
+        return;
+    }
+
     const chart = echarts.init(document.getElementById('commands'), 'wonderland');
 
     const top15 = commands.slice(0, 15);
@@ -232,43 +272,27 @@ function initCommandsChart(commands) {
     };
 
     chart.setOption(option);
-}
 
-// 初始化小时分布图
-function initHourlyChart(hourlyCounts) {
-    const chart = echarts.init(document.getElementById('hourly'), 'wonderland');
+    // 生成数据洞察
+    const totalCmds = commands.reduce((a, b) => a + b.count, 0);
+    const topCmd = commands[0];
+    const topCmdPercent = ((topCmd.count / totalCmds) * 100).toFixed(1);
+    const uniqueCmds = commands.length;
 
-    const hours = Array.from({length: 24}, (_, i) => `${String(i).padStart(2, '0')}:00`);
-    const counts = hours.map(h => hourlyCounts[h.replace(':00', '')] || 0);
-
-    const option = {
-        title: {
-            text: '24小时活动分布',
-            subtext: '数据来源: history.jsonl',
-            left: 'center'
-        },
-        tooltip: {
-            trigger: 'axis'
-        },
-        xAxis: {
-            type: 'category',
-            data: hours
-        },
-        yAxis: {
-            type: 'value'
-        },
-        series: [{
-            name: '活动次数',
-            type: 'bar',
-            data: counts
-        }]
-    };
-
-    chart.setOption(option);
+    document.getElementById('commands-insight').innerHTML =
+        `<strong>💡 数据洞察:</strong> 共使用了 <strong>${uniqueCmds}</strong> 种不同的命令，` +
+        `总计 <strong>${totalCmds.toLocaleString()}</strong> 次。` +
+        `最常用的是 <strong>${topCmd.command}</strong>，使用了 <strong>${topCmd.count}</strong> 次（占比 ${topCmdPercent}%）。`;
 }
 
 // 初始化 MCP 工具图
 function initMCPToolsChart(tools) {
+    if (!tools || tools.length === 0) {
+        document.getElementById('mcpTools-insight').innerHTML =
+            '<strong>💡 数据洞察:</strong> 该时间范围内暂无 MCP 工具调用数据';
+        return;
+    }
+
     const chart = echarts.init(document.getElementById('mcpTools'), 'wonderland');
 
     const top10 = tools.slice(0, 10);
@@ -301,6 +325,21 @@ function initMCPToolsChart(tools) {
     };
 
     chart.setOption(option);
+
+    // 生成数据洞察
+    const totalCalls = tools.reduce((a, b) => a + b.count, 0);
+    const topTool = tools[0];
+    const topToolPercent = ((topTool.count / totalCalls) * 100).toFixed(1);
+    const serverCounts = {};
+    tools.forEach(t => {
+        serverCounts[t.server] = (serverCounts[t.server] || 0) + t.count;
+    });
+    const topServer = Object.entries(serverCounts).sort((a, b) => b[1] - a[1])[0];
+
+    document.getElementById('mcpTools-insight').innerHTML =
+        `<strong>💡 数据洞察:</strong> 共调用了 <strong>${tools.length}</strong> 种不同的 MCP 工具，` +
+        `总计 <strong>${totalCalls.toLocaleString()}</strong> 次。` +
+        `最活跃的服务器是 <strong>${topServer[0]}</strong>，最常用工具是 <strong>${topTool.server}::${topTool.tool}</strong>（占比 ${topToolPercent}%）。`;
 }
 
 // 显示/隐藏加载状态
@@ -322,7 +361,9 @@ function hideError() {
 
 // 初始化会话统计图
 function initSessionChart(sessionData) {
-    if (!sessionData || !sessionData.daily_session_map) {
+    if (!sessionData || !sessionData.daily_session_map || Object.keys(sessionData.daily_session_map).length === 0) {
+        document.getElementById('sessionChart-insight').innerHTML =
+            '<strong>💡 数据洞察:</strong> 该时间范围内暂无会话数据';
         return;
     }
 
@@ -371,4 +412,13 @@ function initSessionChart(sessionData) {
     };
 
     chart.setOption(option);
+
+    // 生成数据洞察
+    const avgSessions = Math.round(sessionData.total_sessions / dates.length);
+    const peakValleyRatio = (sessionData.peak_count / sessionData.valley_count).toFixed(1);
+
+    document.getElementById('sessionChart-insight').innerHTML =
+        `<strong>💡 数据洞察:</strong> 统计期间共创建 <strong>${sessionData.total_sessions.toLocaleString()}</strong> 个会话，` +
+        `日均 <strong>${avgSessions.toLocaleString()}</strong> 个。` +
+        `峰值日 <strong>${sessionData.peak_date}</strong> 的会话数是谷值日 <strong>${sessionData.valley_date}</strong> 的 <strong>${peakValleyRatio}</strong> 倍。`;
 }
