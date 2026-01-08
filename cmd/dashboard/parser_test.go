@@ -180,3 +180,46 @@ func TestParseHourlyCountsFromProjects(t *testing.T) {
 	}
 	t.Logf("Total hourly messages: %d", total)
 }
+
+// TestParseModelUsageFromProjects 测试从projects生成模型使用统计
+func TestParseModelUsageFromProjects(t *testing.T) {
+	// Arrange
+	tf := TimeFilter{Start: nil, End: nil}
+
+	// Act
+	usage, err := ParseModelUsageFromProjects(tf)
+
+	// Assert
+	if err != nil {
+		t.Fatalf("ParseModelUsageFromProjects failed: %v", err)
+	}
+
+	if usage == nil {
+		t.Fatal("Expected non-nil usage")
+	}
+
+	if len(usage) == 0 {
+		t.Log("Warning: No model usage found (may be expected if no data exists)")
+	}
+
+	// 验证数据格式
+	totalRequests := 0
+	for _, item := range usage {
+		if item.Model == "" {
+			t.Error("Model should not be empty")
+		}
+		if item.Count < 0 {
+			t.Errorf("Count should be >= 0, got %d", item.Count)
+		}
+		if item.Tokens < 0 {
+			t.Errorf("Tokens should be >= 0, got %d", item.Tokens)
+		}
+		totalRequests += item.Count
+	}
+
+	t.Logf("Found %d models", len(usage))
+	t.Logf("Total requests: %d", totalRequests)
+	for _, item := range usage {
+		t.Logf("  %s: %d requests, %d tokens", item.Model, item.Count, item.Tokens)
+	}
+}

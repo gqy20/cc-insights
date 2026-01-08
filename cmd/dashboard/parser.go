@@ -79,6 +79,13 @@ type WeekdayItem struct {
 	MessageCount int    `json:"message_count"`
 }
 
+// ModelUsageItem 单个模型使用统计
+type ModelUsageItem struct {
+	Model  string `json:"model"`
+	Count  int    `json:"count"`
+	Tokens int    `json:"tokens"`
+}
+
 // ProjectRecord projects/*.jsonl 记录
 type ProjectRecord struct {
 	ParentUUID  string          `json:"parentUuid"`
@@ -929,6 +936,115 @@ func parseProjectJSONLForHourly(filePath string, tf TimeFilter, hourlyCounts map
 		hour := timestamp.Hour()
 		hourKey := fmt.Sprintf("%02d", hour)
 		hourlyCounts[hourKey]++
+	}
+
+	return nil
+}
+
+// ParseModelUsageFromProjects 从 projects/*.jsonl 解析模型使用统计
+func ParseModelUsageFromProjects(tf TimeFilter) ([]ModelUsageItem, error) {
+	projectsDir := GetDataPath("projects")
+	entries, err := os.ReadDir(projectsDir)
+	if err != nil {
+		return nil, fmt.Errorf("读取projects目录失败: %w", err)
+	}
+
+	// 使用map聚合统计数据
+	modelStats := make(map[string]*ModelUsageItem)
+
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+
+		projectDir := filepath.Join(projectsDir, entry.Name())
+		subEntries, err := os.ReadDir(projectDir)
+		if err != nil {
+			continue
+		}
+
+		for _, file := range subEntries {
+			if file.IsDir() || !strings.HasSuffix(file.Name(), ".jsonl") {
+				continue
+			}
+
+			filePath := filepath.Join(projectDir, file.Name())
+			err := parseProjectJSONLForModelUsage(filePath, tf, modelStats)
+			if err != nil {
+				continue
+			}
+		}
+	}
+
+	// 转换为slice并排序
+	result := make([]ModelUsageItem, 0, len(modelStats))
+	for _, item := range modelStats {
+		result = append(result, *item)
+	}
+
+	// 按请求次数降序排序
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].Count > result[j].Count
+	})
+
+	return result, nil
+}
+
+// parseProjectJSONLForModelUsage 解析文件用于模型使用统计
+func parseProjectJSONLForModelUsage(filePath string, tf TimeFilter, modelStats map[string]*ModelUsageItem) error {
+	f, err := os.Open(filePath)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	decoder := json.NewDecoder(f)
+	for {
+		var record ProjectRecord
+		if err := decoder.Decode(&record); err != nil {
+			if err == io.EOF {
+				break
+			}
+			continue
+		}
+
+		// 解析时间戳
+		timestamp, err := time.Parse(time.RFC3339Nano, record.Timestamp)
+		if err != nil {
+			continue
+		}
+
+		// 时间过滤
+		if !tf.Contains(timestamp) {
+			continue
+		}
+
+		// 只统计 assistant 消息
+		if record.Type != "assistant" {
+			continue
+		}
+
+		// 解析 assistant 消息获取模型和token信息
+		var msg AssistantMessage
+		if err := json.Unmarshal(record.Message, &msg); err != nil {
+			continue
+		}
+
+		if msg.Model == "" {
+			continue
+		}
+
+		// 初始化或更新统计
+		if _, exists := modelStats[msg.Model]; !exists {
+			modelStats[msg.Model] = &ModelUsageItem{
+				Model:  msg.Model,
+				Count:  0,
+				Tokens: 0,
+			}
+		}
+
+		modelStats[msg.Model].Count++
+		modelStats[msg.Model].Tokens += msg.Usage.InputTokens + msg.Usage.OutputTokens
 	}
 
 	return nil

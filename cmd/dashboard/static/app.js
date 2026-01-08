@@ -211,6 +211,9 @@ function renderCharts(data) {
     // 星期分布图
     container.appendChild(createChartDiv('weekdayChart', '1000px', '400px'));
 
+    // 模型使用分析图
+    container.appendChild(createChartDiv('modelChart', '1000px', '500px'));
+
     // 初始化 go-echarts 图表
     initDailyTrendChart(data.daily_trend);
     initCommandsChart(data.commands);
@@ -218,6 +221,7 @@ function renderCharts(data) {
     initSessionChart(data.sessions);
     initProjectChart(data.project_stats);
     initWeekdayChart(data.weekday_stats);
+    initModelChart(data.model_usage);
 
     container.style.display = 'block';
 }
@@ -668,4 +672,108 @@ function initWeekdayChart(weekdayData) {
         `<strong>💡 数据洞察:</strong> 最活跃的是 <strong>${maxWeekday.weekday_name}</strong>（${maxCount.toLocaleString()} 条消息），` +
         `日均 <strong>${avgMessages.toLocaleString()}</strong> 条。` +
         `工作日共 <strong>${workdayTotal.toLocaleString()}</strong> 条，周末 <strong>${weekendTotal.toLocaleString()}</strong> 条。`;
+}
+
+// 初始化模型使用分析图
+function initModelChart(modelData) {
+    if (!modelData || modelData.length === 0) {
+        document.getElementById('modelChart-insight').innerHTML =
+            '<strong>💡 数据洞察:</strong> 该时间范围内暂无模型使用数据';
+        return;
+    }
+
+    const chart = echarts.init(document.getElementById('modelChart'), 'wonderland');
+
+    const models = modelData.map(m => m.model);
+    const counts = modelData.map(m => m.count);
+    const tokens = modelData.map(m => m.tokens);
+
+    const maxCount = Math.max(...counts);
+    const topModel = modelData[0];
+    const totalRequests = counts.reduce((sum, c) => sum + c, 0);
+    const totalTokens = tokens.reduce((sum, t) => sum + t, 0);
+    const avgTokensPerRequest = Math.round(totalTokens / totalRequests);
+
+    const option = {
+        title: {
+            text: '模型使用分析',
+            subtext: '数据来源: projects/*.jsonl',
+            left: 'center'
+        },
+        tooltip: {
+            trigger: 'axis',
+            axisPointer: {
+                type: 'cross'
+            }
+        },
+        legend: {
+            data: ['请求数', 'Token数'],
+            top: 30
+        },
+        xAxis: {
+            type: 'category',
+            data: models,
+            axisLabel: {
+                interval: 0,
+                rotate: models.length > 4 ? 30 : 0,
+                formatter: function(value) {
+                    // 简化模型名称显示
+                    return value.length > 20 ? value.substring(0, 20) + '...' : value;
+                }
+            }
+        },
+        yAxis: [
+            {
+                type: 'value',
+                name: '请求数',
+                position: 'left'
+            },
+            {
+                type: 'value',
+                name: 'Token数',
+                position: 'right'
+            }
+        ],
+        series: [
+            {
+                name: '请求数',
+                type: 'bar',
+                data: counts,
+                label: {
+                    show: true,
+                    position: 'top',
+                    formatter: function(v) {
+                        return v.data.toLocaleString();
+                    }
+                },
+                itemStyle: {
+                    color: '#5470c6'
+                }
+            },
+            {
+                name: 'Token数',
+                type: 'line',
+                yAxisIndex: 1,
+                data: tokens,
+                smooth: true,
+                itemStyle: {
+                    color: '#91cc75'
+                },
+                lineStyle: {
+                    width: 2
+                }
+            }
+        ]
+    };
+
+    chart.setOption(option);
+
+    // 生成数据洞察
+    const topModelShare = ((topModel.count / totalRequests) * 100).toFixed(1);
+
+    document.getElementById('modelChart-insight').innerHTML =
+        `<strong>💡 数据洞察:</strong> 最常用的是 <strong>${topModel.model}</strong>（${topModel.count.toLocaleString()} 次请求，占比 ${topModelShare}%），` +
+        `总计 <strong>${totalRequests.toLocaleString()}</strong> 次请求，` +
+        `消耗 <strong>${(totalTokens / 1000000).toFixed(1)}M</strong> Tokens，` +
+        `平均每次请求 <strong>${avgTokensPerRequest.toLocaleString()}</strong> Tokens。`;
 }

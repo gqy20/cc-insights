@@ -24,6 +24,7 @@ type DashboardData struct {
 	Sessions     *SessionStats     `json:"sessions"`
 	ProjectStats *ProjectStatsData `json:"project_stats,omitempty"`
 	WeekdayStats *WeekdayStats     `json:"weekday_stats,omitempty"`
+	ModelUsage   []ModelUsageItem  `json:"model_usage,omitempty"`
 }
 
 // TimeRangeInfo 时间范围信息
@@ -115,6 +116,13 @@ func handleDataAPI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// 获取模型使用统计
+	modelUsage, err := ParseModelUsageFromProjects(tf)
+	if err != nil {
+		sendError(w, "解析模型使用失败: "+err.Error())
+		return
+	}
+
 	// 构建每日趋势
 	var dates []string
 	var counts []int
@@ -146,6 +154,7 @@ func handleDataAPI(w http.ResponseWriter, r *http.Request) {
 		Sessions:     sessionStats,
 		ProjectStats: projectStats,
 		WeekdayStats: weekdayStats,
+		ModelUsage:   modelUsage,
 	}
 
 	sendJSON(w, APIResponse{
