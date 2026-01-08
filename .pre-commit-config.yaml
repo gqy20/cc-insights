@@ -34,17 +34,19 @@ repos:
       # Module management
       - id: go-mod-tidy
 
-      # Static analysis
+      # Static analysis (file-based)
       - id: go-vet
-      - id: go-build
 
-      # Testing (run before commit)
-      - id: go-test
+      # Build check (use -pkg for package-level builds)
+      - id: go-build-mod
+
+      # Testing (use -mod for module-level tests)
+      - id: go-test-mod
+        args: [-v]
 
       # Linting (install: see https://github.com/TekWizely/pre-commit-golang#golangci-lint)
-      - id: golangci-lint
+      - id: golangci-lint-mod
         args: [--timeout=5m, --config=.golangci.yml]
 
       # Security scanning (install: go install github.com/securecodewarrior/gosec/v2/cmd/gosec@latest)
-      - id: gosec
-
+      - id: go-sec-mod
