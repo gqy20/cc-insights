@@ -200,7 +200,7 @@ function renderCharts(data) {
     container.appendChild(createChartDiv('commands', '1200px', '500px'));
 
     // MCP 工具图
-    container.appendChild(createChartDiv('mcpTools', '900px', '700px'));
+    container.appendChild(createChartDiv('mcpTools', '1200px', '700px'));
 
     // 会话统计图
     container.appendChild(createChartDiv('sessionChart', '1200px', '400px'));
@@ -209,10 +209,10 @@ function renderCharts(data) {
     container.appendChild(createChartDiv('projectChart', '1200px', '500px'));
 
     // 星期分布图
-    container.appendChild(createChartDiv('weekdayChart', '1000px', '400px'));
+    container.appendChild(createChartDiv('weekdayChart', '1200px', '400px'));
 
     // 模型使用分析图
-    container.appendChild(createChartDiv('modelChart', '1000px', '500px'));
+    container.appendChild(createChartDiv('modelChart', '1200px', '500px'));
 
     // 工作时段热力图
     container.appendChild(createChartDiv('workHoursChart', '1200px', '450px'));
