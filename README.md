@@ -69,6 +69,10 @@ data/
 └── debug/               # Debug 日志目录 (1.1GB, 2848个文件)
 ```
 
+## 🎨 Dashboard 预览
+
+![Dashboard Preview](docs/dashboard.png)
+
 ## 📡 API 接口
 
 ### GET /api/data
