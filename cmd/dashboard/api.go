@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"time"
 )
@@ -76,20 +77,14 @@ func handleDataAPI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 获取每日活动数据（从 projects/*.jsonl）
-	dailyActivity, err := ParseDailyActivityFromProjects(tf)
+	// 使用一次遍历获取所有项目相关统计（性能优化）
+	aggregate, err := ParseProjectsConcurrentOnce(tf)
 	if err != nil {
-		sendError(w, "解析每日活动失败: "+err.Error())
+		sendError(w, "解析项目数据失败: "+err.Error())
 		return
 	}
 
-	// 获取小时统计（从 projects/*.jsonl）
-	hourlyCountsFromProjects, err := ParseHourlyCountsFromProjects(tf)
-	if err != nil {
-		sendError(w, "解析小时统计失败: "+err.Error())
-		return
-	}
-
+	// 获取debug日志统计
 	toolStats, err := ParseDebugLogsConcurrent(tf)
 	if err != nil {
 		sendError(w, "解析 debug 日志失败: "+err.Error())
@@ -103,40 +98,19 @@ func handleDataAPI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 获取项目统计
-	projectStats, err := ParseProjectStatsWithFilter(tf)
-	if err != nil {
-		sendError(w, "解析项目统计失败: "+err.Error())
-		return
-	}
-
-	// 获取星期统计
-	weekdayStats, err := ParseProjectStatsByWeekday(tf)
-	if err != nil {
-		sendError(w, "解析星期统计失败: "+err.Error())
-		return
-	}
-
-	// 获取模型使用统计
-	modelUsage, err := ParseModelUsageFromProjects(tf)
-	if err != nil {
-		sendError(w, "解析模型使用失败: "+err.Error())
-		return
-	}
-
-	// 获取工作时段统计
-	workHoursStats, err := ParseWorkHoursStats(tf)
-	if err != nil {
-		sendError(w, "解析工作时段统计失败: "+err.Error())
-		return
-	}
-
-	// 构建每日趋势
+	// 从聚合数据中提取每日活动趋势
 	var dates []string
 	var counts []int
-	for _, day := range dailyActivity {
+	for _, day := range aggregate.DailyActivityList {
 		dates = append(dates, day.Date)
 		counts = append(counts, day.MessageCount)
+	}
+
+	// 将小时数据转换为map格式
+	hourlyCountsMap := make(map[string]int)
+	for _, item := range aggregate.HourlyData {
+		hourKey := fmt.Sprintf("%02d", item.Hour)
+		hourlyCountsMap[hourKey] = item.Count
 	}
 
 	// 构建时间范围信息
@@ -148,22 +122,32 @@ func handleDataAPI(w http.ResponseWriter, r *http.Request) {
 		rangeInfo.End = tf.End.Format("2006-01-02")
 	}
 
-	// 构建响应
+	// 构建响应数据
+	projectStatsData := &ProjectStatsData{
+		Projects:      aggregate.Projects,
+		TotalMessages: 0,
+		TotalSessions: 0,
+	}
+	for _, proj := range aggregate.Projects {
+		projectStatsData.TotalMessages += proj.MessageCount
+		projectStatsData.TotalSessions += proj.SessionCount
+	}
+
 	data := DashboardData{
 		Timestamp:    time.Now().Format("2006-01-02 15:04:05"),
 		TimeRange:    rangeInfo,
 		Commands:     cmdStats,
-		HourlyCounts: hourlyCountsFromProjects,
+		HourlyCounts: hourlyCountsMap,
 		DailyTrend: DailyTrendData{
 			Dates:  dates,
 			Counts: counts,
 		},
 		MCPTools:       toolStats,
 		Sessions:       sessionStats,
-		ProjectStats:   projectStats,
-		WeekdayStats:   weekdayStats,
-		ModelUsage:     modelUsage,
-		WorkHoursStats: workHoursStats,
+		ProjectStats:   projectStatsData,
+		WeekdayStats:   aggregate.WeekdayStats,
+		ModelUsage:     aggregate.ModelUsageList,
+		WorkHoursStats: aggregate.WorkHoursStats,
 	}
 
 	sendJSON(w, APIResponse{
