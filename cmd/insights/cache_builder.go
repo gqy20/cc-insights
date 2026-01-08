@@ -79,23 +79,27 @@ func (cb *CacheBuilder) BuildFullCache() error {
 
 	// 填充 DailyStats
 	for _, day := range aggregate.DailyActivityList {
+		sessionCount := 0
+		if sessionStats != nil && sessionStats.DailySessionMap != nil {
+			sessionCount = sessionStats.DailySessionMap[day.Date]
+		}
 		cache.DailyStats[day.Date] = &DayAggregate{
 			Date:          day.Date,
 			MessageCount:  day.MessageCount,
-			SessionCount:  0, // 需要从会话统计中获取
+			SessionCount:  sessionCount,
 			ToolCallCount: 0,
 			HourlyCounts:  [24]int{},
 		}
 	}
 
-	// 填充 ProjectStats
-	for _, proj := range aggregate.Projects {
-		cache.ProjectStats[proj.Project] = &proj
+	// 填充 ProjectStats（直接使用 map，已去重）
+	for _, proj := range aggregate.ProjectStats {
+		cache.ProjectStats[proj.Project] = proj
 	}
 
-	// 填充 ModelUsage
-	for _, mu := range aggregate.ModelUsageList {
-		cache.ModelUsage[mu.Model] = &mu
+	// 填充 ModelUsage（直接使用 map，已去重）
+	for _, mu := range aggregate.ModelUsage {
+		cache.ModelUsage[mu.Model] = mu
 	}
 
 	// 填充 MCPToolStats

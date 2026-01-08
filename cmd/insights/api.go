@@ -182,10 +182,83 @@ func buildDataFromCache(tf TimeFilter, preset string) (*DashboardData, error) {
 		modelUsage = append(modelUsage, *mu)
 	}
 
-	// 构建会话统计（从缓存获取基础数据，但需要解析 daily activity 来获取完整统计）
-	// 这里使用简化的会话统计，只包含总会话数
+	// 构建会话统计（从 DailyStats 构建）
+	dailySessionMap := make(map[string]int)
+	for date, dayStats := range cached.DailyStats {
+		dailySessionMap[date] = dayStats.SessionCount
+	}
+
+	// 找出峰值和谷值
+	peakDate, peakCount := "", 0
+	valleyDate, valleyCount := "", 0
+	for date, count := range dailySessionMap {
+		if count > peakCount {
+			peakCount = count
+			peakDate = date
+		}
+		if valleyCount == 0 || count < valleyCount {
+			valleyCount = count
+			valleyDate = date
+		}
+	}
+
 	sessionStats := &SessionStats{
-		TotalSessions: cached.TotalSessions,
+		TotalSessions:   cached.TotalSessions,
+		PeakDate:        peakDate,
+		PeakCount:       peakCount,
+		ValleyDate:      valleyDate,
+		ValleyCount:     valleyCount,
+		DailySessionMap: dailySessionMap,
+	}
+
+	// 构建工作时段统计（从 HourlyStats 计算）
+	hourlyData := make([]HourlyItem, 0, 24)
+	workHoursCount := 0
+	offHoursCount := 0
+	peakHour := -1
+	peakHourCount := 0
+
+	for hour := 0; hour < 24; hour++ {
+		count := 0
+		if cached.HourlyStats[hour] != nil {
+			count = cached.HourlyStats[hour].MessageCount
+		}
+
+		isWorkHour := (hour >= 9 && hour <= 18)
+		hourLabel := fmt.Sprintf("%02d:00", hour)
+
+		hourlyData = append(hourlyData, HourlyItem{
+			Hour:       hour,
+			HourLabel:  hourLabel,
+			Count:      count,
+			IsWorkHour: isWorkHour,
+		})
+
+		if isWorkHour {
+			workHoursCount += count
+		} else {
+			offHoursCount += count
+		}
+
+		if count > peakHourCount {
+			peakHourCount = count
+			peakHour = hour
+		}
+	}
+
+	totalCount := workHoursCount + offHoursCount
+	workRatio := 0.0
+	if totalCount > 0 {
+		workRatio = float64(workHoursCount) / float64(totalCount) * 100
+	}
+
+	workHoursStats := &WorkHoursStats{
+		HourlyData:     hourlyData,
+		WorkHoursCount: workHoursCount,
+		OffHoursCount:  offHoursCount,
+		WorkHoursRatio: workRatio,
+		PeakHour:       peakHour,
+		PeakHourCount:  peakHourCount,
 	}
 
 	// 构建时间范围信息
@@ -210,8 +283,9 @@ func buildDataFromCache(tf TimeFilter, preset string) (*DashboardData, error) {
 			TotalMessages: cached.TotalMessages,
 			TotalSessions: cached.TotalSessions,
 		},
-		WeekdayStats: weekdayStats,
-		ModelUsage:   modelUsage,
+		WeekdayStats:   weekdayStats,
+		ModelUsage:     modelUsage,
+		WorkHoursStats: workHoursStats,
 	}, nil
 }
 

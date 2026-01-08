@@ -875,12 +875,12 @@ func parseProjectJSONLForDailyActivity(filePath string, tf TimeFilter, dailyMap 
 		// 统计消息
 		dailyMap[date].MessageCount++
 
-		// 统计会话
+		// 统计会话（首次遇到该 SessionID 时计数）
 		if record.SessionID != "" {
-			if sessionsPerDay[date][record.SessionID] {
+			if !sessionsPerDay[date][record.SessionID] {
 				dailyMap[date].SessionCount++
+				sessionsPerDay[date][record.SessionID] = true
 			}
-			sessionsPerDay[date][record.SessionID] = true
 		}
 	}
 

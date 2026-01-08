@@ -702,7 +702,8 @@ function initModelChart(modelData) {
         title: {
             text: '模型使用分析',
             subtext: '数据来源: projects/*.jsonl',
-            left: 'center'
+            left: 'center',
+            top: 5
         },
         tooltip: {
             trigger: 'axis',
@@ -712,7 +713,15 @@ function initModelChart(modelData) {
         },
         legend: {
             data: ['请求数', 'Token数'],
-            top: 30
+            top: 60,
+            left: 'center'
+        },
+        grid: {
+            top: 100,
+            bottom: 70,
+            left: 70,
+            right: 70,
+            containLabel: true
         },
         xAxis: {
             type: 'category',
