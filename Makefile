@@ -11,7 +11,7 @@ all: deps build
 # 构建二进制文件
 build:
 	@echo "🔨 构建 $(BINARY)..."
-	@go build $(BUILD_TAGS) $(LDFLAGS) -o $(BINARY) ./cmd/dashboard
+	@go build -tags=prod $(LDFLAGS) -o $(BINARY) ./cmd/dashboard
 	@echo "✅ 构建完成: ./$(BINARY)"
 
 # 构建压缩版本（使用 UPX）
@@ -32,7 +32,7 @@ run: build
 # 指定数据目录运行（开发模式）
 run-dev:
 	@echo "🚀 启动 dashboard (开发模式)..."
-	@go run ./cmd/dashboard -data ../data
+	@go run -tags=prod ./cmd/dashboard -data ../data
 
 # 安装依赖
 deps:
@@ -72,15 +72,15 @@ release: clean
 	@echo "📦 构建发布版本..."
 	@mkdir -p release
 	@echo "  → Linux amd64..."
-	@GOOS=linux GOARCH=amd64 go build $(BUILD_TAGS) $(LDFLAGS) -o release/$(BINARY)-linux-amd64 ./cmd/dashboard
+	@GOOS=linux GOARCH=amd64 go build -tags=prod $(LDFLAGS) -o release/$(BINARY)-linux-amd64 ./cmd/dashboard
 	@echo "  → Linux arm64..."
-	@GOOS=linux GOARCH=arm64 go build $(BUILD_TAGS) $(LDFLAGS) -o release/$(BINARY)-linux-arm64 ./cmd/dashboard
+	@GOOS=linux GOARCH=arm64 go build -tags=prod $(LDFLAGS) -o release/$(BINARY)-linux-arm64 ./cmd/dashboard
 	@echo "  → macOS amd64..."
-	@GOOS=darwin GOARCH=amd64 go build $(BUILD_TAGS) $(LDFLAGS) -o release/$(BINARY)-darwin-amd64 ./cmd/dashboard
+	@GOOS=darwin GOARCH=amd64 go build -tags=prod $(LDFLAGS) -o release/$(BINARY)-darwin-amd64 ./cmd/dashboard
 	@echo "  → macOS arm64 (Apple Silicon)..."
-	@GOOS=darwin GOARCH=arm64 go build $(BUILD_TAGS) $(LDFLAGS) -o release/$(BINARY)-darwin-arm64 ./cmd/dashboard
+	@GOOS=darwin GOARCH=arm64 go build -tags=prod $(LDFLAGS) -o release/$(BINARY)-darwin-arm64 ./cmd/dashboard
 	@echo "  → Windows amd64..."
-	@GOOS=windows GOARCH=amd64 go build $(BUILD_TAGS) $(LDFLAGS) -o release/$(BINARY)-windows-amd64.exe ./cmd/dashboard
+	@GOOS=windows GOARCH=amd64 go build -tags=prod $(LDFLAGS) -o release/$(BINARY)-windows-amd64.exe ./cmd/dashboard
 	@ls -lh release/
 
 # 帮助

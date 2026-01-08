@@ -21,6 +21,7 @@ type DashboardData struct {
 	HourlyCounts    map[string]int             `json:"hourly_counts"`
 	DailyTrend      DailyTrendData             `json:"daily_trend"`
 	MCPTools        []MCPToolStats             `json:"mcp_tools"`
+	Sessions        *SessionStats              `json:"sessions"`
 }
 
 // TimeRangeInfo 时间范围信息
@@ -83,6 +84,13 @@ func handleDataAPI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// 获取会话统计
+	sessionStats, err := ParseSessionStatsWithFilter(tf)
+	if err != nil {
+		sendError(w, "解析会话统计失败: "+err.Error())
+		return
+	}
+
 	// 构建每日趋势
 	var dates []string
 	var counts []int
@@ -111,6 +119,7 @@ func handleDataAPI(w http.ResponseWriter, r *http.Request) {
 			Counts: counts,
 		},
 		MCPTools: toolStats,
+		Sessions: sessionStats,
 	}
 
 	sendJSON(w, APIResponse{

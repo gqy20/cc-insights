@@ -100,6 +100,18 @@ function updateStatsInfo(data) {
 
     const totalRecords = data.commands.reduce((sum, cmd) => sum + cmd.count, 0);
     document.getElementById('recordCount').textContent = totalRecords.toLocaleString();
+
+    // 更新会话统计信息
+    if (data.sessions) {
+        const sessionInfo = document.getElementById('sessionInfo');
+        if (sessionInfo) {
+            sessionInfo.innerHTML = `
+                <strong>总会话数:</strong> ${data.sessions.total_sessions.toLocaleString()} |
+                <strong>峰值:</strong> ${data.sessions.peak_date} (${data.sessions.peak_count}) |
+                <strong>谷值:</strong> ${data.sessions.valley_date} (${data.sessions.valley_count})
+            `;
+        }
+    }
 }
 
 // 渲染图表
@@ -119,11 +131,15 @@ function renderCharts(data) {
     // MCP 工具图
     container.appendChild(createChartDiv('mcpTools', '900px', '700px'));
 
+    // 会话统计图
+    container.appendChild(createChartDiv('sessionChart', '1200px', '400px'));
+
     // 初始化 go-echarts 图表
     initDailyTrendChart(data.daily_trend);
     initCommandsChart(data.commands);
     initHourlyChart(data.hourly_counts);
     initMCPToolsChart(data.mcp_tools);
+    initSessionChart(data.sessions);
 
     container.style.display = 'block';
 }
@@ -302,4 +318,57 @@ function showError(message) {
 // 隐藏错误
 function hideError() {
     document.getElementById('errorMessage').innerHTML = '';
+}
+
+// 初始化会话统计图
+function initSessionChart(sessionData) {
+    if (!sessionData || !sessionData.daily_session_map) {
+        return;
+    }
+
+    const chart = echarts.init(document.getElementById('sessionChart'), 'wonderland');
+
+    // 将 map 转换为数组并按日期排序
+    const dates = Object.keys(sessionData.daily_session_map).sort();
+    const counts = dates.map(d => sessionData.daily_session_map[d]);
+
+    const option = {
+        title: {
+            text: '每日会话趋势',
+            subtext: `总计: ${sessionData.total_sessions.toLocaleString()} 次会话 | 峰值: ${sessionData.peak_date} (${sessionData.peak_count}) | 谷值: ${sessionData.valley_date} (${sessionData.valley_count})`,
+            left: 'center'
+        },
+        tooltip: {
+            trigger: 'axis'
+        },
+        xAxis: {
+            type: 'category',
+            data: dates,
+            axisLabel: {
+                interval: 0,
+                rotate: 45
+            }
+        },
+        yAxis: {
+            type: 'value',
+            name: '会话数'
+        },
+        series: [{
+            name: '会话数',
+            type: 'line',
+            data: counts,
+            smooth: true,
+            areaStyle: {
+                opacity: 0.2
+            },
+            markPoint: {
+                data: [
+                    { type: 'max', name: '峰值' },
+                    { type: 'min', name: '谷值' }
+                ]
+            }
+        }]
+    };
+
+    chart.setOption(option);
 }
