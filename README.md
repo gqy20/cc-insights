@@ -24,13 +24,6 @@ cc-insights 是一个基于 Go + go-echarts 的 Claude Code 使用数据分析�
   - 自定义范围：选择起止日期
   - 实时统计信息显示
 
-- 🚀 **性能优化**
-  - 批量处理（1000条/批）
-  - Producer-Consumer 并发模式
-  - Worker pool 并发控制
-  - 大缓冲区扫描（64KB-1MB）
-  - 文件时间预过滤
-
 - 🤖 **AI 智能分析（规划中）**
   - **Commands 推荐** - 基于使用模式推荐可能有用的新命令
   - **MCP 工具推荐** - 根据工作内容推荐合适的 MCP 服务器
@@ -157,72 +150,6 @@ debug/ 日志:   4.96s
 ```
 
 **测试环境：** 72核 CPU，2.2G 数据
-
-## 🏗️ 技术栈
-
-- **Go 1.21+** - 后端语言
-- **go-echarts v2** - 图表渲染
-- **net/http** - Web 服务器
-- **embed** - 静态资源嵌入
-- **ECharts** - 前端图表库（CDN）
-
-## 📂 项目结构
-
-```
-dashboard/
-├── cc-insights              # 可执行文件
-├── cmd/insights/
-│   ├── main.go              # Web 服务器、路由、embed
-│   ├── api.go               # API 接口（支持时间过滤）
-│   ├── concurrent.go        # 优化的并发处理模块
-│   ├── filter.go            # 时间过滤逻辑
-│   ├── parser.go            # 数据解析（支持过滤）
-│   ├── charts.go            # 图表生成
-│   ├── config.go            # 配置管理
-│   ├── benchmark_main.go    # 性能测试工具
-│   ├── session_stats_test.go # 会话统计测试
-│   └── static/
-│       └── app.js           # 前端交互（AJAX 加载）
-├── Makefile                 # 构建脚本
-├── go.mod                   # Go 模块
-├── CLAUDE.md                # 开发指南
-└── README.md                # 本文件
-```
-
-## 🎯 并发优化详情
-
-### history.jsonl 解析
-
-**优化技术：**
-- 批量读取（1000条/批）
-- Producer-Consumer 模式
-- 本地聚合后合并
-- 减少锁竞争
-
-**效果：**
-- 单线程 → 多核并行
-- I/O 与计算重叠
-
-### debug 日志解析
-
-**优化技术：**
-- 文件时间过滤（解析前）
-- 信号量控制（CPU核心数 × 4，最多64）
-- 大缓冲区扫描（64KB-1MB）
-- 预编译正则表达式
-
-**效果：**
-- 并发度动态调整
-- 内存占用优化
-- 避免解析无用文件
-
-## 📦 二进制大小
-
-| 版本 | 大小 | 说明 |
-|------|------|------|
-| 静态+UPX | ~2 MB | `make build-static-compress`（推荐） |
-| 静态 | ~7 MB | `make build-static` |
-| 动态 | ~6 MB | `make build` |
 
 ## 🚀 开发
 
