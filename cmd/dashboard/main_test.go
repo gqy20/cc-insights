@@ -127,10 +127,11 @@ func TestAPIUsesCachedData(t *testing.T) {
 	}
 
 	// 加载缓存到全局变量（模拟main.go中的逻辑）
-	globalCache, err = LoadCacheFile(cachePath)
-	if err != nil {
-		t.Fatalf("Setup: LoadCacheFile failed: %v", err)
+	cache, loadErr := LoadCacheFile(cachePath)
+	if loadErr != nil {
+		t.Fatalf("Setup: LoadCacheFile failed: %v", loadErr)
 	}
+	globalCache = cache
 
 	// 创建API请求
 	req := httptest.NewRequest("GET", "/api/data?preset=7d", nil)
@@ -145,7 +146,8 @@ func TestAPIUsesCachedData(t *testing.T) {
 	}
 
 	// 验证响应包含数据
-	body, _ := io.ReadAll(w.Body())
+	body, _ := io.ReadAll(w.Result().Body)
+	defer w.Result().Body.Close()
 	var response APIResponse
 	if err := json.Unmarshal(body, &response); err != nil {
 		t.Fatalf("解析响应失败: %v", err)
@@ -204,7 +206,8 @@ func TestAPIFallbackWhenNoCache(t *testing.T) {
 		t.Errorf("状态码 = %d, want %d", w.Code, http.StatusOK)
 	}
 
-	body, _ := io.ReadAll(w.Body())
+	body, _ := io.ReadAll(w.Result().Body)
+	defer w.Result().Body.Close()
 	var response APIResponse
 	if err := json.Unmarshal(body, &response); err != nil {
 		t.Fatalf("解析响应失败: %v", err)
@@ -276,16 +279,16 @@ func TestIncrementalCacheUpdate(t *testing.T) {
 	}
 
 	// Act - 增量更新
-	err = builder.IncrementalUpdate()
+	updateErr := builder.IncrementalUpdate()
 
 	// Assert
-	if err != nil {
-		t.Fatalf("IncrementalUpdate() failed: %v", err)
+	if updateErr != nil {
+		t.Fatalf("IncrementalUpdate() failed: %v", updateErr)
 	}
 
-	updatedCache, err := LoadCacheFile(cachePath)
-	if err != nil {
-		t.Fatalf("加载更新后的缓存失败: %v", err)
+	updatedCache, loadErr := LoadCacheFile(cachePath)
+	if loadErr != nil {
+		t.Fatalf("加载更新后的缓存失败: %v", loadErr)
 	}
 
 	if updatedCache.TotalMessages <= initialMessageCount {

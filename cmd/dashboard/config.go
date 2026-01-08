@@ -9,6 +9,7 @@ import (
 // Config 应用配置
 type Config struct {
 	DataDir    string
+	CacheDir   string
 	ListenAddr string
 	BaseURL    string
 }
@@ -25,8 +26,10 @@ func init() {
 
 	// 默认数据目录（相对于可执行文件）
 	defaultDataDir := filepath.Join(exeDir, "data")
+	defaultCacheDir := filepath.Join(exeDir, "cache")
 
 	flag.StringVar(&cfg.DataDir, "data", defaultDataDir, "数据目录路径")
+	flag.StringVar(&cfg.CacheDir, "cache", defaultCacheDir, "缓存目录路径")
 	flag.StringVar(&cfg.ListenAddr, "addr", ":8080", "监听地址")
 	flag.StringVar(&cfg.BaseURL, "base", "", "基础URL（用于反向代理）")
 }

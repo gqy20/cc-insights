@@ -14,6 +14,9 @@ import (
 //go:embed static/*
 var staticFS embed.FS
 
+// globalCache 全局缓存实例
+var globalCache *CacheFile
+
 func main() {
 	flag.Parse()
 
