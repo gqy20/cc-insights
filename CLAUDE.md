@@ -7,10 +7,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Claude Code Dashboard 是一个基于 Go + go-echarts 的单文件可执行程序，用于可视化 Claude Code 的使用数据。它读取 Claude Code 的数据目录（history.jsonl、stats-cache.json、projects/*.jsonl、debug/日志），生成交互式图表展示使用统计。
 
 **核心特点：**
-- **单文件部署** - 所有静态资源（HTML/JS）通过 Go embed 嵌入二进制，部署时只需一个 `cc-dashboard` 文件
+- **单文件部署** - 所有静态资源（HTML/JS）通过 Go embed 嵌入二进制，部署时只需一个 `cc-insights` 文件
 - **静态链接 + UPX 压缩** - 默认构建方式，~2MB 完全便携，无外部依赖
 - **高性能并发解析** - Producer-Consumer 模式 + Worker Pool，支持大规模数据快速处理
 - **一次遍历聚合** - `ParseProjectsConcurrentOnce` 函数在单次遍历中同时获取项目、日期、小时、星期、模型使用等所有统计，大幅提升性能
+- **缓存系统** - `CacheBuilder` 支持预聚合数据持久化，可提升重复加载性能
 
 ## Build Commands
 
@@ -56,10 +57,12 @@ make release            # 动态链接版本
 | `main.go` | HTTP服务器、路由、HTML模板、静态资源embed |
 | `config.go` | 命令行参数解析、配置管理 |
 | `filter.go` | 时间范围过滤（7d/30d/90d/all/custom） |
-| `parser.go` | 数据解析（history.jsonl、stats-cache.json、debug日志） |
+| `parser.go` | 数据解析（history.jsonl、stats-cache.json、debug日志、projects/*.jsonl） |
 | `concurrent.go` | 并发解析优化（Producer-Consumer、Worker Pool） |
 | `api.go` | API接口（/api/data、/api/stats） |
 | `charts.go` | go-echarts图表生成 |
+| `cache.go` | 缓存文件结构和时间范围查询 |
+| `cache_builder.go` | 缓存构建器（完整构建、增量更新、过期检查） |
 | `benchmark_main.go` | 性能测试工具 |
 
 ### 数据流
@@ -72,6 +75,9 @@ HTTP请求 → handleDataAPI (api.go)
 ParseHistoryConcurrent (concurrent.go)
     ├─ Producer: 读取history.jsonl → 批量(1000条/批) → channel
     └─ Consumer: Worker pool并发解析 → 时间过滤 → 聚合
+    ↓
+ParseProjectsConcurrentOnce (parser.go)
+    └─ 一次遍历获取项目、日期、小时、星期、模型等所有统计
     ↓
 ParseStatsCacheWithFilter (parser.go)
     └─ 读取stats-cache.json → 时间过滤 → 提取每日活动
@@ -138,6 +144,13 @@ http.Handle("/static/", http.FileServer(http.FS(staticSub)))
 - `stats-cache.json`: JSON格式，包含 `DailyActivity[]`、`ModelUsage`、`HourCounts`
 - `projects/<uuid>/*.jsonl`: 项目级别的对话记录，包含完整的消息内容和token使用信息
 - `debug/*.log`: 文本日志，文件名格式包含时间戳，包含MCP工具调用记录
+
+**缓存系统** (`cache.go`, `cache_builder.go`):
+- `CacheFile` 结构定义了缓存文件格式，支持版本控制和过期检查
+- `CacheBuilder` 提供完整构建和增量更新功能
+- `TimeRange.Contains()` 方法用于时间范围查询和过滤
+- 缓存数据包含：每日统计（`DayAggregate`）、小时统计（`HourAggregate`）、项目统计、模型使用、MCP工具统计
+- `NeedsRebuild()` 检查缓存是否需要重建（基于文件修改时间）
 
 **输出API** (`api.go`):
 ```json
@@ -216,6 +229,12 @@ make bench-all      # 修改为RangeAll
 - `TestParseModelUsageFromProjects` - 模型使用统计
 - `TestParseWorkHoursStats` - 工作时段分析
 
+**缓存系统测试**:
+- `TestCacheSaveLoad` - 缓存文件保存和加载
+- `TestCacheExpiration` - 缓存过期检查
+- `TestCacheTimeRangeQuery` - 时间范围查询
+- `TestCacheBuilderNeedsRebuild` - 重建条件检查
+
 ## Static Linking
 
 **本项目使用静态链接作为默认构建方式**，通过 `CGO_ENABLED=0` 构建完全无外部依赖的二进制文件，配合 UPX 压缩实现最小体积。
@@ -238,11 +257,30 @@ make release-static         # 多平台静态版本（跨平台发布）
 
 ## Development Workflow
 
+### 命令行参数
+
+```bash
+-data <path>    # 指定数据目录（默认: ./data）
+-addr <addr>    # 指定监听地址（默认: :8080）
+```
+
 ### 开发模式运行
 使用 `make run-dev` 可以快速迭代开发，它会使用上级目录的 `data` 目录：
 ```bash
 make run-dev    # 相当于 go run -tags=prod ./cmd/insights -data ../data
 ```
+
+### 静态资源开发
+
+开发时如果需要修改 `static/app.js`：
+- 修改完成后使用 `make build` 重新嵌入
+- 或使用 `-tags !prod` 直接运行（二进制会读取本地 static/ 目录）
+
+### Build Tags 说明
+- `-tags=prod`: 启用静态资源嵌入（生产模式）
+- `-tags !prod`: 禁用静态资源嵌入（开发/测试模式，加速编译）
+- Makefile 中 `make build` 和 `make run-dev` 使用 `prod` tag
+- `make bench` 使用 `!prod` tag 避免嵌入静态文件
 
 ### 添加新的统计维度
 
@@ -260,6 +298,24 @@ make run-dev    # 相当于 go run -tags=prod ./cmd/insights -data ../data
 - **文件按职责分离** - 虽然是单包，但按功能模块组织文件
 - **时间过滤统一** - 所有解析函数都接受 `TimeFilter` 参数，在解析时同步过滤
 - **并发优先** - 大量数据解析使用并发模式（Producer-Consumer、Worker Pool、信号量控制）
+
+### 缓存系统设计
+
+**缓存文件结构** (`cache.go`):
+- `CacheFile` 结构包含版本、时间范围、预聚合数据
+- `DayAggregate` 包含每日的详细统计（消息数、会话数、工具调用数、小时分布）
+- `TimeRange.Contains()` 统一时间范围检查逻辑
+- `QueryByTimeRange()` 支持按时间范围查询缓存数据
+
+**缓存构建器** (`cache_builder.go`):
+- `BuildFullCache()` 完整构建缓存（遍历所有数据源）
+- `IncrementalUpdate()` 增量更新（当前简化为完整重建）
+- `NeedsRebuild()` 基于文件修改时间检查缓存有效性
+- `GetLastDataModified()` 递归扫描数据目录获取最新修改时间
+
+**缓存与实时数据的选择**:
+- 当前实现主要使用实时解析（`ParseProjectsConcurrentOnce`）
+- 缓存系统预留了接口，可用于未来性能优化场景
 
 ### 关键设计模式
 
@@ -334,6 +390,24 @@ type ProjectAggregate struct {
 }
 ```
 
+### CacheFile (cache.go:11-28)
+缓存文件结构，用于持久化预聚合数据：
+```go
+type CacheFile struct {
+    Version    string                  // 缓存格式版本
+    LastUpdate time.Time               // 最后缓存时间戳
+    TimeRange  TimeRange               // 缓存覆盖的时间范围
+    DailyStats  map[string]*DayAggregate // "2026-01-08" -> 当天所有统计
+    HourlyStats [24]*HourAggregate     // 每小时统计
+    TotalMessages int                  // 总消息数
+    TotalSessions int                  // 总会话数
+    ProjectStats  map[string]*ProjectStatItem
+    ModelUsage    map[string]*ModelUsageItem
+    WeekdayStats  [7]*WeekdayItem
+    MCPToolStats  map[string]int
+}
+```
+
 ## Performance Considerations
 
 ### 当前性能指标（72核CPU，2.2GB数据）
@@ -371,3 +445,14 @@ type ProjectAggregate struct {
 **Phase 4: 高级功能**
 - Shell命令统计 - 解析shell-snapshots/目录
 - Token效率分析 - 基于dailyModelTokens数据
+- 缓存系统集成 - 使用CacheBuilder提升首次加载性能
+
+## Project Metadata
+
+- **Go 版本**: 1.21+
+- **主要依赖**: `github.com/go-echarts/go-echarts/v2 v2.3.3`
+- **模块名**: `cc-insights`
+- **二进制名**: `cc-insights` (原名 `cc-dashboard`)
+- **数据目录**: 默认 `./data`，可通过 `-data` 参数指定
+- **监听地址**: 默认 `:8080`，可通过 `-addr` 参数指定
+- **缓存目录**: 默认 `./cache`，用于存放预聚合数据

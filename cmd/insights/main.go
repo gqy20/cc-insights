@@ -9,6 +9,8 @@ import (
 	"io/fs"
 	"net/http"
 	"os"
+	"path/filepath"
+	"time"
 )
 
 //go:embed static/*
@@ -29,7 +31,15 @@ func main() {
 
 	fmt.Printf("📊 Claude Code Dashboard\n")
 	fmt.Printf("   数据目录: %s\n", cfg.DataDir)
+	fmt.Printf("   缓存目录: %s\n", cfg.CacheDir)
 	fmt.Printf("   监听地址: %s\n", cfg.ListenAddr)
+
+	// 初始化缓存
+	if err := initializeCache(); err != nil {
+		fmt.Fprintf(os.Stderr, "⚠️  缓存初始化失败: %v\n", err)
+		fmt.Fprintf(os.Stderr, "   将使用实时解析模式\n")
+	}
+
 	fmt.Printf("\n启动服务...\n")
 
 	// 路由
@@ -337,4 +347,45 @@ func reloadHandler(w http.ResponseWriter, r *http.Request) {
 func toJSON(v interface{}) string {
 	b, _ := json.Marshal(v)
 	return string(b)
+}
+
+// initializeCache 初始化缓存系统
+func initializeCache() error {
+	// 确保缓存目录存在
+	if err := os.MkdirAll(cfg.CacheDir, 0755); err != nil {
+		return fmt.Errorf("创建缓存目录失败: %w", err)
+	}
+
+	cachePath := filepath.Join(cfg.CacheDir, "cache.db")
+	builder := &CacheBuilder{
+		CachePath: cachePath,
+		DataDir:   cfg.DataDir,
+	}
+
+	// 检查是否需要重建缓存
+	if builder.NeedsRebuild() {
+		fmt.Printf("🔨 正在构建缓存...\n")
+		start := time.Now()
+
+		if err := builder.BuildFullCache(); err != nil {
+			return fmt.Errorf("构建缓存失败: %w", err)
+		}
+
+		elapsed := time.Since(start)
+		fmt.Printf("✅ 缓存构建完成 (耗时: %.1fs)\n", elapsed.Seconds())
+	} else {
+		fmt.Printf("✅ 使用现有缓存\n")
+	}
+
+	// 加载缓存到全局变量
+	cache, err := LoadCacheFile(cachePath)
+	if err != nil {
+		return fmt.Errorf("加载缓存失败: %w", err)
+	}
+
+	globalCache = cache
+	fmt.Printf("   缓存统计: %d 条消息, %d 个会话\n",
+		globalCache.TotalMessages, globalCache.TotalSessions)
+
+	return nil
 }
