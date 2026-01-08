@@ -53,6 +53,64 @@ type ProjectStats struct {
 	Count   int
 }
 
+// ProjectStatsData 项目统计数据（扩展版）
+type ProjectStatsData struct {
+	Projects      []ProjectStatItem `json:"projects"`
+	TotalMessages int               `json:"total_messages"`
+	TotalSessions int               `json:"total_sessions"`
+}
+
+// ProjectStatItem 单个项目统计
+type ProjectStatItem struct {
+	Project      string `json:"project"`
+	SessionCount int    `json:"session_count"`
+	MessageCount int    `json:"message_count"`
+}
+
+// WeekdayStats 星期统计
+type WeekdayStats struct {
+	WeekdayData []WeekdayItem `json:"weekday_data"`
+}
+
+// WeekdayItem 单个星期数据
+type WeekdayItem struct {
+	Weekday      int    `json:"weekday"`      // 0=周一, 6=周日
+	WeekdayName  string `json:"weekday_name"` // "周一"..."周日"
+	MessageCount int    `json:"message_count"`
+}
+
+// ProjectRecord projects/*.jsonl 记录
+type ProjectRecord struct {
+	ParentUUID  string          `json:"parentUuid"`
+	IsSidechain bool            `json:"isSidechain"`
+	UserType    string          `json:"userType"`
+	Cwd         string          `json:"cwd"`
+	SessionID   string          `json:"sessionId"`
+	Version     string          `json:"version"`
+	GitBranch   string          `json:"gitBranch"`
+	AgentID     string          `json:"agentId"`
+	Type        string          `json:"type"`    // "user" | "assistant"
+	Message     json.RawMessage `json:"message"` // 可以是 user 或 assistant 消息
+	Timestamp   string          `json:"timestamp"`
+}
+
+// AssistantMessage assistant 消息详情
+type AssistantMessage struct {
+	ID      string `json:"id"`
+	Type    string `json:"type"`
+	Role    string `json:"role"`
+	Model   string `json:"model"`
+	Content []struct {
+		Type string `json:"type"`
+		Text string `json:"text"`
+	} `json:"content"`
+	Usage struct {
+		InputTokens          int `json:"input_tokens"`
+		OutputTokens         int `json:"output_tokens"`
+		CacheReadInputTokens int `json:"cache_read_input_tokens"`
+	} `json:"usage"`
+}
+
 // MCPToolStats MCP工具统计
 type MCPToolStats struct {
 	Tool   string `json:"tool"`
@@ -446,4 +504,226 @@ func GetDailySessionTrend() ([]string, []int, error) {
 	}
 
 	return dates, counts, nil
+}
+
+// ParseProjectStatsWithFilter 带时间过滤解析项目统计
+func ParseProjectStatsWithFilter(tf TimeFilter) (*ProjectStatsData, error) {
+	projectsDir := GetDataPath("projects")
+
+	// 读取所有项目目录
+	entries, err := os.ReadDir(projectsDir)
+	if err != nil {
+		return nil, fmt.Errorf("读取 projects 目录失败: %w", err)
+	}
+
+	// 统计数据
+	projectMap := make(map[string]*ProjectStatItem)
+	var totalMessages int
+	sessions := make(map[string]bool)
+
+	// 遍历每个项目目录
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+
+		projectDir := filepath.Join(projectsDir, entry.Name())
+		files, err := os.ReadDir(projectDir)
+		if err != nil {
+			continue
+		}
+
+		// 解析该项目的所有 jsonl 文件
+		for _, file := range files {
+			if !strings.HasSuffix(file.Name(), ".jsonl") {
+				continue
+			}
+
+			filePath := filepath.Join(projectDir, file.Name())
+			err := parseProjectJSONL(filePath, tf, projectMap, &totalMessages, sessions)
+			if err != nil {
+				// 记录错误但继续处理其他文件
+				continue
+			}
+		}
+	}
+
+	// 转换为切片并排序
+	var projects []ProjectStatItem
+	for _, proj := range projectMap {
+		projects = append(projects, *proj)
+	}
+
+	// 按消息数排序
+	sort.Slice(projects, func(i, j int) bool {
+		return projects[i].MessageCount > projects[j].MessageCount
+	})
+
+	return &ProjectStatsData{
+		Projects:      projects,
+		TotalMessages: totalMessages,
+		TotalSessions: len(sessions),
+	}, nil
+}
+
+// parseProjectJSONL 解析单个项目的 jsonl 文件
+func parseProjectJSONL(filePath string, tf TimeFilter, projectMap map[string]*ProjectStatItem, totalMessages *int, sessions map[string]bool) error {
+	f, err := os.Open(filePath)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	decoder := json.NewDecoder(f)
+	for {
+		var record ProjectRecord
+		if err := decoder.Decode(&record); err != nil {
+			if err == io.EOF {
+				break
+			}
+			continue
+		}
+
+		// 解析时间戳
+		timestamp, err := time.Parse(time.RFC3339Nano, record.Timestamp)
+		if err != nil {
+			continue
+		}
+
+		// 时间过滤
+		if !tf.Contains(timestamp) {
+			continue
+		}
+
+		// 使用 cwd 作为项目名
+		projectName := record.Cwd
+		if projectName == "" {
+			projectName = "Unknown"
+		}
+
+		// 初始化项目统计
+		if projectMap[projectName] == nil {
+			projectMap[projectName] = &ProjectStatItem{
+				Project: projectName,
+			}
+		}
+
+		// 统计会话
+		if record.SessionID != "" {
+			sessions[record.SessionID] = true
+			if projectMap[projectName].SessionCount == 0 {
+				projectMap[projectName].SessionCount = 1
+			}
+		}
+
+		// 统计消息（只统计 assistant 消息）
+		if record.Type == "assistant" {
+			projectMap[projectName].MessageCount++
+			*totalMessages++
+		}
+	}
+
+	return nil
+}
+
+// ParseProjectStatsByWeekday 解析按星期统计的项目数据
+func ParseProjectStatsByWeekday(tf TimeFilter) (*WeekdayStats, error) {
+	projectsDir := GetDataPath("projects")
+
+	// 初始化7天的统计数据
+	weekdayData := make([]WeekdayItem, 7)
+	weekdayNames := []string{"周一", "周二", "周三", "周四", "周五", "周六", "周日"}
+	for i := 0; i < 7; i++ {
+		weekdayData[i] = WeekdayItem{
+			Weekday:      i,
+			WeekdayName:  weekdayNames[i],
+			MessageCount: 0,
+		}
+	}
+
+	// 读取所有项目目录
+	entries, err := os.ReadDir(projectsDir)
+	if err != nil {
+		return nil, fmt.Errorf("读取 projects 目录失败: %w", err)
+	}
+
+	// 遍历每个项目目录
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+
+		projectDir := filepath.Join(projectsDir, entry.Name())
+		files, err := os.ReadDir(projectDir)
+		if err != nil {
+			continue
+		}
+
+		// 解析该项目的所有 jsonl 文件
+		for _, file := range files {
+			if !strings.HasSuffix(file.Name(), ".jsonl") {
+				continue
+			}
+
+			filePath := filepath.Join(projectDir, file.Name())
+			err := parseProjectJSONLForWeekday(filePath, tf, weekdayData)
+			if err != nil {
+				continue
+			}
+		}
+	}
+
+	return &WeekdayStats{
+		WeekdayData: weekdayData,
+	}, nil
+}
+
+// parseProjectJSONLForWeekday 解析文件用于星期统计
+func parseProjectJSONLForWeekday(filePath string, tf TimeFilter, weekdayData []WeekdayItem) error {
+	f, err := os.Open(filePath)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	decoder := json.NewDecoder(f)
+	for {
+		var record ProjectRecord
+		if err := decoder.Decode(&record); err != nil {
+			if err == io.EOF {
+				break
+			}
+			continue
+		}
+
+		// 解析时间戳
+		timestamp, err := time.Parse(time.RFC3339Nano, record.Timestamp)
+		if err != nil {
+			continue
+		}
+
+		// 时间过滤
+		if !tf.Contains(timestamp) {
+			continue
+		}
+
+		// 只统计 assistant 消息
+		if record.Type != "assistant" {
+			continue
+		}
+
+		// 获取星期几（0=周一, 6=周日）
+		weekday := int(timestamp.Weekday())
+		// time.Weekday() 返回 0=周日, 1=周一, ..., 6=周六
+		// 转换为 0=周一, ..., 6=周日
+		if weekday == 0 {
+			weekday = 6 // 周日
+		} else {
+			weekday-- // 周一到周六
+		}
+
+		weekdayData[weekday].MessageCount++
+	}
+
+	return nil
 }
