@@ -14,7 +14,7 @@ function setupEventListeners() {
         btn.addEventListener('click', function() {
             const preset = this.dataset.preset;
             setActivePreset(preset);
-            loadData(preset);
+            loadData(`preset=${preset}`);
         });
     });
 
@@ -56,7 +56,7 @@ function applyCustomRange() {
         btn.classList.remove('active');
     });
 
-    loadData(`custom?start=${startDate}&end=${endDate}`);
+    loadData(`preset=custom&start=${startDate}&end=${endDate}`);
 }
 
 // 加载数据
