@@ -1,13 +1,18 @@
 package main
 
 import (
+	"embed"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"os"
 )
+
+//go:embed static/*
+var staticFS embed.FS
 
 func main() {
 	flag.Parse()
@@ -31,8 +36,9 @@ func main() {
 	http.HandleFunc("/api/stats", statsAPIHandler)
 	http.HandleFunc("/api/reload", reloadHandler)
 
-	// 静态资源
-	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("static"))))
+	// 静态资源（使用嵌入的文件系统）
+	staticSub, _ := fs.Sub(staticFS, "static")
+	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.FS(staticSub))))
 
 	// 启动服务器
 	fmt.Printf("\n✅ Dashboard 已启动!\n")
