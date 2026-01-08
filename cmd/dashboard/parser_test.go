@@ -1,6 +1,7 @@
 package main
 
 import (
+	"strconv"
 	"testing"
 	"time"
 )
@@ -164,11 +165,12 @@ func TestParseHourlyCountsFromProjects(t *testing.T) {
 
 	// 验证数据格式
 	for hour, count := range counts {
-		if hour < 0 || hour > 23 {
-			t.Errorf("Hour should be 0-23, got %d", hour)
+		hourInt, err := strconv.Atoi(hour)
+		if err != nil || hourInt < 0 || hourInt > 23 {
+			t.Errorf("Hour should be 00-23, got %s", hour)
 		}
 		if count < 0 {
-			t.Errorf("Count should be >= 0, got %d for hour %d", count, hour)
+			t.Errorf("Count should be >= 0, got %d for hour %s", count, hour)
 		}
 	}
 

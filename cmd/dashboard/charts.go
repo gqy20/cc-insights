@@ -75,7 +75,7 @@ func CreateDailyTrendChart(dates []string, counts []int) *charts.Line {
 	line.SetGlobalOptions(
 		charts.WithTitleOpts(opts.Title{
 			Title:    "每日活动趋势",
-			Subtitle: "数据来源: stats-cache.json",
+			Subtitle: "数据来源: projects/*.jsonl",
 		}),
 		charts.WithInitializationOpts(opts.Initialization{
 			Theme:  "wonderland",

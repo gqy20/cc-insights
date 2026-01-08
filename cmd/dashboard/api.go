@@ -68,15 +68,23 @@ func handleDataAPI(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 获取数据（使用优化的并发版本）
-	cmdStats, hourlyCounts, err := ParseHistoryConcurrent(tf)
+	cmdStats, _, err := ParseHistoryConcurrent(tf)
 	if err != nil {
 		sendError(w, "解析历史数据失败: "+err.Error())
 		return
 	}
 
-	cache, err := ParseStatsCacheWithFilter(tf)
+	// 获取每日活动数据（从 projects/*.jsonl）
+	dailyActivity, err := ParseDailyActivityFromProjects(tf)
 	if err != nil {
-		sendError(w, "解析统计数据失败: "+err.Error())
+		sendError(w, "解析每日活动失败: "+err.Error())
+		return
+	}
+
+	// 获取小时统计（从 projects/*.jsonl）
+	hourlyCountsFromProjects, err := ParseHourlyCountsFromProjects(tf)
+	if err != nil {
+		sendError(w, "解析小时统计失败: "+err.Error())
 		return
 	}
 
@@ -110,7 +118,7 @@ func handleDataAPI(w http.ResponseWriter, r *http.Request) {
 	// 构建每日趋势
 	var dates []string
 	var counts []int
-	for _, day := range cache.DailyActivity {
+	for _, day := range dailyActivity {
 		dates = append(dates, day.Date)
 		counts = append(counts, day.MessageCount)
 	}
@@ -129,7 +137,7 @@ func handleDataAPI(w http.ResponseWriter, r *http.Request) {
 		Timestamp:    time.Now().Format("2006-01-02 15:04:05"),
 		TimeRange:    rangeInfo,
 		Commands:     cmdStats,
-		HourlyCounts: hourlyCounts,
+		HourlyCounts: hourlyCountsFromProjects,
 		DailyTrend: DailyTrendData{
 			Dates:  dates,
 			Counts: counts,

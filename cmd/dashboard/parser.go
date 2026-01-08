@@ -468,37 +468,38 @@ func buildSessionStatsFromActivity(activity []DailyActivity) *SessionStats {
 
 // ParseSessionStats 解析会话统计（全部数据）
 func ParseSessionStats() (*SessionStats, error) {
-	cache, err := ParseStatsCache()
+	tf := TimeFilter{Start: nil, End: nil}
+	activity, err := ParseDailyActivityFromProjects(tf)
 	if err != nil {
 		return nil, err
 	}
-	return buildSessionStatsFromActivity(cache.DailyActivity), nil
+	return buildSessionStatsFromActivity(activity), nil
 }
 
 // ParseSessionStatsWithFilter 带时间过滤解析会话统计
 func ParseSessionStatsWithFilter(tf TimeFilter) (*SessionStats, error) {
-	cache, err := ParseStatsCacheWithFilter(tf)
+	activity, err := ParseDailyActivityFromProjects(tf)
 	if err != nil {
 		return nil, err
 	}
-	return buildSessionStatsFromActivity(cache.DailyActivity), nil
+	return buildSessionStatsFromActivity(activity), nil
 }
 
 // GetDailySessionTrend 获取每日会话趋势
 func GetDailySessionTrend() ([]string, []int, error) {
-	cache, err := ParseStatsCache()
+	activity, err := ParseDailyActivityFromProjects(TimeFilter{Start: nil, End: nil})
 	if err != nil {
 		return nil, nil, err
 	}
 
-	if len(cache.DailyActivity) == 0 {
+	if len(activity) == 0 {
 		return []string{}, []int{}, nil
 	}
 
-	dates := make([]string, len(cache.DailyActivity))
-	counts := make([]int, len(cache.DailyActivity))
+	dates := make([]string, len(activity))
+	counts := make([]int, len(activity))
 
-	for i, day := range cache.DailyActivity {
+	for i, day := range activity {
 		dates[i] = day.Date
 		counts[i] = day.SessionCount
 	}
@@ -723,6 +724,211 @@ func parseProjectJSONLForWeekday(filePath string, tf TimeFilter, weekdayData []W
 		}
 
 		weekdayData[weekday].MessageCount++
+	}
+
+	return nil
+}
+
+// ParseDailyActivityFromProjects 从 projects/*.jsonl 生成每日活动数据
+func ParseDailyActivityFromProjects(tf TimeFilter) ([]DailyActivity, error) {
+	projectsDir := GetDataPath("projects")
+
+	// 使用 map 聚合每日数据
+	dailyMap := make(map[string]*DailyActivity)
+	sessionsPerDay := make(map[string]map[string]bool)
+
+	// 读取所有项目目录
+	entries, err := os.ReadDir(projectsDir)
+	if err != nil {
+		return nil, fmt.Errorf("读取 projects 目录失败: %w", err)
+	}
+
+	// 遍历每个项目目录
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+
+		projectDir := filepath.Join(projectsDir, entry.Name())
+		files, err := os.ReadDir(projectDir)
+		if err != nil {
+			continue
+		}
+
+		// 解析该项目的所有 jsonl 文件
+		for _, file := range files {
+			if !strings.HasSuffix(file.Name(), ".jsonl") {
+				continue
+			}
+
+			filePath := filepath.Join(projectDir, file.Name())
+			err := parseProjectJSONLForDailyActivity(filePath, tf, dailyMap, sessionsPerDay)
+			if err != nil {
+				continue
+			}
+		}
+	}
+
+	// 转换为切片并排序
+	var activity []DailyActivity
+	for _, day := range dailyMap {
+		activity = append(activity, *day)
+	}
+
+	sort.Slice(activity, func(i, j int) bool {
+		return activity[i].Date < activity[j].Date
+	})
+
+	return activity, nil
+}
+
+// parseProjectJSONLForDailyActivity 解析文件用于每日活动统计
+func parseProjectJSONLForDailyActivity(filePath string, tf TimeFilter, dailyMap map[string]*DailyActivity, sessionsPerDay map[string]map[string]bool) error {
+	f, err := os.Open(filePath)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	decoder := json.NewDecoder(f)
+	for {
+		var record ProjectRecord
+		if err := decoder.Decode(&record); err != nil {
+			if err == io.EOF {
+				break
+			}
+			continue
+		}
+
+		// 解析时间戳
+		timestamp, err := time.Parse(time.RFC3339Nano, record.Timestamp)
+		if err != nil {
+			continue
+		}
+
+		// 时间过滤
+		if !tf.Contains(timestamp) {
+			continue
+		}
+
+		// 只统计 assistant 消息
+		if record.Type != "assistant" {
+			continue
+		}
+
+		// 提取日期 (YYYY-MM-DD)
+		date := timestamp.Format("2006-01-02")
+
+		// 初始化日期统计
+		if dailyMap[date] == nil {
+			dailyMap[date] = &DailyActivity{
+				Date:          date,
+				MessageCount:  0,
+				SessionCount:  0,
+				ToolCallCount: 0,
+			}
+			sessionsPerDay[date] = make(map[string]bool)
+		}
+
+		// 统计消息
+		dailyMap[date].MessageCount++
+
+		// 统计会话
+		if record.SessionID != "" {
+			if sessionsPerDay[date][record.SessionID] {
+				dailyMap[date].SessionCount++
+			}
+			sessionsPerDay[date][record.SessionID] = true
+		}
+	}
+
+	return nil
+}
+
+// ParseHourlyCountsFromProjects 从 projects/*.jsonl 生成小时统计数据
+func ParseHourlyCountsFromProjects(tf TimeFilter) (map[string]int, error) {
+	projectsDir := GetDataPath("projects")
+
+	// 初始化24小时的统计数据
+	hourlyCounts := make(map[string]int)
+	for i := 0; i < 24; i++ {
+		hourKey := fmt.Sprintf("%02d", i)
+		hourlyCounts[hourKey] = 0
+	}
+
+	// 读取所有项目目录
+	entries, err := os.ReadDir(projectsDir)
+	if err != nil {
+		return nil, fmt.Errorf("读取 projects 目录失败: %w", err)
+	}
+
+	// 遍历每个项目目录
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+
+		projectDir := filepath.Join(projectsDir, entry.Name())
+		files, err := os.ReadDir(projectDir)
+		if err != nil {
+			continue
+		}
+
+		// 解析该项目的所有 jsonl 文件
+		for _, file := range files {
+			if !strings.HasSuffix(file.Name(), ".jsonl") {
+				continue
+			}
+
+			filePath := filepath.Join(projectDir, file.Name())
+			err := parseProjectJSONLForHourly(filePath, tf, hourlyCounts)
+			if err != nil {
+				continue
+			}
+		}
+	}
+
+	return hourlyCounts, nil
+}
+
+// parseProjectJSONLForHourly 解析文件用于小时统计
+func parseProjectJSONLForHourly(filePath string, tf TimeFilter, hourlyCounts map[string]int) error {
+	f, err := os.Open(filePath)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	decoder := json.NewDecoder(f)
+	for {
+		var record ProjectRecord
+		if err := decoder.Decode(&record); err != nil {
+			if err == io.EOF {
+				break
+			}
+			continue
+		}
+
+		// 解析时间戳
+		timestamp, err := time.Parse(time.RFC3339Nano, record.Timestamp)
+		if err != nil {
+			continue
+		}
+
+		// 时间过滤
+		if !tf.Contains(timestamp) {
+			continue
+		}
+
+		// 只统计 assistant 消息
+		if record.Type != "assistant" {
+			continue
+		}
+
+		// 获取小时 (00-23)
+		hour := timestamp.Hour()
+		hourKey := fmt.Sprintf("%02d", hour)
+		hourlyCounts[hourKey]++
 	}
 
 	return nil
