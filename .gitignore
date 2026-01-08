@@ -1,5 +1,5 @@
 # 编译输出
-cc-dashboard
+cc-insights
 *.exe
 *.exe~
 *.dll

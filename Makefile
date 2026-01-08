@@ -1,6 +1,6 @@
 .PHONY: build build-static build-compress build-static-compress run run-dev clean deps test release release-static install-upx help
 
-BINARY=cc-dashboard
+BINARY=cc-insights
 VERSION=$(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 LDFLAGS=-ldflags "-s -w -X main.version=$(VERSION)"
 BUILD_TAGS=-tags=prod

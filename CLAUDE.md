@@ -4,12 +4,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Claude Code Dashboard 是一个基于 Go + go-echarts 的单文件可执行程序，用于可视化 Claude Code 的使用数据。它读取 Claude Code 的数据目录（history.jsonl、stats-cache.json、debug/日志），生成交互式图表展示使用统计。
+Claude Code Dashboard 是一个基于 Go + go-echarts 的单文件可执行程序，用于可视化 Claude Code 的使用数据。它读取 Claude Code 的数据目录（history.jsonl、stats-cache.json、projects/*.jsonl、debug/日志），生成交互式图表展示使用统计。
 
 **核心特点：**
 - **单文件部署** - 所有静态资源（HTML/JS）通过 Go embed 嵌入二进制，部署时只需一个 `cc-dashboard` 文件
 - **静态链接 + UPX 压缩** - 默认构建方式，~2MB 完全便携，无外部依赖
 - **高性能并发解析** - Producer-Consumer 模式 + Worker Pool，支持大规模数据快速处理
+- **一次遍历聚合** - `ParseProjectsConcurrentOnce` 函数在单次遍历中同时获取项目、日期、小时、星期、模型使用等所有统计，大幅提升性能
 
 ## Build Commands
 
@@ -133,9 +134,10 @@ http.Handle("/static/", http.FileServer(http.FS(staticSub)))
 ### 数据结构
 
 **输入数据格式**:
-- `history.jsonl`: JSONL格式，每行一个 `HistoryRecord`（包含timestamp、display等）
+- `history.jsonl`: JSONL格式，每行一个 `HistoryRecord`（包含timestamp、display、project等）
 - `stats-cache.json`: JSON格式，包含 `DailyActivity[]`、`ModelUsage`、`HourCounts`
-- `debug/*.log`: 文本日志，文件名格式包含时间戳
+- `projects/<uuid>/*.jsonl`: 项目级别的对话记录，包含完整的消息内容和token使用信息
+- `debug/*.log`: 文本日志，文件名格式包含时间戳，包含MCP工具调用记录
 
 **输出API** (`api.go`):
 ```json
@@ -197,10 +199,22 @@ make test
 # 运行单个测试
 go test -v ./cmd/dashboard -run TestParseHistory
 
+# 运行特定测试
+go test -v ./cmd/dashboard -run TestParseProjectsConcurrentOnce
+
 # 性能测试
 make bench          # 使用Range7Days
 make bench-all      # 修改为RangeAll
 ```
+
+**测试覆盖的关键功能**:
+- `TestParseProjectStats` - 项目统计解析
+- `TestParseProjectsConcurrentOnce` - 一次遍历聚合功能（数据一致性验证）
+- `TestProjectStatsByWeekday` - 星期分布统计
+- `TestParseDailyActivityFromProjects` - 每日活动数据生成
+- `TestParseHourlyCountsFromProjects` - 24小时统计
+- `TestParseModelUsageFromProjects` - 模型使用统计
+- `TestParseWorkHoursStats` - 工作时段分析
 
 ## Static Linking
 
@@ -221,3 +235,139 @@ make build-static-compress  # 默认推荐：静态+UPX（~2MB）
 make build-static           # 静态链接无压缩（~7MB，开发调试）
 make release-static         # 多平台静态版本（跨平台发布）
 ```
+
+## Development Workflow
+
+### 开发模式运行
+使用 `make run-dev` 可以快速迭代开发，它会使用上级目录的 `data` 目录：
+```bash
+make run-dev    # 相当于 go run -tags=prod ./cmd/dashboard -data ../data
+```
+
+### 添加新的统计维度
+
+当需要添加新的统计功能时，优先考虑在 `ParseProjectsConcurrentOnce` 中添加，以保持一次遍历的性能优势：
+
+1. 在 `ProjectAggregate` 结构中添加新字段（parser.go:109-122）
+2. 在 `parseProjectFileAggregate` 函数中添加统计逻辑（parser.go:1213-1291）
+3. 在 `finalize` 方法中生成输出格式数据（parser.go:1294-1374）
+4. 在 `api.go` 的 `handleDataAPI` 中将数据加入响应
+5. 在前端 `static/app.js` 中添加图表渲染
+
+### 代码组织原则
+
+- **单包结构** - 所有代码在 `cmd/dashboard/` 单个 `main` 包中，简化依赖管理
+- **文件按职责分离** - 虽然是单包，但按功能模块组织文件
+- **时间过滤统一** - 所有解析函数都接受 `TimeFilter` 参数，在解析时同步过滤
+- **并发优先** - 大量数据解析使用并发模式（Producer-Consumer、Worker Pool、信号量控制）
+
+### 关键设计模式
+
+**一次遍历聚合** (`parser.go:1142-1374`):
+- `ProjectAggregate` 结构包含所有统计数据的中间格式
+- `parseProjectFileAggregate` 在单个文件遍历中更新所有统计
+- `finalize` 方法将中间格式转换为输出格式
+- 避免多次遍历同一文件，性能提升显著
+
+**并发解析** (`concurrent.go`):
+- history.jsonl: Producer-Consumer 模式，批量处理（1000条/批），Worker数量 = CPU核心数/2
+- debug日志: 信号量控制，CPU核心数×4，最多64个并发，预过滤减少50%+解析时间
+
+**时间过滤** (`filter.go`):
+- `TimeFilter` 结构支持 nil 表示无限制
+- `Contains` 方法统一时间范围检查
+- `FilterDebugFiles` 预过滤避免解析无用文件
+
+## Key Data Structures
+
+### HistoryRecord (parser.go:18-24)
+来自 `history.jsonl`，包含用户操作历史：
+```go
+type HistoryRecord struct {
+    Display        string            // 用户输入的命令或消息
+    PastedContents map[string]string // 粘贴的内容
+    Timestamp      int64             // 毫秒时间戳
+    Project        string            // 所属项目路径
+}
+```
+
+### ProjectRecord (parser.go:124-137)
+来自 `projects/<uuid>/*.jsonl`，包含完整的对话记录：
+```go
+type ProjectRecord struct {
+    ParentUUID  string          // 父会话UUID
+    Cwd         string          // 当前工作目录（作为项目名）
+    SessionID   string          // 会话ID
+    Type        string          // "user" | "assistant"
+    Message     json.RawMessage // 消息内容（原始JSON）
+    Timestamp   string          // RFC3339Nano格式时间戳
+}
+```
+
+### AssistantMessage (parser.go:139-154)
+解析后的assistant消息，包含模型使用信息：
+```go
+type AssistantMessage struct {
+    Model   string // 模型名称，如 "glm-4.6"
+    Content []struct {
+        Type string // "text"
+        Text string
+    }
+    Usage struct {
+        InputTokens          int // 输入token数
+        OutputTokens         int // 输出token数
+        CacheReadInputTokens int // 缓存读取的token数
+    }
+}
+```
+
+### ProjectAggregate (parser.go:108-122)
+一次遍历获取的所有统计数据聚合：
+```go
+type ProjectAggregate struct {
+    ProjectStats      map[string]*ProjectStatItem // 项目统计
+    DailyActivity     map[string]int              // 每日活动（日期 -> 消息数）
+    HourlyCounts      [24]int                     // 24小时统计
+    WeekdayData       [7]WeekdayItem              // 星期统计（0=周一）
+    ModelUsage        map[string]*ModelUsageItem  // 模型使用统计
+    // ... 还有输出格式字段
+}
+```
+
+## Performance Considerations
+
+### 当前性能指标（72核CPU，2.2GB数据）
+- 最近7天: history.jsonl ~0.05s, debug日志 ~5.22s
+- 全部数据: history.jsonl ~0.05s, debug日志 ~4.96s
+
+### 性能优化要点
+1. **批量处理** - history.jsonl使用1000条/批减少channel开销
+2. **本地聚合** - 每个worker先本地聚合，最后合并减少锁竞争
+3. **预过滤** - debug日志在解析前根据文件时间过滤
+4. **大缓冲区** - debug文件扫描使用64KB-1MB缓冲区
+5. **一次遍历** - `ParseProjectsConcurrentOnce` 避免重复读取文件
+
+### 性能瓶颈识别
+- 使用 `make bench` 运行性能测试
+- `benchmark_main.go` 提供了基准测试框架
+- 主要瓶颈通常在debug日志解析（文件数量多，~2848个文件）
+
+## Roadmap & Future Work
+
+详见 `docs/dashboard_roadmap.md`，主要扩展方向：
+
+**Phase 2: 核心扩展**（已部分实现）
+- ✅ 项目活跃度排名 - `ParseProjectStatsWithFilter`
+- ✅ 模型使用统计 - `ParseModelUsageFromProjects`
+- ✅ 会话统计 - `ParseSessionStatsWithFilter`
+- ✅ 星期分布统计 - `ParseProjectStatsByWeekday`
+- ✅ 工作时段分析 - `ParseWorkHoursStats`
+
+**Phase 3: 增强功能**
+- Agent使用统计 - 需解析history.jsonl中的agent调用记录
+- 工具调用密度分析 - toolCallCount/messageCount比率
+- 活动峰值/低谷分析
+
+**Phase 4: 高级功能**
+- Shell命令统计 - 解析shell-snapshots/目录
+- Token效率分析 - 基于dailyModelTokens数据
