@@ -20,3 +20,5 @@ cc-dashboard
 .idea/
 *.swp
 *.swo
+
+vendor/

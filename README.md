@@ -205,7 +205,7 @@ dashboard/
 │   ├── parser.go            # 数据解析（支持过滤）
 │   ├── charts.go            # 图表生成
 │   ├── config.go            # 配置管理
-│   ├── benchmark.go         # 性能测试工具
+│   ├── benchmark_main.go    # 性能测试工具
 │   ├── session_stats_test.go # 会话统计测试
 │   └── static/
 │       └── app.js           # 前端交互（AJAX 加载）

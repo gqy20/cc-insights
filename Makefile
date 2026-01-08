@@ -72,13 +72,13 @@ test:
 # 性能测试
 bench:
 	@echo "🔍 性能测试 (最近7天)..."
-	@go run ./internal/benchmark.go ./internal/config.go ./internal/filter.go ./internal/parser.go ./internal/concurrent.go -data ../data
+	@go run -tags !prod ./cmd/dashboard/benchmark_main.go -data ../data
 
 # 性能测试（全部数据）
 bench-all:
 	@echo "🔍 性能测试 (全部数据)..."
-	@sed 's/Range7Days/RangeAll/' ./internal/benchmark.go | \
-		go run - ./internal/config.go ./internal/filter.go ./internal/parser.go ./internal/concurrent.go -data ../data
+	@sed 's/Range7Days/RangeAll/' ./cmd/dashboard/benchmark_main.go | \
+		go run -tags !prod - -data ../data
 
 # 安装 UPX（Ubuntu/Debian）
 install-upx:

@@ -31,11 +31,9 @@ repos:
       # Module management
       - id: go-mod-tidy-repo
 
-      # Static analysis (repo-based to avoid cross-file issues)
-      - id: go-vet-repo-pkg
-
-      # Build check (repo-level)
-      - id: go-build-repo-pkg
+      # Note: go-vet-repo-pkg and go-build-repo-pkg disabled due to
+      # pre-commit environment limitations with Go module cache.
+      # Use `make build` and `make test` for full build verification.
 
       # Testing (repo-level, optional - can be slow)
       # - id: go-test-repo-pkg

@@ -59,7 +59,7 @@ make release            # 动态链接版本
 | `concurrent.go` | 并发解析优化（Producer-Consumer、Worker Pool） |
 | `api.go` | API接口（/api/data、/api/stats） |
 | `charts.go` | go-echarts图表生成 |
-| `benchmark.go` | 性能测试工具 |
+| `benchmark_main.go` | 性能测试工具 |
 
 ### 数据流
 
@@ -186,7 +186,7 @@ HTML硬编码在 `main.go` 的handler中（`indexHandler`、`dashboardPageHandle
 - 并发解析（Worker Pool、信号量控制）
 - 预过滤（文件时间过滤）
 
-如需进一步优化，参考 `benchmark.go` 进行性能测试。
+如需进一步优化，参考 `benchmark_main.go` 进行性能测试。
 
 ## Testing
 

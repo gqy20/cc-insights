@@ -146,8 +146,92 @@ func dashboardPageHandler(w http.ResponseWriter, r *http.Request) {
         .main-content h1 { font-size: 24px; margin-bottom: 20px; color: #2c3e50; }
         .charts-container { display: flex; flex-direction: column; gap: 30px; }
         .chart-wrapper { background: white; border-radius: 8px; padding: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-        .loading { text-align: center; padding: 40px; color: #95a5a6; }
         .error { background: #e74c3c; color: white; padding: 15px; border-radius: 6px; margin-bottom: 20px; }
+
+        /* 加载动画容器 */
+        .loading { text-align: center; padding: 60px 40px; }
+        .loading-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 20px;
+        }
+
+        /* 旋转加载器 */
+        .spinner {
+            width: 50px;
+            height: 50px;
+            border: 4px solid #e0e0e0;
+            border-top: 4px solid #3498db;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* 加载文本 */
+        .loading-text {
+            font-size: 16px;
+            color: #7f8c8d;
+            font-weight: 500;
+        }
+
+        /* 进度信息 */
+        .loading-progress {
+            font-size: 13px;
+            color: #95a5a6;
+            max-width: 300px;
+            line-height: 1.6;
+        }
+
+        /* 预估时间 */
+        .loading-eta {
+            font-size: 12px;
+            color: #bdc3c7;
+            padding: 8px 16px;
+            background: #f8f9fa;
+            border-radius: 20px;
+            margin-top: 10px;
+        }
+
+        /* 趣味提示 */
+        .loading-tip {
+            font-size: 13px;
+            color: #3498db;
+            font-style: italic;
+            animation: fadeInOut 3s ease-in-out infinite;
+        }
+
+        @keyframes fadeInOut {
+            0%, 100% { opacity: 0.6; }
+            50% { opacity: 1; }
+        }
+
+        /* 进度条样式 */
+        .progress-bar {
+            width: 200px;
+            height: 4px;
+            background: #e0e0e0;
+            border-radius: 2px;
+            overflow: hidden;
+            margin-top: 10px;
+        }
+
+        .progress-bar-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #3498db, #2ecc71);
+            border-radius: 2px;
+            animation: progress 2s ease-in-out infinite;
+            width: 60%;
+        }
+
+        @keyframes progress {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(400%); }
+        }
     </style>
 </head>
 <body>
@@ -179,7 +263,18 @@ func dashboardPageHandler(w http.ResponseWriter, r *http.Request) {
         <main class="main-content">
             <h1>📊 Claude Code Dashboard</h1>
             <div id="errorMessage"></div>
-            <div id="loadingIndicator" class="loading">正在加载数据</div>
+            <div id="loadingIndicator" class="loading">
+                <div class="loading-container">
+                    <div class="spinner"></div>
+                    <div class="loading-text">正在加载数据</div>
+                    <div class="progress-bar">
+                        <div class="progress-bar-fill"></div>
+                    </div>
+                    <div class="loading-progress" id="loadingProgress">正在读取数据文件...</div>
+                    <div class="loading-eta" id="loadingEta">预计需要 2-3 秒</div>
+                    <div class="loading-tip" id="loadingTip">☕ 顺便喝口水吧~</div>
+                </div>
+            </div>
             <div id="chartsContainer" class="charts-container" style="display:none;"></div>
         </main>
     </div>
@@ -223,10 +318,10 @@ func statsAPIHandler(w http.ResponseWriter, r *http.Request) {
 		},
 		"model_usage": %s
 	}`,
-	 toJSON(cmdStats),
-	 toJSON([]string{"2025-12-31", "2026-01-01", "2026-01-02", "2026-01-03", "2026-01-04", "2026-01-05", "2026-01-06"}),
-	 toJSON(counts),
-	 toJSON(cache.ModelUsage))
+		toJSON(cmdStats),
+		toJSON([]string{"2025-12-31", "2026-01-01", "2026-01-02", "2026-01-03", "2026-01-04", "2026-01-05", "2026-01-06"}),
+		toJSON(counts),
+		toJSON(cache.ModelUsage))
 }
 
 // reloadHandler 重新加载数据

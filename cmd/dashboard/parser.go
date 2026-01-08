@@ -24,17 +24,17 @@ type HistoryRecord struct {
 
 // DailyActivity 每日活动统计
 type DailyActivity struct {
-	Date          string            `json:"date"`
-	MessageCount  int               `json:"messageCount"`
-	SessionCount  int               `json:"sessionCount"`
-	ToolCallCount int               `json:"toolCallCount"`
+	Date          string `json:"date"`
+	MessageCount  int    `json:"messageCount"`
+	SessionCount  int    `json:"sessionCount"`
+	ToolCallCount int    `json:"toolCallCount"`
 }
 
 // StatsCache stats-cache.json 结构
 type StatsCache struct {
-	DailyActivity  []DailyActivity            `json:"dailyActivity"`
+	DailyActivity    []DailyActivity          `json:"dailyActivity"`
 	DailyModelTokens []map[string]interface{} `json:"dailyModelTokens"`
-	ModelUsage     map[string]struct {
+	ModelUsage       map[string]struct {
 		InputTokens  int `json:"inputTokens"`
 		OutputTokens int `json:"outputTokens"`
 	} `json:"modelUsage"`

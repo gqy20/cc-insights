@@ -15,20 +15,20 @@ type APIResponse struct {
 
 // DashboardData Dashboard 数据
 type DashboardData struct {
-	Timestamp       string                     `json:"timestamp"`
-	TimeRange       TimeRangeInfo              `json:"time_range"`
-	Commands        []CommandStats             `json:"commands"`
-	HourlyCounts    map[string]int             `json:"hourly_counts"`
-	DailyTrend      DailyTrendData             `json:"daily_trend"`
-	MCPTools        []MCPToolStats             `json:"mcp_tools"`
-	Sessions        *SessionStats              `json:"sessions"`
+	Timestamp    string         `json:"timestamp"`
+	TimeRange    TimeRangeInfo  `json:"time_range"`
+	Commands     []CommandStats `json:"commands"`
+	HourlyCounts map[string]int `json:"hourly_counts"`
+	DailyTrend   DailyTrendData `json:"daily_trend"`
+	MCPTools     []MCPToolStats `json:"mcp_tools"`
+	Sessions     *SessionStats  `json:"sessions"`
 }
 
 // TimeRangeInfo 时间范围信息
 type TimeRangeInfo struct {
-	Preset  string `json:"preset"`
-	Start   string `json:"start,omitempty"`
-	End     string `json:"end,omitempty"`
+	Preset string `json:"preset"`
+	Start  string `json:"start,omitempty"`
+	End    string `json:"end,omitempty"`
 }
 
 // DailyTrendData 每日趋势数据

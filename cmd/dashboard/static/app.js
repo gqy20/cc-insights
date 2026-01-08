@@ -1,6 +1,47 @@
 // 当前时间范围
 let currentPreset = 'all';
 
+// 趣味加载文案
+const loadingTips = [
+    "☕ 顺便喝口水吧~",
+    "📊 正在整理您的数据碎片...",
+    "🤖 正在向 Claude 询问您的使用习惯...",
+    "⏳ 数据有点多，给我几秒钟...",
+    "🎯 稍安勿躁，精彩即将呈现",
+    "💡 您的每一次使用都被记录了下来",
+    "🚀 让我们一起看看您的生产力",
+    "📈 数据正在转化为洞察...",
+    "🌟 感谢您使用 Claude Code",
+    "🎨 准备绘制您的使用图表"
+];
+
+// 加载阶段提示
+const loadingStages = [
+    "正在读取数据文件...",
+    "正在解析历史记录...",
+    "正在分析 MCP 工具调用...",
+    "正在生成图表...",
+    "即将完成..."
+];
+
+// 获取随机趣味文案
+function getRandomTip() {
+    return loadingTips[Math.floor(Math.random() * loadingTips.length)];
+}
+
+// 获取预估时间（秒）
+function getEstimatedTime(preset) {
+    const estimates = {
+        '24h': { min: 1, max: 2 },
+        '7d': { min: 2, max: 3 },
+        '30d': { min: 5, max: 8 },
+        '90d': { min: 10, max: 15 },
+        'all': { min: 10, max: 20 },
+        'custom': { min: 3, max: 6 }
+    };
+    return estimates[preset] || estimates['all'];
+}
+
 // 初始化
 document.addEventListener('DOMContentLoaded', function() {
     setupEventListeners();
@@ -61,24 +102,55 @@ function applyCustomRange() {
 
 // 加载数据
 async function loadData(params) {
-    showLoading(true);
+    // 从参数中解析预设
+    const urlParams = new URLSearchParams(params);
+    const preset = urlParams.get('preset') || 'all';
+
+    showLoading(true, preset);
     hideError();
+
+    // 分阶段更新加载提示
+    let stageIndex = 0;
+    const stageInterval = setInterval(() => {
+        if (stageIndex < loadingStages.length) {
+            updateLoadingProgress(loadingStages[stageIndex]);
+            stageIndex++;
+        }
+    }, 800); // 每800毫秒更新一次阶段
 
     try {
         const response = await fetch(`/api/data?${params}`);
         const result = await response.json();
 
+        // 停止阶段更新
+        clearInterval(stageInterval);
+
+        // 显示最后阶段
+        updateLoadingProgress(loadingStages[loadingStages.length - 1]);
+
         if (!result.success) {
             throw new Error(result.error);
         }
+
+        // 短暂延迟以显示"即将完成"
+        await new Promise(resolve => setTimeout(resolve, 300));
 
         updateStatsInfo(result.data);
         renderCharts(result.data);
 
     } catch (error) {
+        clearInterval(stageInterval);
         showError('加载数据失败: ' + error.message);
     } finally {
         showLoading(false);
+    }
+}
+
+// 更新加载进度文本
+function updateLoadingProgress(text) {
+    const progressEl = document.getElementById('loadingProgress');
+    if (progressEl) {
+        progressEl.textContent = text;
     }
 }
 
@@ -343,9 +415,35 @@ function initMCPToolsChart(tools) {
 }
 
 // 显示/隐藏加载状态
-function showLoading(show) {
-    document.getElementById('loadingIndicator').style.display = show ? 'block' : 'none';
-    document.getElementById('chartsContainer').style.display = show ? 'none' : 'flex';
+function showLoading(show, preset = 'all') {
+    const loadingIndicator = document.getElementById('loadingIndicator');
+    const chartsContainer = document.getElementById('chartsContainer');
+
+    if (show) {
+        // 显示加载动画
+        loadingIndicator.style.display = 'block';
+        chartsContainer.style.display = 'none';
+
+        // 设置预估时间
+        const eta = getEstimatedTime(preset);
+        const etaEl = document.getElementById('loadingEta');
+        if (etaEl) {
+            etaEl.textContent = `预计需要 ${eta.min}-${eta.max} 秒`;
+        }
+
+        // 设置随机趣味文案
+        const tipEl = document.getElementById('loadingTip');
+        if (tipEl) {
+            tipEl.textContent = getRandomTip();
+        }
+
+        // 重置进度文本
+        updateLoadingProgress(loadingStages[0]);
+    } else {
+        // 隐藏加载动画
+        loadingIndicator.style.display = 'none';
+        chartsContainer.style.display = 'flex';
+    }
 }
 
 // 显示错误
