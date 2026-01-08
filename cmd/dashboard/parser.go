@@ -370,34 +370,26 @@ type SessionStats struct {
 	DailySessionMap map[string]int `json:"daily_session_map"`
 }
 
-// ParseSessionStats 解析会话统计（全部数据）
-func ParseSessionStats() (*SessionStats, error) {
-	cache, err := ParseStatsCache()
-	if err != nil {
-		return nil, err
-	}
-
-	if len(cache.DailyActivity) == 0 {
+// buildSessionStatsFromActivity 从 DailyActivity 构建 SessionStats（辅助函数）
+func buildSessionStatsFromActivity(activity []DailyActivity) *SessionStats {
+	if len(activity) == 0 {
 		return &SessionStats{
 			DailySessionMap: make(map[string]int),
-		}, nil
+		}
 	}
 
-	// 计算总会话数
+	// 计算总会话数和每日映射
 	totalSessions := 0
-	dailySessionMap := make(map[string]int)
+	dailySessionMap := make(map[string]int, len(activity))
 
-	for _, day := range cache.DailyActivity {
+	for _, day := range activity {
 		totalSessions += day.SessionCount
 		dailySessionMap[day.Date] = day.SessionCount
 	}
 
 	// 找峰值和谷值
-	var peakDay, valleyDay DailyActivity
-	peakDay = cache.DailyActivity[0]
-	valleyDay = cache.DailyActivity[0]
-
-	for _, day := range cache.DailyActivity {
+	peakDay, valleyDay := activity[0], activity[0]
+	for _, day := range activity {
 		if day.SessionCount > peakDay.SessionCount {
 			peakDay = day
 		}
@@ -413,7 +405,16 @@ func ParseSessionStats() (*SessionStats, error) {
 		ValleyDate:      valleyDay.Date,
 		ValleyCount:     valleyDay.SessionCount,
 		DailySessionMap: dailySessionMap,
-	}, nil
+	}
+}
+
+// ParseSessionStats 解析会话统计（全部数据）
+func ParseSessionStats() (*SessionStats, error) {
+	cache, err := ParseStatsCache()
+	if err != nil {
+		return nil, err
+	}
+	return buildSessionStatsFromActivity(cache.DailyActivity), nil
 }
 
 // ParseSessionStatsWithFilter 带时间过滤解析会话统计
@@ -422,44 +423,7 @@ func ParseSessionStatsWithFilter(tf TimeFilter) (*SessionStats, error) {
 	if err != nil {
 		return nil, err
 	}
-
-	if len(cache.DailyActivity) == 0 {
-		return &SessionStats{
-			DailySessionMap: make(map[string]int),
-		}, nil
-	}
-
-	// 计算总会话数
-	totalSessions := 0
-	dailySessionMap := make(map[string]int)
-
-	for _, day := range cache.DailyActivity {
-		totalSessions += day.SessionCount
-		dailySessionMap[day.Date] = day.SessionCount
-	}
-
-	// 找峰值和谷值
-	var peakDay, valleyDay DailyActivity
-	peakDay = cache.DailyActivity[0]
-	valleyDay = cache.DailyActivity[0]
-
-	for _, day := range cache.DailyActivity {
-		if day.SessionCount > peakDay.SessionCount {
-			peakDay = day
-		}
-		if day.SessionCount < valleyDay.SessionCount {
-			valleyDay = day
-		}
-	}
-
-	return &SessionStats{
-		TotalSessions:   totalSessions,
-		PeakDate:        peakDay.Date,
-		PeakCount:       peakDay.SessionCount,
-		ValleyDate:      valleyDay.Date,
-		ValleyCount:     valleyDay.SessionCount,
-		DailySessionMap: dailySessionMap,
-	}, nil
+	return buildSessionStatsFromActivity(cache.DailyActivity), nil
 }
 
 // GetDailySessionTrend 获取每日会话趋势
