@@ -21,27 +21,87 @@ type CacheBuilder struct {
 func (cb *CacheBuilder) BuildFullCache() error {
 	fmt.Println("🔨 开始构建完整缓存...")
 
+	// 创建时间过滤器（全部数据）
+	tf := TimeFilter{Start: nil, End: nil}
+
+	// 使用一次遍历获取所有统计数据
+	aggregate, err := ParseProjectsConcurrentOnce(tf)
+	if err != nil {
+		return fmt.Errorf("解析项目数据失败: %w", err)
+	}
+
+	// 解析 debug 日志获取 MCP 工具统计
+	mcpStats, err := ParseDebugLogsConcurrent(tf)
+	if err != nil {
+		return fmt.Errorf("解析 debug 日志失败: %w", err)
+	}
+
+	// 获取会话统计
+	sessionStats, err := ParseSessionStatsWithFilter(tf)
+	if err != nil {
+		return fmt.Errorf("解析会话统计失败: %w", err)
+	}
+
+	// 计算总消息数（从每日活动汇总）
+	totalMessages := 0
+	for _, count := range aggregate.DailyActivity {
+		totalMessages += count
+	}
+
 	// 创建缓存结构
 	cache := &CacheFile{
-		Version:    "1.0",
-		LastUpdate: time.Now(),
-		TimeRange:  TimeRange{},
-		DailyStats: make(map[string]*DayAggregate),
+		Version:       "1.0",
+		LastUpdate:    time.Now(),
+		TimeRange:     TimeRange{},
+		DailyStats:    make(map[string]*DayAggregate),
+		TotalMessages: totalMessages,
+		TotalSessions: sessionStats.TotalSessions,
+		ProjectStats:  make(map[string]*ProjectStatItem),
+		ModelUsage:    make(map[string]*ModelUsageItem),
+		MCPToolStats:  make(map[string]int),
+	}
+	// 填充 HourlyStats
+	for i := 0; i < 24; i++ {
+		count := aggregate.HourlyCounts[i]
+		if count > 0 {
+			cache.HourlyStats[i] = &HourAggregate{
+				Hour:         i,
+				MessageCount: count,
+				SessionCount: 0,
+			}
+		}
 	}
 
-	// 1. 解析 history.jsonl
-	if err := cb.buildFromHistory(cache); err != nil {
-		return fmt.Errorf("解析 history.jsonl 失败: %w", err)
+	// 填充 WeekdayStats
+	for i := 0; i < 7; i++ {
+		cache.WeekdayStats[i] = &aggregate.WeekdayStats.WeekdayData[i]
 	}
 
-	// 2. 解析 projects/*.jsonl
-	if err := cb.buildFromProjects(cache); err != nil {
-		return fmt.Errorf("解析 projects 失败: %w", err)
+	// 填充 DailyStats
+	for _, day := range aggregate.DailyActivityList {
+		cache.DailyStats[day.Date] = &DayAggregate{
+			Date:          day.Date,
+			MessageCount:  day.MessageCount,
+			SessionCount:  0, // 需要从会话统计中获取
+			ToolCallCount: 0,
+			HourlyCounts:  [24]int{},
+		}
 	}
 
-	// 3. 解析 debug 日志
-	if err := cb.buildFromDebugLogs(cache); err != nil {
-		return fmt.Errorf("解析 debug 日志失败: %w", err)
+	// 填充 ProjectStats
+	for _, proj := range aggregate.Projects {
+		cache.ProjectStats[proj.Project] = &proj
+	}
+
+	// 填充 ModelUsage
+	for _, mu := range aggregate.ModelUsageList {
+		cache.ModelUsage[mu.Model] = &mu
+	}
+
+	// 填充 MCPToolStats
+	for _, tool := range mcpStats {
+		key := tool.Server + "::" + tool.Tool
+		cache.MCPToolStats[key] = tool.Count
 	}
 
 	// 4. 保存缓存

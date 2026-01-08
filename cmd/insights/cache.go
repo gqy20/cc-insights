@@ -131,7 +131,10 @@ func (cf *CacheFile) QueryByTimeRange(start, end time.Time) *CacheFile {
 			End:   end,
 		},
 		DailyStats:   make(map[string]*DayAggregate),
+		HourlyStats:  [24]*HourAggregate{},
 		ProjectStats: make(map[string]*ProjectStatItem),
+		ModelUsage:   make(map[string]*ModelUsageItem),
+		MCPToolStats: make(map[string]int),
 	}
 
 	queryRange := TimeRange{Start: start, End: end}
@@ -156,10 +159,36 @@ func (cf *CacheFile) QueryByTimeRange(start, end time.Time) *CacheFile {
 		}
 	}
 
+	// 复制 HourlyStats（不依赖时间范围）
+	for i, hs := range cf.HourlyStats {
+		if hs != nil {
+			hsCopy := *hs
+			result.HourlyStats[i] = &hsCopy
+		}
+	}
+
+	// 复制 WeekdayStats（不依赖时间范围）
+	for i, ws := range cf.WeekdayStats {
+		if ws != nil {
+			result.WeekdayStats[i] = ws
+		}
+	}
+
 	// 复制全局统计（不依赖时间范围）
 	for proj, stats := range cf.ProjectStats {
 		projCopy := *stats
 		result.ProjectStats[proj] = &projCopy
+	}
+
+	// 复制 ModelUsage（不依赖时间范围）
+	for model, mu := range cf.ModelUsage {
+		muCopy := *mu
+		result.ModelUsage[model] = &muCopy
+	}
+
+	// 复制 MCPToolStats（不依赖时间范围）
+	for tool, count := range cf.MCPToolStats {
+		result.MCPToolStats[tool] = count
 	}
 
 	return result

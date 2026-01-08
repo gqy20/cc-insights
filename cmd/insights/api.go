@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
+	"strings"
 	"time"
 )
 
@@ -70,32 +72,173 @@ func handleDataAPI(w http.ResponseWriter, r *http.Request) {
 		tf = TimeFilter{Start: nil, End: nil}
 	}
 
-	// 获取数据（使用优化的并发版本）
-	cmdStats, _, err := ParseHistoryConcurrent(tf)
-	if err != nil {
-		sendError(w, "解析历史数据失败: "+err.Error())
-		return
+	var data *DashboardData
+
+	// 优先使用缓存
+	if globalCache != nil {
+		data, err = buildDataFromCache(tf, preset)
+		if err != nil {
+			// 缓存读取失败，降级到实时解析
+			fmt.Fprintf(os.Stderr, "缓存读取失败，降级到实时解析: %v\n", err)
+			data, err = buildDataFromParsing(tf, preset)
+			if err != nil {
+				sendError(w, err.Error())
+				return
+			}
+		}
+	} else {
+		// 无缓存，使用实时解析
+		data, err = buildDataFromParsing(tf, preset)
+		if err != nil {
+			sendError(w, err.Error())
+			return
+		}
 	}
 
-	// 使用一次遍历获取所有项目相关统计（性能优化）
+	sendJSON(w, APIResponse{
+		Success: true,
+		Data:    data,
+	})
+}
+
+// buildDataFromCache 从缓存数据构建 API 响应
+func buildDataFromCache(tf TimeFilter, preset string) (*DashboardData, error) {
+	// 确定查询时间范围
+	var start, end time.Time
+	if tf.Start != nil {
+		start = *tf.Start
+	}
+	if tf.End != nil {
+		end = *tf.End
+	}
+
+	// 从缓存查询时间范围数据
+	cached := globalCache.QueryByTimeRange(start, end)
+
+	// 构建 CommandStats（缓存中没有，需要实时解析）
+	cmdStats, _, err := ParseHistoryConcurrent(tf)
+	if err != nil {
+		return nil, fmt.Errorf("解析命令统计失败: %w", err)
+	}
+
+	// 构建 MCPTools（从缓存中的 MCPToolStats 转换）
+	mcpTools := make([]MCPToolStats, 0, len(cached.MCPToolStats))
+	for key, count := range cached.MCPToolStats {
+		// key 格式: "server::tool"
+		// 需要拆分
+		server := "unknown"
+		tool := key
+		if idx := strings.Index(key, "::"); idx > 0 {
+			server = key[:idx]
+			tool = key[idx+2:]
+		}
+		mcpTools = append(mcpTools, MCPToolStats{
+			Tool:   tool,
+			Server: server,
+			Count:  count,
+		})
+	}
+
+	// 构建每日趋势
+	var dates []string
+	var counts []int
+	for date := range cached.DailyStats {
+		dates = append(dates, date)
+		counts = append(counts, cached.DailyStats[date].MessageCount)
+	}
+	// 按日期排序
+	sortDatesAndCounts(dates, counts, cached.DailyStats)
+
+	// 构建小时统计
+	hourlyCountsMap := make(map[string]int)
+	for hour, aggregate := range cached.HourlyStats {
+		if aggregate != nil {
+			hourKey := fmt.Sprintf("%02d", hour)
+			hourlyCountsMap[hourKey] = aggregate.MessageCount
+		}
+	}
+
+	// 构建项目统计
+	projects := make([]ProjectStatItem, 0, len(cached.ProjectStats))
+	for _, stats := range cached.ProjectStats {
+		projects = append(projects, *stats)
+	}
+	// 按消息数排序
+	sortProjectStats(projects)
+
+	// 构建星期统计
+	weekdayStats := &WeekdayStats{
+		WeekdayData: make([]WeekdayItem, 7),
+	}
+	for i, ws := range cached.WeekdayStats {
+		if ws != nil {
+			weekdayStats.WeekdayData[i] = *ws
+		}
+	}
+
+	// 构建模型使用统计
+	modelUsage := make([]ModelUsageItem, 0, len(cached.ModelUsage))
+	for _, mu := range cached.ModelUsage {
+		modelUsage = append(modelUsage, *mu)
+	}
+
+	// 构建会话统计（从缓存获取基础数据，但需要解析 daily activity 来获取完整统计）
+	// 这里使用简化的会话统计，只包含总会话数
+	sessionStats := &SessionStats{
+		TotalSessions: cached.TotalSessions,
+	}
+
+	// 构建时间范围信息
+	rangeInfo := TimeRangeInfo{Preset: preset}
+	if tf.Start != nil {
+		rangeInfo.Start = tf.Start.Format("2006-01-02")
+	}
+	if tf.End != nil {
+		rangeInfo.End = tf.End.Format("2006-01-02")
+	}
+
+	return &DashboardData{
+		Timestamp:    time.Now().Format("2006-01-02 15:04:05"),
+		TimeRange:    rangeInfo,
+		Commands:     cmdStats,
+		HourlyCounts: hourlyCountsMap,
+		DailyTrend:   DailyTrendData{Dates: dates, Counts: counts},
+		MCPTools:     mcpTools,
+		Sessions:     sessionStats,
+		ProjectStats: &ProjectStatsData{
+			Projects:      projects,
+			TotalMessages: cached.TotalMessages,
+			TotalSessions: cached.TotalSessions,
+		},
+		WeekdayStats: weekdayStats,
+		ModelUsage:   modelUsage,
+	}, nil
+}
+
+// buildDataFromParsing 通过实时解析构建 API 响应
+func buildDataFromParsing(tf TimeFilter, preset string) (*DashboardData, error) {
+	// 获取命令统计
+	cmdStats, _, err := ParseHistoryConcurrent(tf)
+	if err != nil {
+		return nil, fmt.Errorf("解析历史数据失败: %w", err)
+	}
+
+	// 使用一次遍历获取所有项目相关统计
 	aggregate, err := ParseProjectsConcurrentOnce(tf)
 	if err != nil {
-		sendError(w, "解析项目数据失败: "+err.Error())
-		return
+		return nil, fmt.Errorf("解析项目数据失败: %w", err)
 	}
 
 	// 获取debug日志统计
 	toolStats, err := ParseDebugLogsConcurrent(tf)
 	if err != nil {
-		sendError(w, "解析 debug 日志失败: "+err.Error())
-		return
+		return nil, fmt.Errorf("解析 debug 日志失败: %w", err)
 	}
 
 	// 获取会话统计
 	sessionStats, err := ParseSessionStatsWithFilter(tf)
 	if err != nil {
-		sendError(w, "解析会话统计失败: "+err.Error())
-		return
+		return nil, fmt.Errorf("解析会话统计失败: %w", err)
 	}
 
 	// 从聚合数据中提取每日活动趋势
@@ -133,27 +276,45 @@ func handleDataAPI(w http.ResponseWriter, r *http.Request) {
 		projectStatsData.TotalSessions += proj.SessionCount
 	}
 
-	data := DashboardData{
-		Timestamp:    time.Now().Format("2006-01-02 15:04:05"),
-		TimeRange:    rangeInfo,
-		Commands:     cmdStats,
-		HourlyCounts: hourlyCountsMap,
-		DailyTrend: DailyTrendData{
-			Dates:  dates,
-			Counts: counts,
-		},
+	return &DashboardData{
+		Timestamp:      time.Now().Format("2006-01-02 15:04:05"),
+		TimeRange:      rangeInfo,
+		Commands:       cmdStats,
+		HourlyCounts:   hourlyCountsMap,
+		DailyTrend:     DailyTrendData{Dates: dates, Counts: counts},
 		MCPTools:       toolStats,
 		Sessions:       sessionStats,
 		ProjectStats:   projectStatsData,
 		WeekdayStats:   aggregate.WeekdayStats,
 		ModelUsage:     aggregate.ModelUsageList,
 		WorkHoursStats: aggregate.WorkHoursStats,
-	}
+	}, nil
+}
 
-	sendJSON(w, APIResponse{
-		Success: true,
-		Data:    data,
-	})
+// sortDatesAndCounts 按日期排序日期和计数数组
+func sortDatesAndCounts(dates []string, counts []int, dailyStats map[string]*DayAggregate) {
+	// 简单冒泡排序
+	n := len(dates)
+	for i := 0; i < n-1; i++ {
+		for j := 0; j < n-i-1; j++ {
+			if dates[j] > dates[j+1] {
+				dates[j], dates[j+1] = dates[j+1], dates[j]
+				counts[j], counts[j+1] = counts[j+1], counts[j]
+			}
+		}
+	}
+}
+
+// sortProjectStats 按消息数排序项目统计
+func sortProjectStats(projects []ProjectStatItem) {
+	n := len(projects)
+	for i := 0; i < n-1; i++ {
+		for j := 0; j < n-i-1; j++ {
+			if projects[j].MessageCount < projects[j+1].MessageCount {
+				projects[j], projects[j+1] = projects[j+1], projects[j]
+			}
+		}
+	}
 }
 
 // sendJSON 发送 JSON 响应
