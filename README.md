@@ -206,7 +206,7 @@ debug/ 日志:   4.96s
 ```
 dashboard/
 ├── cc-insights              # 可执行文件
-├── cmd/dashboard/
+├── cmd/insights/
 │   ├── main.go              # Web 服务器、路由、embed
 │   ├── api.go               # API 接口（支持时间过滤）
 │   ├── concurrent.go        # 优化的并发处理模块

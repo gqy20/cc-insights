@@ -47,7 +47,7 @@ make release            # 动态链接版本
 
 ### 代码组织
 
-所有代码在 `cmd/dashboard/` 目录下，使用单个 `main` 包（非标准Go项目布局，简化依赖管理）。
+所有代码在 `cmd/insights/` 目录下，使用单个 `main` 包（非标准Go项目布局，简化依赖管理）。
 
 **核心模块：**
 
@@ -129,7 +129,7 @@ staticSub, _ := fs.Sub(staticFS, "static")
 http.Handle("/static/", http.FileServer(http.FS(staticSub)))
 ```
 
-**注意**: `static/` 目录必须在 `cmd/dashboard/` 下，因为 `//go:embed` 路径相对于源文件。
+**注意**: `static/` 目录必须在 `cmd/insights/` 下，因为 `//go:embed` 路径相对于源文件。
 
 ### 数据结构
 
@@ -197,10 +197,10 @@ HTML硬编码在 `main.go` 的handler中（`indexHandler`、`dashboardPageHandle
 make test
 
 # 运行单个测试
-go test -v ./cmd/dashboard -run TestParseHistory
+go test -v ./cmd/insights -run TestParseHistory
 
 # 运行特定测试
-go test -v ./cmd/dashboard -run TestParseProjectsConcurrentOnce
+go test -v ./cmd/insights -run TestParseProjectsConcurrentOnce
 
 # 性能测试
 make bench          # 使用Range7Days
@@ -241,7 +241,7 @@ make release-static         # 多平台静态版本（跨平台发布）
 ### 开发模式运行
 使用 `make run-dev` 可以快速迭代开发，它会使用上级目录的 `data` 目录：
 ```bash
-make run-dev    # 相当于 go run -tags=prod ./cmd/dashboard -data ../data
+make run-dev    # 相当于 go run -tags=prod ./cmd/insights -data ../data
 ```
 
 ### 添加新的统计维度
@@ -256,7 +256,7 @@ make run-dev    # 相当于 go run -tags=prod ./cmd/dashboard -data ../data
 
 ### 代码组织原则
 
-- **单包结构** - 所有代码在 `cmd/dashboard/` 单个 `main` 包中，简化依赖管理
+- **单包结构** - 所有代码在 `cmd/insights/` 单个 `main` 包中，简化依赖管理
 - **文件按职责分离** - 虽然是单包，但按功能模块组织文件
 - **时间过滤统一** - 所有解析函数都接受 `TimeFilter` 参数，在解析时同步过滤
 - **并发优先** - 大量数据解析使用并发模式（Producer-Consumer、Worker Pool、信号量控制）

@@ -1,4 +1,4 @@
-module cc-dashboard
+module cc-insights
 
 go 1.21
 

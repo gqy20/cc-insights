@@ -8,7 +8,7 @@ import (
 
 // TestMain 设置测试环境
 func TestMain(m *testing.M) {
-	// 设置数据目录（从 cmd/dashboard/ 到 data/ 需要向上三级）
+	// 设置数据目录（从 cmd/insights/ 到 data/ 需要向上三级）
 	cfg.DataDir = "../../../data"
 	m.Run()
 }
