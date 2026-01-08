@@ -1,0 +1,50 @@
+# Pre-commit hooks configuration
+# See https://pre-commit.com for more information
+# Install: pip install pre-commit
+# Setup: pre-commit install
+
+repos:
+  # Standard pre-commit hooks (latest: v6.0.0)
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-merge-conflict
+      - id: check-yaml
+      - id: check-added-large-files
+        args: ['--maxkb=1000']
+      - id: detect-private-key
+      - id: mixed-line-ending
+      - id: check-case-conflict
+      - id: check-toml
+
+  # Golang hooks (actively maintained, latest: v1.0.0-rc.4)
+  # Alternative to the archived dnephin/pre-commit-golang
+  - repo: https://github.com/TekWizely/pre-commit-golang
+    rev: v1.0.0-rc.4
+    hooks:
+      # Code formatting
+      - id: go-fmt
+        args: [-s]
+
+      # Import management (install: go install golang.org/x/tools/cmd/goimports@latest)
+      - id: go-imports
+
+      # Module management
+      - id: go-mod-tidy
+
+      # Static analysis
+      - id: go-vet
+      - id: go-build
+
+      # Testing (run before commit)
+      - id: go-test
+
+      # Linting (install: see https://github.com/TekWizely/pre-commit-golang#golangci-lint)
+      - id: golangci-lint
+        args: [--timeout=5m, --config=.golangci.yml]
+
+      # Security scanning (install: go install github.com/securecodewarrior/gosec/v2/cmd/gosec@latest)
+      - id: gosec
+
