@@ -247,3 +247,81 @@ func TestParseWorkHoursStats(t *testing.T) {
 	t.Logf("  工作时段占比: %.1f%%", stats.WorkHoursRatio)
 	t.Logf("  峰值小时: %d点 (%d 次)", stats.PeakHour, stats.PeakHourCount)
 }
+
+// TestParseProjectsConcurrentOnce 测试一次遍历并发解析所有项目统计
+func TestParseProjectsConcurrentOnce(t *testing.T) {
+	// Arrange
+	tf := TimeFilter{Start: nil, End: nil}
+
+	// Act
+	aggregate, err := ParseProjectsConcurrentOnce(tf)
+
+	// Assert
+	if err != nil {
+		t.Fatalf("ParseProjectsConcurrentOnce failed: %v", err)
+	}
+
+	if aggregate == nil {
+		t.Fatal("Expected non-nil aggregate")
+	}
+
+	// 验证项目统计
+	if aggregate.ProjectStats == nil {
+		t.Error("ProjectStats should not be nil")
+	}
+	if len(aggregate.ProjectStats) == 0 {
+		t.Error("Expected at least one project")
+	}
+
+	// 验证星期统计
+	if aggregate.WeekdayData == nil {
+		t.Error("WeekdayData should not be nil")
+	}
+	if len(aggregate.WeekdayData) != 7 {
+		t.Errorf("Expected 7 weekdays, got %d", len(aggregate.WeekdayData))
+	}
+
+	// 验证每日活动
+	if aggregate.DailyActivity == nil {
+		t.Error("DailyActivity should not be nil")
+	}
+
+	// 验证小时统计
+	if aggregate.HourlyCounts == nil {
+		t.Error("HourlyCounts should not be nil")
+	}
+	if len(aggregate.HourlyCounts) != 24 {
+		t.Errorf("Expected 24 hours, got %d", len(aggregate.HourlyCounts))
+	}
+
+	// 验证模型使用
+	if aggregate.ModelUsage == nil {
+		t.Error("ModelUsage should not be nil")
+	}
+
+	// 验证工作时段统计
+	if aggregate.WorkHoursStats == nil {
+		t.Error("WorkHoursStats should not be nil")
+	}
+
+	// 数据一致性检查
+	totalMessages := 0
+	for _, proj := range aggregate.ProjectStats {
+		totalMessages += proj.MessageCount
+	}
+
+	totalFromDaily := 0
+	for _, day := range aggregate.DailyActivity {
+		totalFromDaily += day.MessageCount
+	}
+
+	if totalMessages != totalFromDaily {
+		t.Errorf("数据不一致: 项目总计=%d, 每日总计=%d", totalMessages, totalFromDaily)
+	}
+
+	t.Logf("✅ 一次遍历成功获取所有统计数据:")
+	t.Logf("  项目数: %d", len(aggregate.ProjectStats))
+	t.Logf("  总消息数: %d", totalMessages)
+	t.Logf("  天数: %d", len(aggregate.DailyActivity))
+	t.Logf("  模型数: %d", len(aggregate.ModelUsage))
+}
