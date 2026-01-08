@@ -205,11 +205,19 @@ function renderCharts(data) {
     // 会话统计图
     container.appendChild(createChartDiv('sessionChart', '1200px', '400px'));
 
+    // 项目活跃度排名图
+    container.appendChild(createChartDiv('projectChart', '1200px', '500px'));
+
+    // 星期分布图
+    container.appendChild(createChartDiv('weekdayChart', '1000px', '400px'));
+
     // 初始化 go-echarts 图表
     initDailyTrendChart(data.daily_trend);
     initCommandsChart(data.commands);
     initMCPToolsChart(data.mcp_tools);
     initSessionChart(data.sessions);
+    initProjectChart(data.project_stats);
+    initWeekdayChart(data.weekday_stats);
 
     container.style.display = 'block';
 }
@@ -522,4 +530,142 @@ function initSessionChart(sessionData) {
         `<strong>💡 数据洞察:</strong> 统计期间共创建 <strong>${sessionData.total_sessions.toLocaleString()}</strong> 个会话，` +
         `日均 <strong>${avgSessions.toLocaleString()}</strong> 个。` +
         `峰值日 <strong>${sessionData.peak_date}</strong> 的会话数是谷值日 <strong>${sessionData.valley_date}</strong> 的 <strong>${peakValleyRatio}</strong> 倍。`;
+}
+
+// 初始化项目活跃度排名图
+function initProjectChart(projectData) {
+    if (!projectData || !projectData.projects || projectData.projects.length === 0) {
+        document.getElementById('projectChart-insight').innerHTML =
+            '<strong>💡 数据洞察:</strong> 该时间范围内暂无项目数据';
+        return;
+    }
+
+    const chart = echarts.init(document.getElementById('projectChart'), 'wonderland');
+
+    // 取 Top 15 项目，并简化项目名显示
+    const top15 = projectData.projects.slice(0, 15).map(p => ({
+        name: p.project.split('/').pop() || p.project,
+        value: p.message_count,
+        originalName: p.project
+    }));
+
+    const option = {
+        title: {
+            text: '项目活跃度排名 (Top 15)',
+            subtext: '数据来源: projects/*.jsonl',
+            left: 'center'
+        },
+        tooltip: {
+            trigger: 'axis',
+            axisPointer: {
+                type: 'shadow'
+            },
+            formatter: function(params) {
+                const item = top15[params[0].dataIndex];
+                return `${item.originalName}<br/>消息数: ${item.value.toLocaleString()}`;
+            }
+        },
+        xAxis: {
+            type: 'category',
+            data: top15.map(p => p.name),
+            axisLabel: {
+                interval: 0,
+                rotate: 45
+            }
+        },
+        yAxis: {
+            type: 'value',
+            name: '消息数'
+        },
+        series: [{
+            name: '消息数',
+            type: 'bar',
+            data: top15.map(p => p.value),
+            label: {
+                show: true,
+                position: 'top',
+                formatter: function(v) {
+                    return v.data.toLocaleString();
+                }
+            }
+        }]
+    };
+
+    chart.setOption(option);
+
+    // 生成数据洞察
+    const topProject = top15[0];
+    const topPercent = ((topProject.value / projectData.total_messages) * 100).toFixed(1);
+
+    document.getElementById('projectChart-insight').innerHTML =
+        `<strong>💡 数据洞察:</strong> 统计期间共涉及 <strong>${projectData.projects.length}</strong> 个项目，` +
+        `总计 <strong>${projectData.total_messages.toLocaleString()}</strong> 条消息。` +
+        `最活跃的是 <strong>${topProject.name}</strong>，贡献了 ${topPercent}% 的消息。`;
+}
+
+// 初始化星期分布图
+function initWeekdayChart(weekdayData) {
+    if (!weekdayData || !weekdayData.weekday_data || weekdayData.weekday_data.length === 0) {
+        document.getElementById('weekdayChart-insight').innerHTML =
+            '<strong>💡 数据洞察:</strong> 该时间范围内暂无星期数据';
+        return;
+    }
+
+    const chart = echarts.init(document.getElementById('weekdayChart'), 'wonderland');
+
+    const weekdays = weekdayData.weekday_data;
+    const maxCount = Math.max(...weekdays.map(w => w.message_count));
+    const maxWeekday = weekdays.find(w => w.message_count === maxCount);
+
+    const option = {
+        title: {
+            text: '星期活动分布',
+            subtext: '数据来源: projects/*.jsonl',
+            left: 'center'
+        },
+        tooltip: {
+            trigger: 'axis'
+        },
+        xAxis: {
+            type: 'category',
+            data: weekdays.map(w => w.weekday_name)
+        },
+        yAxis: {
+            type: 'value',
+            name: '消息数'
+        },
+        series: [{
+            name: '消息数',
+            type: 'bar',
+            data: weekdays.map(w => w.message_count),
+            smooth: true,
+            label: {
+                show: true,
+                position: 'top',
+                formatter: function(v) {
+                    return v.data.toLocaleString();
+                }
+            },
+            itemStyle: {
+                color: function(params) {
+                    // 高亮星期天（周末）
+                    const colors = ['#5470c6', '#5470c6', '#5470c6', '#5470c6', '#5470c6', '#91cc75', '#91cc75'];
+                    return colors[params.dataIndex];
+                }
+            }
+        }]
+    };
+
+    chart.setOption(option);
+
+    // 生成数据洞察
+    const totalMessages = weekdays.reduce((sum, w) => sum + w.message_count, 0);
+    const avgMessages = Math.round(totalMessages / 7);
+    const workdayTotal = weekdays.slice(0, 5).reduce((sum, w) => sum + w.message_count, 0);
+    const weekendTotal = weekdays.slice(5).reduce((sum, w) => sum + w.message_count, 0);
+
+    document.getElementById('weekdayChart-insight').innerHTML =
+        `<strong>💡 数据洞察:</strong> 最活跃的是 <strong>${maxWeekday.weekday_name}</strong>（${maxCount.toLocaleString()} 条消息），` +
+        `日均 <strong>${avgMessages.toLocaleString()}</strong> 条。` +
+        `工作日共 <strong>${workdayTotal.toLocaleString()}</strong> 条，周末 <strong>${weekendTotal.toLocaleString()}</strong> 条。`;
 }

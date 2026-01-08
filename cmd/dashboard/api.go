@@ -15,13 +15,15 @@ type APIResponse struct {
 
 // DashboardData Dashboard 数据
 type DashboardData struct {
-	Timestamp    string         `json:"timestamp"`
-	TimeRange    TimeRangeInfo  `json:"time_range"`
-	Commands     []CommandStats `json:"commands"`
-	HourlyCounts map[string]int `json:"hourly_counts"`
-	DailyTrend   DailyTrendData `json:"daily_trend"`
-	MCPTools     []MCPToolStats `json:"mcp_tools"`
-	Sessions     *SessionStats  `json:"sessions"`
+	Timestamp    string            `json:"timestamp"`
+	TimeRange    TimeRangeInfo     `json:"time_range"`
+	Commands     []CommandStats    `json:"commands"`
+	HourlyCounts map[string]int    `json:"hourly_counts"`
+	DailyTrend   DailyTrendData    `json:"daily_trend"`
+	MCPTools     []MCPToolStats    `json:"mcp_tools"`
+	Sessions     *SessionStats     `json:"sessions"`
+	ProjectStats *ProjectStatsData `json:"project_stats,omitempty"`
+	WeekdayStats *WeekdayStats     `json:"weekday_stats,omitempty"`
 }
 
 // TimeRangeInfo 时间范围信息
@@ -91,6 +93,20 @@ func handleDataAPI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// 获取项目统计
+	projectStats, err := ParseProjectStatsWithFilter(tf)
+	if err != nil {
+		sendError(w, "解析项目统计失败: "+err.Error())
+		return
+	}
+
+	// 获取星期统计
+	weekdayStats, err := ParseProjectStatsByWeekday(tf)
+	if err != nil {
+		sendError(w, "解析星期统计失败: "+err.Error())
+		return
+	}
+
 	// 构建每日趋势
 	var dates []string
 	var counts []int
@@ -118,8 +134,10 @@ func handleDataAPI(w http.ResponseWriter, r *http.Request) {
 			Dates:  dates,
 			Counts: counts,
 		},
-		MCPTools: toolStats,
-		Sessions: sessionStats,
+		MCPTools:     toolStats,
+		Sessions:     sessionStats,
+		ProjectStats: projectStats,
+		WeekdayStats: weekdayStats,
 	}
 
 	sendJSON(w, APIResponse{
