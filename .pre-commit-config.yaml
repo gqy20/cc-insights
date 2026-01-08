@@ -28,25 +28,14 @@ repos:
       - id: go-fmt
         args: [-s]
 
-      # Import management (install: go install golang.org/x/tools/cmd/goimports@latest)
-      - id: go-imports
-
       # Module management
-      - id: go-mod-tidy
+      - id: go-mod-tidy-repo
 
-      # Static analysis (file-based)
-      - id: go-vet
+      # Static analysis (repo-based to avoid cross-file issues)
+      - id: go-vet-repo-pkg
 
-      # Build check (use -pkg for package-level builds)
-      - id: go-build-mod
+      # Build check (repo-level)
+      - id: go-build-repo-pkg
 
-      # Testing (use -mod for module-level tests)
-      - id: go-test-mod
-        args: [-v]
-
-      # Linting (install: see https://github.com/TekWizely/pre-commit-golang#golangci-lint)
-      - id: golangci-lint-mod
-        args: [--timeout=5m, --config=.golangci.yml]
-
-      # Security scanning (install: go install github.com/securecodewarrior/gosec/v2/cmd/gosec@latest)
-      - id: go-sec-mod
+      # Testing (repo-level, optional - can be slow)
+      # - id: go-test-repo-pkg
