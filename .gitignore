@@ -1,0 +1,22 @@
+# 编译输出
+cc-dashboard
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.original
+
+# 临时文件
+*.tmp
+*.log
+
+# Go 相关
+*.test
+*.prof
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
