@@ -142,15 +142,19 @@ type AssistantMessage struct {
 	Type    string `json:"type"`
 	Role    string `json:"role"`
 	Model   string `json:"model"`
-	Content []struct {
-		Type string `json:"type"`
-		Text string `json:"text"`
-	} `json:"content"`
+	Content []AssistantContent `json:"content"`
 	Usage struct {
 		InputTokens          int `json:"input_tokens"`
 		OutputTokens         int `json:"output_tokens"`
 		CacheReadInputTokens int `json:"cache_read_input_tokens"`
 	} `json:"usage"`
+}
+
+// AssistantContent 支持多种内容类型（text, thinking）
+type AssistantContent struct {
+	Type     string `json:"type"`              // "text" | "thinking"
+	Text     string `json:"text"`              // text 类型内容
+	Thinking string `json:"thinking,omitempty"` // thinking 类型内容
 }
 
 // MCPToolStats MCP工具统计

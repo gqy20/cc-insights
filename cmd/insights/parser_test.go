@@ -365,12 +365,15 @@ func TestAssistantMessageThinkingType(t *testing.T) {
 		t.Errorf("Expected model 'mimo-v2.5-pro', got '%s'", msg.Model)
 	}
 
-	// Assert: 应该能提取 thinking 内容
+	// Assert: 应该能提取 thinking 内容（通过 Thinking 字段）
 	foundThinking := false
 	foundText := false
 	for _, c := range msg.Content {
-		if c.Type == "thinking" && c.Text != "" {
+		if c.Type == "thinking" && c.Thinking != "" {
 			foundThinking = true
+			if c.Thinking != "让我分析这个问题..." {
+				t.Errorf("Thinking content mismatch, got: %s", c.Thinking)
+			}
 		}
 		if c.Type == "text" && c.Text == "这是回复内容" {
 			foundText = true
@@ -378,11 +381,10 @@ func TestAssistantMessageThinkingType(t *testing.T) {
 	}
 
 	if !foundText {
-		t.Error("❌ FAILED: 无法提取 text 类型内容")
+		t.Error("无法提取 text 类型内容")
 	}
 
-	// 🔴 红阶段: 当前实现无法提取 thinking 内容（预期失败）
 	if !foundThinking {
-		t.Errorf("❌ FAILED: 无法提取 thinking 类型内容 - 这是预期的失败，将在绿阶段修复")
+		t.Error("无法提取 thinking 类型内容")
 	}
 }
