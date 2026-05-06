@@ -115,11 +115,8 @@ func buildDataFromCache(tf TimeFilter, preset string) (*DashboardData, error) {
 	// 从缓存查询时间范围数据
 	cached := globalCache.QueryByTimeRange(start, end)
 
-	// 构建 CommandStats（缓存中没有，需要实时解析）
-	cmdStats, _, err := ParseHistoryConcurrent(tf)
-	if err != nil {
-		return nil, fmt.Errorf("解析命令统计失败: %w", err)
-	}
+	// 构建 CommandStats（缓存中没有，需要实时解析，使用安全包装）
+	cmdStats, _, _ := safeParseHistoryConcurrent(tf)
 
 	// 构建 MCPTools（从缓存中的 MCPToolStats 转换）
 	mcpTools := make([]MCPToolStats, 0, len(cached.MCPToolStats))
@@ -289,35 +286,18 @@ func buildDataFromCache(tf TimeFilter, preset string) (*DashboardData, error) {
 	}, nil
 }
 
-// buildDataFromParsing 通过实时解析构建 API 响应
+// buildDataFromParsing 通过实时解析构建 API 响应（优雅降级版）
+// P0: 任何单个数据源失败不会导致整体失败，返回部分数据
 func buildDataFromParsing(tf TimeFilter, preset string) (*DashboardData, error) {
-	// 获取命令统计
-	cmdStats, _, err := ParseHistoryConcurrent(tf)
-	if err != nil {
-		return nil, fmt.Errorf("解析历史数据失败: %w", err)
-	}
+	// 使用 Safe 包装：每个数据源独立容错，失败时降级为空默认值
+	cmdStats, _, _ := safeParseHistoryConcurrent(tf)
+	aggregate, _ := safeParseProjectsOnce(tf)
+	toolStats, _ := safeParseDebugLogs(tf)
+	sessionStats, _ := safeParseSessionStats(tf)
 
-	// 使用一次遍历获取所有项目相关统计
-	aggregate, err := ParseProjectsConcurrentOnce(tf)
-	if err != nil {
-		return nil, fmt.Errorf("解析项目数据失败: %w", err)
-	}
-
-	// 获取debug日志统计
-	toolStats, err := ParseDebugLogsConcurrent(tf)
-	if err != nil {
-		return nil, fmt.Errorf("解析 debug 日志失败: %w", err)
-	}
-
-	// 获取会话统计
-	sessionStats, err := ParseSessionStatsWithFilter(tf)
-	if err != nil {
-		return nil, fmt.Errorf("解析会话统计失败: %w", err)
-	}
-
-	// 从聚合数据中提取每日活动趋势
-	var dates []string
-	var counts []int
+	// 从聚合数据中提取每日活动趋势（确保非 nil）
+	dates := make([]string, 0)
+	counts := make([]int, 0)
 	for _, day := range aggregate.DailyActivityList {
 		dates = append(dates, day.Date)
 		counts = append(counts, day.MessageCount)
@@ -405,24 +385,63 @@ func sendError(w http.ResponseWriter, message string) {
 	})
 }
 
-// === P0: 优雅降级 - Safe Parse 包装函数（桩，将在绿阶段实现）===
+// === P0: 优雅降级 - Safe Parse 容错包装函数 ===
+
+// emptyProjectAggregate 返回安全的空 ProjectAggregate
+func emptyProjectAggregate() *ProjectAggregate {
+	agg := &ProjectAggregate{
+		ProjectStats:  make(map[string]*ProjectStatItem),
+		DailyActivity: make(map[string]int),
+		ModelUsage:    make(map[string]*ModelUsageItem),
+		HourlyCounts:  [24]int{},
+	}
+	weekdayNames := []string{"周一", "周二", "周三", "周四", "周五", "周六", "周日"}
+	for i := 0; i < 7; i++ {
+		agg.WeekdayData[i] = WeekdayItem{Weekday: i, WeekdayName: weekdayNames[i]}
+	}
+	agg.finalize()
+	return agg
+}
 
 // safeParseHistoryConcurrent 安全解析 history（容错包装）
 func safeParseHistoryConcurrent(tf TimeFilter) ([]CommandStats, map[string]int, error) {
-	return ParseHistoryConcurrent(tf)
+	cmdStats, hourlyCounts, err := ParseHistoryConcurrent(tf)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[降级] ParseHistoryConcurrent 失败(使用空结果): %v\n", err)
+		return []CommandStats{}, make(map[string]int), nil
+	}
+	return cmdStats, hourlyCounts, nil
 }
 
 // safeParseProjectsOnce 安全解析项目数据（容错包装）
 func safeParseProjectsOnce(tf TimeFilter) (*ProjectAggregate, error) {
-	return ParseProjectsConcurrentOnce(tf)
+	agg, err := ParseProjectsConcurrentOnce(tf)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[降级] ParseProjectsConcurrentOnce 失败(使用空结果): %v\n", err)
+		return emptyProjectAggregate(), nil
+	}
+	return agg, nil
 }
 
 // safeParseDebugLogs 安全解析 debug 日志（容错包装）
 func safeParseDebugLogs(tf TimeFilter) ([]MCPToolStats, error) {
-	return ParseDebugLogsConcurrent(tf)
+	tools, err := ParseDebugLogsConcurrent(tf)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[降级] ParseDebugLogsConcurrent 失败(使用空结果): %v\n", err)
+		return []MCPToolStats{}, nil
+	}
+	return tools, nil
 }
 
 // safeParseSessionStats 安全解析会话统计（容错包装）
 func safeParseSessionStats(tf TimeFilter) (*SessionStats, error) {
-	return ParseSessionStatsWithFilter(tf)
+	stats, err := ParseSessionStatsWithFilter(tf)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[降级] ParseSessionStatsWithFilter 失败(使用空结果): %v\n", err)
+		return &SessionStats{
+			TotalSessions:   0,
+			DailySessionMap: make(map[string]int),
+		}, nil
+	}
+	return stats, nil
 }
