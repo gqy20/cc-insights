@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"strconv"
 	"testing"
 	"time"
@@ -321,4 +322,67 @@ func TestParseProjectsConcurrentOnce(t *testing.T) {
 	t.Logf("  总消息数: %d", totalMessages)
 	t.Logf("  天数: %d", len(aggregate.DailyActivityList))
 	t.Logf("  模型数: %d", len(aggregate.ModelUsageList))
+}
+
+// TestAssistantMessageThinkingType 测试 AssistantMessage 支持 thinking 类型内容
+// 实际 Claude Code 数据中 assistant 消息的 content 包含 thinking 类型
+func TestAssistantMessageThinkingType(t *testing.T) {
+	// Arrange: 模拟实际数据中的 thinking 类型 JSON
+	thinkingJSON := `{
+		"id": "msg_test",
+		"type": "message",
+		"role": "assistant",
+		"model": "mimo-v2.5-pro",
+		"content": [
+			{
+				"type": "thinking",
+				"thinking": "让我分析这个问题...",
+				"signature": ""
+			},
+			{
+				"type": "text",
+				"text": "这是回复内容"
+			}
+		],
+		"usage": {
+			"input_tokens": 100,
+			"output_tokens": 50,
+			"cache_read_input_tokens": 0
+		}
+	}`
+
+	// Act: 解析 JSON
+	var msg AssistantMessage
+	err := json.Unmarshal([]byte(thinkingJSON), &msg)
+
+	// Assert: 解析不应出错
+	if err != nil {
+		t.Fatalf("Failed to parse assistant message: %v", err)
+	}
+
+	// Assert: 应该能识别模型
+	if msg.Model != "mimo-v2.5-pro" {
+		t.Errorf("Expected model 'mimo-v2.5-pro', got '%s'", msg.Model)
+	}
+
+	// Assert: 应该能提取 thinking 内容
+	foundThinking := false
+	foundText := false
+	for _, c := range msg.Content {
+		if c.Type == "thinking" && c.Text != "" {
+			foundThinking = true
+		}
+		if c.Type == "text" && c.Text == "这是回复内容" {
+			foundText = true
+		}
+	}
+
+	if !foundText {
+		t.Error("❌ FAILED: 无法提取 text 类型内容")
+	}
+
+	// 🔴 红阶段: 当前实现无法提取 thinking 内容（预期失败）
+	if !foundThinking {
+		t.Errorf("❌ FAILED: 无法提取 thinking 类型内容 - 这是预期的失败，将在绿阶段修复")
+	}
 }
