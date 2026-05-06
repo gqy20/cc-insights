@@ -2,257 +2,26 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
 	"testing"
-	"time"
 )
 
-// TestParseProjectStats 测试项目统计解析功能
-func TestParseProjectStats(t *testing.T) {
-	// Arrange: 创建测试数据
-	tf := TimeFilter{Start: nil, End: nil}
-
-	// Act: 执行解析
-	stats, err := ParseProjectStatsWithFilter(tf)
-
-	// Assert: 验证结果
-	if err != nil {
-		t.Fatalf("ParseProjectStatsWithFilter failed: %v", err)
-	}
-
-	if stats == nil {
-		t.Fatal("Expected non-nil stats")
-	}
-
-	// 验证有数据
-	if len(stats.Projects) == 0 {
-		t.Log("Warning: No project stats found (may be expected if no data exists)")
-	}
-
-	// 验证数据结构
-	for _, proj := range stats.Projects {
-		if proj.Project == "" {
-			t.Error("Project name should not be empty")
-		}
-		if proj.SessionCount < 0 {
-			t.Errorf("SessionCount should be >= 0, got %d", proj.SessionCount)
-		}
-		if proj.MessageCount < 0 {
-			t.Errorf("MessageCount should be >= 0, got %d", proj.MessageCount)
-		}
-	}
-
-	t.Logf("Found %d projects", len(stats.Projects))
-}
-
-// TestParseProjectStatsWithTimeFilter 测试时间过滤功能
-func TestParseProjectStatsWithTimeFilter(t *testing.T) {
-	// Arrange: 创建7天范围
-	now := time.Now()
-	sevenDaysAgo := now.AddDate(0, 0, -7)
-	tf := TimeFilter{
-		Start: &sevenDaysAgo,
-		End:   &now,
-	}
-
-	// Act: 执行解析
-	stats, err := ParseProjectStatsWithFilter(tf)
-
-	// Assert: 验证结果
-	if err != nil {
-		t.Fatalf("ParseProjectStatsWithFilter failed: %v", err)
-	}
-
-	if stats == nil {
-		t.Fatal("Expected non-nil stats")
-	}
-
-	t.Logf("Found %d projects in last 7 days", len(stats.Projects))
-}
-
-// TestProjectStatsByWeekday 测试星期分布统计
-func TestProjectStatsByWeekday(t *testing.T) {
-	// Arrange
-	tf := TimeFilter{Start: nil, End: nil}
-
-	// Act
-	stats, err := ParseProjectStatsByWeekday(tf)
-
-	// Assert
-	if err != nil {
-		t.Fatalf("ParseProjectStatsByWeekday failed: %v", err)
-	}
-
-	if stats == nil {
-		t.Fatal("Expected non-nil stats")
-	}
-
-	// 验证7天数据
-	if len(stats.WeekdayData) != 7 {
-		t.Errorf("Expected 7 weekdays, got %d", len(stats.WeekdayData))
-	}
-
-	// 验证数据格式
-	for i, wd := range stats.WeekdayData {
-		if wd.Weekday < 0 || wd.Weekday > 6 {
-			t.Errorf("Weekday should be 0-6, got %d at index %d", wd.Weekday, i)
-		}
-		if wd.MessageCount < 0 {
-			t.Errorf("MessageCount should be >= 0, got %d", wd.MessageCount)
-		}
-	}
-
-	t.Logf("Weekday distribution: %v", stats.WeekdayData)
-}
-
-// TestParseDailyActivityFromProjects 测试从projects生成每日活动数据
-func TestParseDailyActivityFromProjects(t *testing.T) {
-	// Arrange
-	tf := TimeFilter{Start: nil, End: nil}
-
-	// Act
-	activity, err := ParseDailyActivityFromProjects(tf)
-
-	// Assert
-	if err != nil {
-		t.Fatalf("ParseDailyActivityFromProjects failed: %v", err)
-	}
-
-	if activity == nil {
-		t.Fatal("Expected non-nil activity")
-	}
-
-	if len(activity) == 0 {
-		t.Log("Warning: No daily activity found (may be expected if no data exists)")
-	}
-
-	// 验证数据格式
-	for _, day := range activity {
-		if day.Date == "" {
-			t.Error("Date should not be empty")
-		}
-		if day.MessageCount < 0 {
-			t.Errorf("MessageCount should be >= 0, got %d", day.MessageCount)
-		}
-		if day.SessionCount < 0 {
-			t.Errorf("SessionCount should be >= 0, got %d", day.SessionCount)
-		}
-	}
-
-	t.Logf("Found %d days of activity", len(activity))
-}
-
-// TestParseHourlyCountsFromProjects 测试从projects生成小时统计
-func TestParseHourlyCountsFromProjects(t *testing.T) {
-	// Arrange
-	tf := TimeFilter{Start: nil, End: nil}
-
-	// Act
-	counts, err := ParseHourlyCountsFromProjects(tf)
-
-	// Assert
-	if err != nil {
-		t.Fatalf("ParseHourlyCountsFromProjects failed: %v", err)
-	}
-
-	if counts == nil {
-		t.Fatal("Expected non-nil counts")
-	}
-
-	// 验证24小时数据
-	if len(counts) != 24 {
-		t.Errorf("Expected 24 hours, got %d", len(counts))
-	}
-
-	// 验证数据格式
-	for hour, count := range counts {
-		hourInt, err := strconv.Atoi(hour)
-		if err != nil || hourInt < 0 || hourInt > 23 {
-			t.Errorf("Hour should be 00-23, got %s", hour)
-		}
-		if count < 0 {
-			t.Errorf("Count should be >= 0, got %d for hour %s", count, hour)
-		}
-	}
-
-	total := 0
-	for _, count := range counts {
-		total += count
-	}
-	t.Logf("Total hourly messages: %d", total)
-}
-
-// TestParseModelUsageFromProjects 测试从projects生成模型使用统计
-func TestParseModelUsageFromProjects(t *testing.T) {
-	// Arrange
-	tf := TimeFilter{Start: nil, End: nil}
-
-	// Act
-	usage, err := ParseModelUsageFromProjects(tf)
-
-	// Assert
-	if err != nil {
-		t.Fatalf("ParseModelUsageFromProjects failed: %v", err)
-	}
-
-	if usage == nil {
-		t.Fatal("Expected non-nil usage")
-	}
-
-	if len(usage) == 0 {
-		t.Log("Warning: No model usage found (may be expected if no data exists)")
-	}
-
-	// 验证数据格式
-	totalRequests := 0
-	for _, item := range usage {
-		if item.Model == "" {
-			t.Error("Model should not be empty")
-		}
-		if item.Count < 0 {
-			t.Errorf("Count should be >= 0, got %d", item.Count)
-		}
-		if item.Tokens < 0 {
-			t.Errorf("Tokens should be >= 0, got %d", item.Tokens)
-		}
-		totalRequests += item.Count
-	}
-
-	t.Logf("Found %d models", len(usage))
-	t.Logf("Total requests: %d", totalRequests)
-	for _, item := range usage {
-		t.Logf("  %s: %d requests, %d tokens", item.Model, item.Count, item.Tokens)
-	}
-}
-
-// TestParseWorkHoursStats 测试工作时段统计
-func TestParseWorkHoursStats(t *testing.T) {
-	// Arrange
-	tf := TimeFilter{Start: nil, End: nil}
-
-	// Act
-	stats, err := ParseWorkHoursStats(tf)
-
-	// Assert
-	if err != nil {
-		t.Fatalf("ParseWorkHoursStats failed: %v", err)
-	}
-
-	if stats == nil {
-		t.Fatal("Expected non-nil stats")
-	}
-
-	t.Logf("工作时段统计:")
-	t.Logf("  工作时段(9-18点): %d 次", stats.WorkHoursCount)
-	t.Logf("  非工作时段: %d 次", stats.OffHoursCount)
-	t.Logf("  工作时段占比: %.1f%%", stats.WorkHoursRatio)
-	t.Logf("  峰值小时: %d点 (%d 次)", stats.PeakHour, stats.PeakHourCount)
-}
-
 // TestParseProjectsConcurrentOnce 测试一次遍历并发解析所有项目统计
+// 这是核心聚合函数，取代了以下已删除的独立解析函数：
+//   - ParseProjectStatsWithFilter（项目统计）
+//   - ParseProjectStatsByWeekday（星期统计）
+//   - ParseDailyActivityFromProjects（每日活动）
+//   - ParseHourlyCountsFromProjects（小时统计）
+//   - ParseModelUsageFromProjects（模型使用）
+//   - ParseWorkHoursStats（工作时段）
 func TestParseProjectsConcurrentOnce(t *testing.T) {
+	// 检查实际数据目录是否存在
+	if _, err := os.Stat(filepath.Join(cfg.DataDir, "projects")); os.IsNotExist(err) {
+		t.Skip("跳过：projects 数据目录不存在")
+	}
+
 	// Arrange
 	tf := TimeFilter{Start: nil, End: nil}
 
@@ -480,4 +249,46 @@ func TestParseSessionIndex(t *testing.T) {
 	}
 
 	t.Logf("✅ SessionIndex 解析成功: %d 个会话, 总消息数 %d", len(index.Entries), totalMessages)
+}
+
+// TestParseSessionStatsWithFilter_UseAggregate 测试 ParseSessionStatsWithFilter 使用 aggregate 而非冗余遍历
+// 重写后应调用 ParseProjectsConcurrentOnce + extractSessionStatsFromAggregate
+func TestParseSessionStatsWithFilter_UseAggregate(t *testing.T) {
+	// Arrange: 创建最小化测试数据
+	tmpDir := t.TempDir()
+	projDir := filepath.Join(tmpDir, "projects", "p")
+	os.MkdirAll(projDir, 0755)
+
+	// 2 个不同 session = 2 个会话
+	for i, sid := range []string{"s1", "s2"} {
+		content := fmt.Sprintf(
+			`{"type":"assistant","message":{"role":"assistant","model":"m-1","content":[{"type":"text","text":"hi"}],"usage":{"input_tokens":5,"output_tokens":10}},"timestamp":"2026-01-0%dT10:00:00Z","cwd":"/tmp","sessionId":"%s"}`+"\n",
+			i+1, sid,
+		)
+		os.WriteFile(filepath.Join(projDir, sid+".jsonl"), []byte(content), 0644)
+	}
+
+	origDataDir := cfg.DataDir
+	cfg.DataDir = tmpDir
+	defer func() { cfg.DataDir = origDataDir }()
+
+	tf := TimeFilter{Start: nil, End: nil}
+
+	// Act
+	stats, err := ParseSessionStatsWithFilter(tf)
+
+	// Assert
+	if err != nil {
+		t.Fatalf("ParseSessionStatsWithFilter failed: %v", err)
+	}
+	if stats == nil {
+		t.Fatal("Returned nil stats")
+	}
+
+	// 应有 2 个会话（来自 aggregate.DailySessions，非冗余遍历）
+	if stats.TotalSessions != 2 {
+		t.Errorf("TotalSessions=%d, expected=2 (should come from aggregate, not redundant parse)", stats.TotalSessions)
+	}
+
+	t.Logf("✅ ParseSessionStatsWithFilter 正确使用 aggregate: sessions=%d", stats.TotalSessions)
 }

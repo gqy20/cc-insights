@@ -1,6 +1,8 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"reflect"
 	"testing"
 	"time"
@@ -13,49 +15,14 @@ func TestMain(m *testing.M) {
 	m.Run()
 }
 
-// TestParseSessionStats 测试解析会话统计
-func TestParseSessionStats(t *testing.T) {
-	// Arrange - 准备测试数据（使用实际数据结构）
-
-	// Act - 调用函数
-	stats, err := ParseSessionStats()
-
-	// Assert - 验证结果
-	if err != nil {
-		t.Fatalf("ParseSessionStats() error = %v", err)
-	}
-
-	// 验证基本字段
-	if stats.TotalSessions <= 0 {
-		t.Errorf("TotalSessions > 0, got %d", stats.TotalSessions)
-	}
-
-	if stats.PeakDate == "" {
-		t.Error("PeakDate should not be empty")
-	}
-
-	if stats.PeakCount <= 0 {
-		t.Errorf("PeakCount > 0, got %d", stats.PeakCount)
-	}
-
-	if stats.ValleyDate == "" {
-		t.Error("ValleyDate should not be empty")
-	}
-
-	if stats.ValleyCount < 0 {
-		t.Errorf("ValleyCount >= 0, got %d", stats.ValleyCount)
-	}
-
-	if len(stats.DailySessionMap) == 0 {
-		t.Error("DailySessionMap should not be empty")
-	}
-
-	t.Logf("会话统计: 总数=%d, 峰值=%s(%d), 谷值=%s(%d)",
-		stats.TotalSessions, stats.PeakDate, stats.PeakCount, stats.ValleyDate, stats.ValleyCount)
-}
-
 // TestParseSessionStatsWithTimeFilter 测试带时间过滤的会话统计
+// 重写后使用 ParseProjectsConcurrentOnce + extractSessionStatsFromAggregate
 func TestParseSessionStatsWithTimeFilter(t *testing.T) {
+	// 检查实际数据目录是否存在
+	if _, err := os.Stat(filepath.Join(cfg.DataDir, "projects")); os.IsNotExist(err) {
+		t.Skip("跳过：projects 数据目录不存在")
+	}
+
 	// Arrange - 准备时间过滤器（最近7天）
 	now := time.Now()
 	start := now.AddDate(0, 0, -7)
@@ -64,7 +31,7 @@ func TestParseSessionStatsWithTimeFilter(t *testing.T) {
 		End:   &now,
 	}
 
-	// Act - 调用函数
+	// Act - 调用函数（内部使用 aggregate 而非冗余遍历）
 	stats, err := ParseSessionStatsWithFilter(filter)
 
 	// Assert
@@ -72,41 +39,12 @@ func TestParseSessionStatsWithTimeFilter(t *testing.T) {
 		t.Fatalf("ParseSessionStatsWithFilter() error = %v", err)
 	}
 
-	// 验证过滤后的数据量应该小于或等于总量
+	// 验证过滤后的数据量应该非负
 	if stats.TotalSessions < 0 {
 		t.Errorf("Filtered TotalSessions >= 0, got %d", stats.TotalSessions)
 	}
 
 	t.Logf("最近7天会话统计: 总数=%d", stats.TotalSessions)
-}
-
-// TestGetDailySessionTrend 测试获取每日会话趋势
-func TestGetDailySessionTrend(t *testing.T) {
-	// Arrange
-	// Act
-	dates, counts, err := GetDailySessionTrend()
-
-	// Assert
-	if err != nil {
-		t.Fatalf("GetDailySessionTrend() error = %v", err)
-	}
-
-	if len(dates) != len(counts) {
-		t.Errorf("dates and counts length mismatch: %d vs %d", len(dates), len(counts))
-	}
-
-	if len(dates) == 0 {
-		t.Error("Should have at least one day of data")
-	}
-
-	// 验证日期顺序
-	for i := 1; i < len(dates); i++ {
-		if dates[i] < dates[i-1] {
-			t.Errorf("Dates not in ascending order: %s < %s", dates[i], dates[i-1])
-		}
-	}
-
-	t.Logf("会话趋势: %d 天数据", len(dates))
 }
 
 // TestSessionStatsTypes 测试数据类型
