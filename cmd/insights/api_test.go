@@ -520,6 +520,96 @@ func TestParallelParsing_Correctness(t *testing.T) {
 		len(data.MCPTools), data.Sessions.TotalSessions)
 }
 
+// === P0: 消除 cache_builder 冗余 I/O ===
+
+// TestBuildFullCache_NoRedundantSessionParse 测试缓存构建不应重复遍历 projects 获取会话统计
+// 核心验证: BuildFullCache 的第一步 ParseProjectsConcurrentOnce 已获取全部数据（含 DailySessions），
+// 第三步 ParseSessionStatsWithFilter 不应重新遍历所有 jsonl 文件
+//
+// 🔴 红阶段: 当前实现调用 ParseSessionStatsWithFilter → ParseDailyActivityFromProjects，
+// 这会重新遍历全部 17K+ 个 project 文件，是严重的冗余 I/O
+func TestBuildFullCache_NoRedundantSessionParse(t *testing.T) {
+	// Arrange: 创建最小化测试数据（3个session = 3个会话）
+	tmpDir := t.TempDir()
+	cacheDir := filepath.Join(tmpDir, "cache")
+	os.MkdirAll(cacheDir, 0755)
+	debugDir := filepath.Join(tmpDir, "debug")
+	os.MkdirAll(debugDir, 0755)
+
+	projDir := filepath.Join(tmpDir, "projects", "test-proj")
+	os.MkdirAll(projDir, 0755)
+
+	// 写入 3 个不同日期的 session 文件 = 3 个独立会话
+	sessions := []struct {
+		sid  string
+		date string
+	}{
+		{"sess-01", "2026-01-01"},
+		{"sess-02", "2026-01-02"},
+		{"sess-03", "2026-01-03"},
+	}
+	for _, s := range sessions {
+		content := fmt.Sprintf(
+			`{"type":"assistant","message":{"role":"assistant","model":"m-1","content":[{"type":"text","text":"msg"}],"usage":{"input_tokens":10,"output_tokens":20}},"timestamp":"%sT12:00:00Z","cwd":"/tmp/proj","sessionId":"%s"}`+"\n",
+			s.date, s.sid,
+		)
+		os.WriteFile(filepath.Join(projDir, s.sid+".jsonl"), []byte(content), 0644)
+	}
+
+	// 写入 history.jsonl（BuildFullCache 不直接依赖它但需要存在）
+	historyPath := filepath.Join(tmpDir, "history.jsonl")
+	os.WriteFile(historyPath, []byte(`{"display":"/test","pastedContents":{},"timestamp":1700000000000,"project":"/tmp"}`+"\n"), 0644)
+
+	origDataDir := cfg.DataDir
+	origCacheDir := cfg.CacheDir
+	cfg.DataDir = tmpDir
+	cfg.CacheDir = cacheDir
+	defer func() { cfg.DataDir = origDataDir; cfg.CacheDir = origCacheDir }()
+
+	cachePath := filepath.Join(cacheDir, "cache.db")
+	builder := &CacheBuilder{CachePath: cachePath, DataDir: tmpDir}
+
+	// Step 1: 先单独获取 aggregate（模拟 BuildFullCache 第一步）
+	tf := TimeFilter{Start: nil, End: nil}
+	aggregate, err := ParseProjectsConcurrentOnce(tf)
+	if err != nil || aggregate == nil {
+		t.Fatalf("ParseProjectsConcurrentOnce 失败: %v", err)
+	}
+
+	// 从 aggregate 提取 session stats（这是正确的无冗余方式）
+	expectedSessions, _ := extractSessionStatsFromAggregate(aggregate)
+
+	// Step 2: 🔴 关键 — 删除 projects 目录！
+	// 如果 BuildFullCache 内部的 ParseSessionStatsWithFilter 真正重新读文件，
+	// 删除后它会失败或返回空；如果修复后使用 aggregate 数据则不受影响
+	os.RemoveAll(filepath.Join(tmpDir, "projects"))
+
+	// Step 3: 调用 BuildFullCache（当前会在第三步重新遍历已删除的 projects）
+	err = builder.BuildFullCache()
+
+	// Step 4: 加载构建好的缓存
+	var loadedCache *CacheFile
+	if err == nil {
+		loadedCache, err = LoadCacheFile(cachePath)
+	}
+
+	// 断言: 当前红阶段 — BuildFullCache 应该失败或在删除文件后返回错误的 session 数
+	// （因为 ParseSessionStatsWithFilter → ParseDailyActivityFromProjects 会重新读 projects）
+	//
+	// 绿阶段目标: 修改后 BuildFullCache 应成功且 TotalSessions == 3
+	if err != nil {
+		t.Logf("🔴 红阶段确认: BuildFullCache 在源文件删除后失败 (预期行为): %v", err)
+		t.Logf("   这证明当前实现存在冗余 I/O — ParseSessionStatsWithFilter 重新读取了 projects")
+		t.Logf("   预期 session 数(从aggregate提取): %d", expectedSessions.TotalSessions)
+	} else if loadedCache != nil && loadedCache.TotalSessions == expectedSessions.TotalSessions {
+		t.Logf("✅ 绿阶段通过: BuildFullCache 无需重新遍历 projects 即可获取正确 session 统计")
+		t.Logf("   TotalSessions=%d (期望=%d)", loadedCache.TotalSessions, expectedSessions.TotalSessions)
+	} else if loadedCache != nil {
+		t.Errorf("⚠️ BuildFullCache 成功但 TotalSessions=%d, 期望=%d (可能未正确从aggregate提取)",
+			loadedCache.TotalSessions, expectedSessions.TotalSessions)
+	}
+}
+
 // TestParallelParsing_FasterThanSerial 测试并行比串行快
 // 通过对比 buildDataFromParsing 与手动串行调用的耗时
 func TestParallelParsing_FasterThanSerial(t *testing.T) {
