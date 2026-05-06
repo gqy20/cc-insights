@@ -701,5 +701,90 @@ func TestHTTPTimeout_ProtectSlowRequests(t *testing.T) {
 		return
 	}
 
-	t.Logf("✅ HTTP 请求在 %v 内完成（有超时保护时会更安全）", elapsed)
+	t.Logf("✅ HTTP 请求在 %v 内完成（有超时保护时更安全）", elapsed)
+}
+
+// TestStatsAPIHandler_NoFakeData 测试 /api/stats 不应返回硬编码假数据
+//
+// 🔴 红阶段: 当前 statsAPIHandler 存在以下问题：
+//   1. 使用非并发遗留函数 ParseHistory/GetDailyTrend/ParseStatsCache
+//   2. dates 字段硬编码为 ["2025-12-31", "2026-01-01", ...]
+//   3. 不支持时间过滤，与 /api/data 功能重复且质量更低
+func TestStatsAPIHandler_NoFakeData(t *testing.T) {
+	// Arrange: 创建最小数据集
+	tmpDir := t.TempDir()
+	os.MkdirAll(filepath.Join(tmpDir, "projects", "p"), 0755)
+
+	historyPath := filepath.Join(tmpDir, "history.jsonl")
+	// 写入 3 条不同日期的 history 记录
+	historyContent := `{"display":"/a","pastedContents":{},"timestamp":1700000000000,"project":"/tmp"}
+{"display":"/b","pastedContents":{},"timestamp":1700086400000,"project":"/tmp"}
+{"display":"/c","pastedContents":{},"timestamp":1700172800000,"project":"/tmp"}
+`
+	os.WriteFile(historyPath, []byte(historyContent), 0644)
+
+	// 写入 stats-cache.json（statsAPIHandler 需要此文件）
+	statsCacheContent := `{
+		"dailyActivity": [{"date":"2024-11-15","messageCount":3,"sessionCount":1,"toolCallCount":0}],
+		"modelUsage": {"claude-sonnet-4-6":{"inputTokens":100,"outputTokens":200}},
+		"hourCounts": {"10":2,"11":1}
+}`
+	os.WriteFile(filepath.Join(tmpDir, "stats-cache.json"), []byte(statsCacheContent), 0644)
+
+	origDataDir := cfg.DataDir
+	cfg.DataDir = tmpDir
+	defer func() { cfg.DataDir = origDataDir }()
+
+	// Act: 调用 /api/stats
+	req := httptest.NewRequest("GET", "/api/stats", nil)
+	w := httptest.NewRecorder()
+	statsAPIHandler(w, req)
+
+	// Assert: 应返回 200
+	if w.Code != http.StatusOK {
+		t.Fatalf("❌ FAILED: HTTP 状态码 %d, 期望 200", w.Code)
+	}
+
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("无法解析响应 JSON: %v", err)
+	}
+
+	// 🔴 关键断言: dates 不应是硬编码的假数据
+	dates, ok := resp["daily_trend"].(map[string]interface{})
+	if !ok {
+		t.Fatal("响应缺少 daily_trend 字段")
+	}
+
+	dateList, ok := dates["dates"].([]interface{})
+	if !ok {
+		t.Fatal("daily_trend.dates 不是数组")
+	}
+
+	// 检查是否包含硬编码的假日期（旧实现的特征）
+	fakeDates := []string{"2025-12-31", "2026-01-01", "2026-01-02", "2026-01-03",
+		"2026-01-04", "2026-01-05", "2026-01-06"}
+	hasFakeData := false
+	for _, d := range dateList {
+		for _, fake := range fakeDates {
+			if d == fake {
+				hasFakeData = true
+			}
+		}
+	}
+
+	if hasFakeData {
+		t.Errorf("❌ FAILED: /api/stats 返回了硬编码的假日期数据: %v\n"+
+			"   绿阶段目标: 应返回真实解析的日期或转发到 /api/data", dateList)
+		return
+	}
+
+	// 验证 commands 有真实数据
+	cmds, ok := resp["commands"].([]interface{})
+	if !ok || len(cmds) == 0 {
+		t.Error("❌ FAILED: commands 为空或格式错误（history.jsonl 有 3 条记录）")
+		return
+	}
+
+	t.Logf("✅ /api/stats 返回真实数据: dates=%v, commands=%d", dateList, len(cmds))
 }
