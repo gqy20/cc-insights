@@ -293,7 +293,8 @@ func buildDataFromParsing(tf TimeFilter, preset string) (*DashboardData, error) 
 	cmdStats, _, _ := safeParseHistoryConcurrent(tf)
 	aggregate, _ := safeParseProjectsOnce(tf)
 	toolStats, _ := safeParseDebugLogs(tf)
-	sessionStats, _ := safeParseSessionStats(tf)
+	// P0 优化: SessionStats 从已解析的 aggregate 中提取，不重复读取文件
+	sessionStats, _ := extractSessionStatsFromAggregate(aggregate)
 
 	// 从聚合数据中提取每日活动趋势（确保非 nil）
 	dates := make([]string, 0)
@@ -447,8 +448,40 @@ func safeParseSessionStats(tf TimeFilter) (*SessionStats, error) {
 }
 
 // extractSessionStatsFromAggregate 从已解析的 ProjectAggregate 中提取会话统计
-// P0 优化: 避免重复遍历 projects/*.jsonl 文件
+// P0 优化: 直接从内存中的 aggregate 提取，不重新读取文件
 func extractSessionStatsFromAggregate(agg *ProjectAggregate) (*SessionStats, error) {
-	// 🔴 红阶段桩: 尚未实现，直接调用旧函数（会产生重复 I/O）
-	return ParseSessionStatsWithFilter(TimeFilter{Start: nil, End: nil})
+	if agg == nil || agg.DailySessions == nil {
+		return &SessionStats{
+			TotalSessions:   0,
+			DailySessionMap: make(map[string]int),
+		}, nil
+	}
+
+	dailyMap := make(map[string]int)
+	totalSessions := 0
+	peakDate, peakCount := "", 0
+	valleyDate, valleyCount := "", 0
+
+	for date, sessions := range agg.DailySessions {
+		count := len(sessions)
+		dailyMap[date] = count
+		totalSessions += count
+		if count > peakCount {
+			peakCount = count
+			peakDate = date
+		}
+		if valleyCount == 0 || count < valleyCount {
+			valleyCount = count
+			valleyDate = date
+		}
+	}
+
+	return &SessionStats{
+		TotalSessions:   totalSessions,
+		PeakDate:        peakDate,
+		PeakCount:       peakCount,
+		ValleyDate:      valleyDate,
+		ValleyCount:     valleyCount,
+		DailySessionMap: dailyMap,
+	}, nil
 }

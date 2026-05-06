@@ -107,18 +107,19 @@ type HourlyItem struct {
 
 // ProjectAggregate 一次遍历获取的所有统计数据
 type ProjectAggregate struct {
-	ProjectStats      map[string]*ProjectStatItem `json:"-"`          // 项目统计（map用于快速查找）
-	Projects          []ProjectStatItem           `json:"projects"`   // 项目列表（排序后）
-	WeekdayData       [7]WeekdayItem              `json:"-"`          // 星期数据
-	WeekdayStats      *WeekdayStats               `json:"weekday"`    // 星期统计（输出格式）
-	DailyActivity     map[string]int              `json:"-"`          // 每日活动（map）
-	DailyActivityList []DailyActivity             `json:"daily"`      // 每日活动（输出格式）
-	HourlyCounts      [24]int                     `json:"-"`          // 小时统计
-	HourlyData        []HourlyItem                `json:"-"`          // 小时数据
-	ModelUsage        map[string]*ModelUsageItem  `json:"-"`          // 模型使用（map）
-	ModelUsageList    []ModelUsageItem            `json:"models"`     // 模型使用（输出格式）
-	WorkHoursStats    *WorkHoursStats             `json:"work_hours"` // 工作时段统计
-	mu                sync.RWMutex                `json:"-"`          // 保护并发写入
+	ProjectStats      map[string]*ProjectStatItem       `json:"-"`          // 项目统计（map用于快速查找）
+	Projects          []ProjectStatItem                `json:"projects"`   // 项目列表（排序后）
+	WeekdayData       [7]WeekdayItem                   `json:"-"`          // 星期数据
+	WeekdayStats      *WeekdayStats                    `json:"weekday"`    // 星期统计（输出格式）
+	DailyActivity     map[string]int                    `json:"-"`          // 每日消息数（map）
+	DailyActivityList []DailyActivity                  `json:"daily"`      // 每日活动（输出格式）
+	DailySessions     map[string]map[string]bool         `json:"-"`          // 每日会话集 date→sessionID→true（用于提取SessionStats，避免重复解析）
+	HourlyCounts      [24]int                          `json:"-"`          // 小时统计
+	HourlyData        []HourlyItem                     `json:"-"`          // 小时数据
+	ModelUsage        map[string]*ModelUsageItem         `json:"-"`          // 模型使用（map）
+	ModelUsageList    []ModelUsageItem                 `json:"models"`     // 模型使用（输出格式）
+	WorkHoursStats    *WorkHoursStats                  `json:"work_hours"` // 工作时段统计
+	mu                sync.RWMutex                     `json:"-"`          // 保护并发写入
 }
 
 // ProjectRecord projects/*.jsonl 记录
@@ -1198,6 +1199,7 @@ func ParseProjectsConcurrentOnce(tf TimeFilter) (*ProjectAggregate, error) {
 	aggregate := &ProjectAggregate{
 		ProjectStats:  make(map[string]*ProjectStatItem),
 		DailyActivity: make(map[string]int),
+		DailySessions: make(map[string]map[string]bool),
 		ModelUsage:    make(map[string]*ModelUsageItem),
 		HourlyCounts:  [24]int{},
 		mu:            sync.RWMutex{},
@@ -1313,6 +1315,16 @@ func parseProjectFileAggregate(filePath string, tf TimeFilter, agg *ProjectAggre
 		// 3. 每日活动
 		dateKey := timestamp.Format("2006-01-02")
 		agg.DailyActivity[dateKey]++
+
+		// 3.5 每日会话去重（同一 sessionID 同天只计一次）
+		if record.SessionID != "" {
+			if agg.DailySessions[dateKey] == nil {
+				agg.DailySessions[dateKey] = make(map[string]bool)
+			}
+			if !agg.DailySessions[dateKey][record.SessionID] {
+				agg.DailySessions[dateKey][record.SessionID] = true
+			}
+		}
 
 		// 4. 小时统计
 		hour := timestamp.Hour()
