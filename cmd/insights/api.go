@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -289,11 +290,38 @@ func buildDataFromCache(tf TimeFilter, preset string) (*DashboardData, error) {
 // buildDataFromParsing 通过实时解析构建 API 响应（优雅降级版）
 // P0: 任何单个数据源失败不会导致整体失败，返回部分数据
 func buildDataFromParsing(tf TimeFilter, preset string) (*DashboardData, error) {
-	// 使用 Safe 包装：每个数据源独立容错，失败时降级为空默认值
-	cmdStats, _, _ := safeParseHistoryConcurrent(tf)
-	aggregate, _ := safeParseProjectsOnce(tf)
-	toolStats, _ := safeParseDebugLogs(tf)
-	// P0 优化: SessionStats 从已解析的 aggregate 中提取，不重复读取文件
+	// P1 优化: 三大数据源并行解析（history / projects / debug 独立运行）
+	var cmdStats []CommandStats
+	var hourlyCountsMap map[string]int
+	var aggregate *ProjectAggregate
+	var toolStats []MCPToolStats
+
+	var wg sync.WaitGroup
+	wg.Add(3)
+
+	// 1. history.jsonl 解析（独立）
+	go func() {
+		defer wg.Done()
+		var hc map[string]int
+		cmdStats, hc, _ = safeParseHistoryConcurrent(tf)
+		hourlyCountsMap = hc
+	}()
+
+	// 2. projects/*.jsonl 解析（独立，~22s 瓶颈）
+	go func() {
+		defer wg.Done()
+		aggregate, _ = safeParseProjectsOnce(tf)
+	}()
+
+	// 3. debug/*.txt 解析（独立）
+	go func() {
+		defer wg.Done()
+		toolStats, _ = safeParseDebugLogs(tf)
+	}()
+
+	wg.Wait()
+
+	// SessionStats 从已解析的 aggregate 中提取（P0，依赖 projects 结果）
 	sessionStats, _ := extractSessionStatsFromAggregate(aggregate)
 
 	// 从聚合数据中提取每日活动趋势（确保非 nil）
@@ -305,7 +333,7 @@ func buildDataFromParsing(tf TimeFilter, preset string) (*DashboardData, error) 
 	}
 
 	// 将小时数据转换为map格式
-	hourlyCountsMap := make(map[string]int)
+	hourlyCountsMap = make(map[string]int)
 	for _, item := range aggregate.HourlyData {
 		hourKey := fmt.Sprintf("%02d", item.Hour)
 		hourlyCountsMap[hourKey] = item.Count
