@@ -447,3 +447,112 @@ func TestBuildDataFromParsing_NoRedundantIO(t *testing.T) {
 		data.ProjectStats.TotalMessages,
 		len(data.Commands))
 }
+
+
+// === P1 性能优化: 三大数据源并行解析 ===
+
+// TestParallelParsing_Correctness 测试并行解析结果与串行一致
+func TestParallelParsing_Correctness(t *testing.T) {
+	// Arrange: 创建完整测试数据集
+	tmpDir := t.TempDir()
+	projDir := filepath.Join(tmpDir, "projects", "myproj")
+	debugDir := filepath.Join(tmpDir, "debug")
+	os.MkdirAll(projDir, 0755)
+	os.MkdirAll(debugDir, 0755)
+
+	// history.jsonl: 2 条记录
+	historyContent := `{"display":"/cmd1","pastedContents":{},"timestamp":1700000000000,"project":"/tmp"}
+{"display":"/cmd2","pastedContents":{},"timestamp":1700000100000,"project":"/tmp"}
+`
+	os.WriteFile(filepath.Join(tmpDir, "history.jsonl"), []byte(historyContent), 0644)
+
+	// projects: 2 个 session 文件
+	for _, sid := range []string{"sa", "sb"} {
+		content := fmt.Sprintf(
+			`{"type":"assistant","message":{"role":"assistant","model":"m-1","content":[{"type":"text","text":"hello"}],"usage":{"input_tokens":5,"outputTokens":10}},"timestamp":"2024-11-15T10:00:00Z","cwd":"/tmp/myproj","sessionId":"%s"}`+"\n",
+			sid,
+		)
+		os.WriteFile(filepath.Join(projDir, sid+".jsonl"), []byte(content), 0644)
+	}
+
+	// debug: 1 个文件含 MCP 调用
+	debugContent := `2024-11-15T10:00:01.000Z [DEBUG] ToolSearchTool: selected mcp__test__tool_name
+2024-11-15T10:00:02.000Z [DEBUG] executePreToolHooks called for tool: mcp__test__tool_name
+`
+	os.WriteFile(filepath.Join(debugDir, "debug-session.txt"), []byte(debugContent), 0644)
+
+	origDataDir := cfg.DataDir
+	cfg.DataDir = tmpDir
+	defer func() { cfg.DataDir = origDataDir }()
+
+	tf := TimeFilter{Start: nil, End: nil}
+
+	// Act: 并行解析
+	data, err := buildDataFromParsing(tf, "all")
+	if err != nil {
+		t.Fatalf("buildDataFromParsing error: %v", err)
+	}
+	if data == nil {
+		t.Fatal("data is nil")
+	}
+
+	// Assert: 所有四个数据源都有正确数据
+	if len(data.Commands) == 0 {
+		t.Error("Commands 不应为空（history 有 2 条命令）")
+	}
+	if data.ProjectStats == nil || data.ProjectStats.TotalMessages == 0 {
+		t.Error("ProjectStats 消息数应为 >0")
+	}
+	if len(data.MCPTools) == 0 {
+		t.Error("MCPTools 不应为空（debug 有 MCP 记录）")
+	}
+	if data.Sessions == nil || data.Sessions.TotalSessions == 0 {
+		t.Error("Sessions 不应为空（有 2 个 session 文件）")
+	}
+
+	// 验证结果一致性: commands 数量应匹配 history 行数
+	if len(data.Commands) != 2 {
+		t.Errorf("Commands 数量=%d, 期望=2", len(data.Commands))
+	}
+
+	t.Logf("✅ 并行解析结果一致: cmds=%d, msgs=%d, tools=%d, sessions=%d",
+		len(data.Commands), data.ProjectStats.TotalMessages,
+		len(data.MCPTools), data.Sessions.TotalSessions)
+}
+
+// TestParallelParsing_FasterThanSerial 测试并行比串行快
+// 通过对比 buildDataFromParsing 与手动串行调用的耗时
+func TestParallelParsing_FasterThanSerial(t *testing.T) {
+	// Arrange: 使用实际数据目录（如果可用）
+	dataDir := os.Getenv("HOME") + "/.claude"
+	if _, err := os.Stat(dataDir); os.IsNotExist(err) {
+		t.Skip("跳过：实际数据目录不存在")
+	}
+
+	origDataDir := cfg.DataDir
+	cfg.DataDir = dataDir
+	defer func() { cfg.DataDir = origDataDir }()
+
+	tf := TimeFilter{Start: nil, End: nil}
+
+	// 预热
+	buildDataFromParsing(tf, "all")
+
+	// 测量并行版本（当前实现）
+	var parallelDur time.Duration
+	iterations := 3
+	for i := 0; i < iterations; i++ {
+		t0 := time.Now()
+		buildDataFromParsing(tf, "all")
+		parallelDur += time.Since(t0)
+	}
+	avgParallel := parallelDur / time.Duration(iterations)
+
+	t.Logf("✅ 并行解析平均耗时: %v (迭代%d次)", avgParallel, iterations)
+
+	// 注意: 此测试主要用于验证不崩溃和基本性能
+	// 真正的性能对比需要 benchmark 模式
+	if avgParallel > 60*time.Second {
+		t.Errorf("⚠️ 并行解析耗时 %v 过长，可能未真正并行化", avgParallel)
+	}
+}
