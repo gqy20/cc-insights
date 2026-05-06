@@ -445,3 +445,10 @@ func safeParseSessionStats(tf TimeFilter) (*SessionStats, error) {
 	}
 	return stats, nil
 }
+
+// extractSessionStatsFromAggregate 从已解析的 ProjectAggregate 中提取会话统计
+// P0 优化: 避免重复遍历 projects/*.jsonl 文件
+func extractSessionStatsFromAggregate(agg *ProjectAggregate) (*SessionStats, error) {
+	// 🔴 红阶段桩: 尚未实现，直接调用旧函数（会产生重复 I/O）
+	return ParseSessionStatsWithFilter(TimeFilter{Start: nil, End: nil})
+}
