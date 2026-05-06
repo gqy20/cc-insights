@@ -36,11 +36,8 @@ func (cb *CacheBuilder) BuildFullCache() error {
 		return fmt.Errorf("解析 debug 日志失败: %w", err)
 	}
 
-	// 获取会话统计
-	sessionStats, err := ParseSessionStatsWithFilter(tf)
-	if err != nil {
-		return fmt.Errorf("解析会话统计失败: %w", err)
-	}
+	// 从已解析的 aggregate 中提取会话统计（无需重新遍历 projects 文件）
+	sessionStats, _ := extractSessionStatsFromAggregate(aggregate)
 
 	// 计算总消息数（从每日活动汇总）
 	totalMessages := 0
