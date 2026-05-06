@@ -2,6 +2,8 @@ package main
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strconv"
 	"testing"
 	"time"
@@ -387,4 +389,95 @@ func TestAssistantMessageThinkingType(t *testing.T) {
 	if !foundThinking {
 		t.Error("无法提取 thinking 类型内容")
 	}
+}
+
+// TestParseSessionIndex 测试 sessions-index.json 解析功能
+// Claude Code 新增了 sessions-index.json 提供更准确的会话统计
+func TestParseSessionIndex(t *testing.T) {
+	// Arrange: 模拟 sessions-index.json 数据
+	sessionIndexJSON := `{
+		"version": 1,
+		"entries": [
+			{
+				"sessionId": "abc-123",
+				"fullPath": "/test/abc-123.jsonl",
+				"fileMtime": 1700000000000,
+				"firstPrompt": "测试提示",
+				"summary": "测试会话",
+				"messageCount": 10,
+				"created": "2026-01-07T13:02:00.128Z",
+				"modified": "2026-01-07T13:03:41.212Z",
+				"projectPath": "/home/test/project",
+				"isSidechain": false
+			},
+			{
+				"sessionId": "def-456",
+				"fullPath": "/test/def-456.jsonl",
+				"fileMtime": 1700000100000,
+				"firstPrompt": "另一个提示",
+				"summary": "另一个会话",
+				"messageCount": 25,
+				"created": "2026-01-08T10:00:00.000Z",
+				"modified": "2026-01-08T10:30:00.000Z",
+				"projectPath": "/home/test/project",
+				"isSidechain": false
+			}
+		]
+	}`
+
+	// Act: 解析 JSON（当前应该失败，因为 ParseSessionIndex 尚未实现）
+	var result SessionIndexResult
+	err := json.Unmarshal([]byte(sessionIndexJSON), &result)
+
+	// Assert: 解析不应出错（结构定义正确）
+	if err != nil {
+		t.Fatalf("Failed to parse session index: %v", err)
+	}
+
+	// Assert: 验证基本字段
+	if len(result.Entries) != 2 {
+		t.Errorf("Expected 2 entries, got %d", len(result.Entries))
+	}
+
+	if result.Entries[0].SessionID != "abc-123" {
+		t.Errorf("Expected session ID 'abc-123', got '%s'", result.Entries[0].SessionID)
+	}
+
+	if result.Entries[0].MessageCount != 10 {
+		t.Errorf("Expected message count 10, got %d", result.Entries[0].MessageCount)
+	}
+
+	// 🔴 红阶段: 验证能从实际项目路径解析 sessions-index.json
+	// 使用临时目录创建测试文件
+	tmpDir := t.TempDir()
+	indexPath := filepath.Join(tmpDir, "sessions-index.json")
+	if err := os.WriteFile(indexPath, []byte(sessionIndexJSON), 0644); err != nil {
+		t.Fatalf("Failed to write test file: %v", err)
+	}
+
+	index, err := ParseSessionIndex(tmpDir)
+	if err != nil {
+		t.Errorf("❌ FAILED: ParseSessionIndex error: %v (expected success)", err)
+		return
+	}
+
+	if index == nil {
+		t.Error("❌ FAILED: ParseSessionIndex returned nil")
+		return
+	}
+
+	if len(index.Entries) != 2 {
+		t.Errorf("❌ FAILED: Expected 2 entries from file, got %d", len(index.Entries))
+	}
+
+	// 验证统计功能
+	totalMessages := 0
+	for _, entry := range index.Entries {
+		totalMessages += entry.MessageCount
+	}
+	if totalMessages != 35 { // 10 + 25
+		t.Errorf("❌ FAILED: Total message count expected 35, got %d", totalMessages)
+	}
+
+	t.Logf("✅ SessionIndex 解析成功: %d 个会话, 总消息数 %d", len(index.Entries), totalMessages)
 }

@@ -157,6 +157,26 @@ type AssistantContent struct {
 	Thinking string `json:"thinking,omitempty"` // thinking 类型内容
 }
 
+// SessionIndexEntry sessions-index.json 单个条目
+type SessionIndexEntry struct {
+	SessionID   string `json:"sessionId"`
+	FullPath    string `json:"fullPath"`
+	FileMtime   int64  `json:"fileMtime"`
+	FirstPrompt string `json:"firstPrompt"`
+	Summary     string `json:"summary"`
+	MessageCount int   `json:"messageCount"`
+	Created     string `json:"created"`
+	Modified    string `json:"modified"`
+	ProjectPath string `json:"projectPath"`
+	IsSidechain bool   `json:"isSidechain"`
+}
+
+// SessionIndexResult sessions-index.json 解析结果
+type SessionIndexResult struct {
+	Version int                  `json:"version"`
+	Entries []SessionIndexEntry  `json:"entries"`
+}
+
 // MCPToolStats MCP工具统计
 type MCPToolStats struct {
 	Tool   string `json:"tool"`
@@ -510,6 +530,28 @@ func buildSessionStatsFromActivity(activity []DailyActivity) *SessionStats {
 		ValleyCount:     valleyDay.SessionCount,
 		DailySessionMap: dailySessionMap,
 	}
+}
+
+// ParseSessionIndex 解析 sessions-index.json 文件
+// 返回会话索引数据，可用于更准确的会话统计
+func ParseSessionIndex(projectPath string) (*SessionIndexResult, error) {
+	if projectPath == "" {
+		return nil, fmt.Errorf("project path is required")
+	}
+
+	indexPath := filepath.Join(projectPath, "sessions-index.json")
+	f, err := os.Open(indexPath)
+	if err != nil {
+		return nil, fmt.Errorf("open sessions-index.json: %w", err)
+	}
+	defer f.Close()
+
+	var result SessionIndexResult
+	if err := json.NewDecoder(f).Decode(&result); err != nil {
+		return nil, fmt.Errorf("decode sessions-index.json: %w", err)
+	}
+
+	return &result, nil
 }
 
 // ParseSessionStats 解析会话统计（全部数据）
