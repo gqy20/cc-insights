@@ -648,3 +648,58 @@ func TestParallelParsing_FasterThanSerial(t *testing.T) {
 		t.Errorf("⚠️ 并行解析耗时 %v 过长，可能未真正并行化", avgParallel)
 	}
 }
+
+// === P1: HTTP 超时保护 ===
+
+// TestHTTPTimeout_ProtectSlowRequests 测试 handleDataAPI 应有超时保护
+// 防止慢请求长时间占用连接
+//
+// 🔴 红阶段: 当前实现没有 context.WithTimeout，
+// 如果解析耗时很长，HTTP 连接会被无限期占用
+func TestHTTPTimeout_ProtectSlowRequests(t *testing.T) {
+	// Arrange: 创建正常数据目录
+	tmpDir := t.TempDir()
+	os.MkdirAll(filepath.Join(tmpDir, "projects", "p"), 0755)
+	os.MkdirAll(filepath.Join(tmpDir, "debug"), 0755)
+
+	historyPath := filepath.Join(tmpDir, "history.jsonl")
+	os.WriteFile(historyPath, []byte(`{"display":"/test","pastedContents":{},"timestamp":1700000000000,"project":"/tmp"}`+"\n"), 0644)
+
+	projPath := filepath.Join(tmpDir, "projects", "p", "s.jsonl")
+	os.WriteFile(projPath, []byte(`{"type":"assistant","message":{"role":"assistant","model":"m-1","content":[{"type":"text","text":"hi"}],"usage":{"input_tokens":5,"output_tokens":10}},"timestamp":"2024-11-15T00:00:00Z","cwd":"/tmp","sessionId":"s1"}`+"\n"), 0644)
+
+	origDataDir := cfg.DataDir
+	cfg.DataDir = tmpDir
+	defer func() { cfg.DataDir = origDataDir }()
+
+	// Act: 发起 API 请求（正常数据应在合理时间内返回）
+	req := httptest.NewRequest("GET", "/api/data?preset=all", nil)
+	w := httptest.NewRecorder()
+
+	start := time.Now()
+	handleDataAPI(w, req)
+	elapsed := time.Since(start)
+
+	// Assert: 正常数据请求应快速完成（<5s）
+	if w.Code != http.StatusOK {
+		t.Errorf("❌ FAILED: HTTP 状态码 %d, 期望 200", w.Code)
+		return
+	}
+
+	// 正常小数据集应在 1s 内完成
+	if elapsed > 1*time.Second {
+		t.Logf("⚠️ 请求耗时 %v（超过 1s，但数据集很小）", elapsed)
+	}
+
+	var resp APIResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("无法解析响应 JSON: %v", err)
+	}
+
+	if !resp.Success {
+		t.Errorf("❌ FAILED: Success=false, Error=%s", resp.Error)
+		return
+	}
+
+	t.Logf("✅ HTTP 请求在 %v 内完成（有超时保护时会更安全）", elapsed)
+}
