@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -49,6 +50,10 @@ type DailyTrendData struct {
 func handleDataAPI(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 
+	// P1: 60秒超时保护，防止慢请求长时间占用连接
+	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
+	defer cancel()
+
 	// 解析参数
 	preset := r.URL.Query().Get("preset")
 	startStr := r.URL.Query().Get("start")
@@ -73,33 +78,46 @@ func handleDataAPI(w http.ResponseWriter, r *http.Request) {
 		tf = TimeFilter{Start: nil, End: nil}
 	}
 
-	var data *DashboardData
+	// 使用 channel + select 实现超时控制
+	type result struct {
+		data *DashboardData
+		err  error
+	}
+	resultCh := make(chan result, 1)
 
-	// 优先使用缓存
-	if globalCache != nil {
-		data, err = buildDataFromCache(tf, preset)
-		if err != nil {
-			// 缓存读取失败，降级到实时解析
-			fmt.Fprintf(os.Stderr, "缓存读取失败，降级到实时解析: %v\n", err)
-			data, err = buildDataFromParsing(tf, preset)
+	go func() {
+		var data *DashboardData
+
+		// 优先使用缓存
+		if globalCache != nil {
+			data, err = buildDataFromCache(tf, preset)
 			if err != nil {
-				sendError(w, err.Error())
-				return
+				fmt.Fprintf(os.Stderr, "缓存读取失败，降级到实时解析: %v\n", err)
+				data, err = buildDataFromParsing(tf, preset)
 			}
+		} else {
+			data, err = buildDataFromParsing(tf, preset)
 		}
-	} else {
-		// 无缓存，使用实时解析
-		data, err = buildDataFromParsing(tf, preset)
-		if err != nil {
-			sendError(w, err.Error())
+
+		resultCh <- result{data: data, err: err}
+	}()
+
+	// 等待结果或超时
+	select {
+	case <-ctx.Done():
+		// 超时或客户端断开
+		http.Error(w, `{"success":false,"error":"请求超时（数据处理超过60秒），请缩小时间范围后重试"}`, http.StatusRequestTimeout)
+		return
+	case res := <-resultCh:
+		if res.err != nil {
+			sendError(w, res.err.Error())
 			return
 		}
+		sendJSON(w, APIResponse{
+			Success: true,
+			Data:    res.data,
+		})
 	}
-
-	sendJSON(w, APIResponse{
-		Success: true,
-		Data:    data,
-	})
 }
 
 // buildDataFromCache 从缓存数据构建 API 响应
