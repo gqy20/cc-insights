@@ -404,3 +404,25 @@ func sendError(w http.ResponseWriter, message string) {
 		Error:   message,
 	})
 }
+
+// === P0: 优雅降级 - Safe Parse 包装函数（桩，将在绿阶段实现）===
+
+// safeParseHistoryConcurrent 安全解析 history（容错包装）
+func safeParseHistoryConcurrent(tf TimeFilter) ([]CommandStats, map[string]int, error) {
+	return ParseHistoryConcurrent(tf)
+}
+
+// safeParseProjectsOnce 安全解析项目数据（容错包装）
+func safeParseProjectsOnce(tf TimeFilter) (*ProjectAggregate, error) {
+	return ParseProjectsConcurrentOnce(tf)
+}
+
+// safeParseDebugLogs 安全解析 debug 日志（容错包装）
+func safeParseDebugLogs(tf TimeFilter) ([]MCPToolStats, error) {
+	return ParseDebugLogsConcurrent(tf)
+}
+
+// safeParseSessionStats 安全解析会话统计（容错包装）
+func safeParseSessionStats(tf TimeFilter) (*SessionStats, error) {
+	return ParseSessionStatsWithFilter(tf)
+}
