@@ -141,25 +141,33 @@ func (cf *CacheFile) QueryByTimeRange(start, end time.Time) *CacheFile {
 
 	// 遍历每日统计，过滤时间范围
 	for date, dayStats := range cf.DailyStats {
-		// 解析日期
 		dateParsed, err := time.Parse("2006-01-02", date)
 		if err != nil {
 			continue
 		}
 
-		// 检查是否在查询范围内
 		if queryRange.Contains(dateParsed) {
-			// 复制每日统计
 			dayCopy := *dayStats
 			result.DailyStats[date] = &dayCopy
 
-			// 累加统计
 			result.TotalMessages += dayStats.MessageCount
 			result.TotalSessions += dayStats.SessionCount
 		}
 	}
 
-	// 复制 HourlyStats（不依赖时间范围）
+	// 从过滤后的 DailyStats 中收集有效项目名和模型名
+	activeProjects := make(map[string]bool)
+	activeModels := make(map[string]bool)
+	for _, dayStats := range result.DailyStats {
+		for proj := range dayStats.ProjectCounts {
+			activeProjects[proj] = true
+		}
+		for model := range dayStats.ModelCounts {
+			activeModels[model] = true
+		}
+	}
+
+	// 复制 HourlyStats（全局分布模式，不过滤）
 	for i, hs := range cf.HourlyStats {
 		if hs != nil {
 			hsCopy := *hs
@@ -167,26 +175,30 @@ func (cf *CacheFile) QueryByTimeRange(start, end time.Time) *CacheFile {
 		}
 	}
 
-	// 复制 WeekdayStats（不依赖时间范围）
+	// 复制 WeekdayStats（全局分布模式，不过滤）
 	for i, ws := range cf.WeekdayStats {
 		if ws != nil {
 			result.WeekdayStats[i] = ws
 		}
 	}
 
-	// 复制全局统计（不依赖时间范围）
+	// 过滤 ProjectStats：只保留时间范围内有活动的项目
 	for proj, stats := range cf.ProjectStats {
-		projCopy := *stats
-		result.ProjectStats[proj] = &projCopy
+		if activeProjects[proj] {
+			projCopy := *stats
+			result.ProjectStats[proj] = &projCopy
+		}
 	}
 
-	// 复制 ModelUsage（不依赖时间范围）
+	// 过滤 ModelUsage：只保留时间范围内使用的模型
 	for model, mu := range cf.ModelUsage {
-		muCopy := *mu
-		result.ModelUsage[model] = &muCopy
+		if activeModels[model] {
+			muCopy := *mu
+			result.ModelUsage[model] = &muCopy
+		}
 	}
 
-	// 复制 MCPToolStats（不依赖时间范围）
+	// MCPToolStats（全局统计，不过滤——debug日志无每日分解）
 	for tool, count := range cf.MCPToolStats {
 		result.MCPToolStats[tool] = count
 	}
