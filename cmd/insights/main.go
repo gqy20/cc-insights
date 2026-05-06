@@ -301,40 +301,31 @@ func dashboardPageHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // statsAPIHandler 统计数据 API (保持兼容)
+// 重写: 使用 buildDataFromParsing 获取真实数据，替代遗留函数+硬编码假日期
 func statsAPIHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	cmdStats, _, err := ParseHistory()
+	// 使用统一的数据构建管道（与 /api/data 相同逻辑）
+	tf := TimeFilter{Start: nil, End: nil}
+	data, err := buildDataFromParsing(tf, "all")
 	if err != nil {
 		http.Error(w, err.Error(), 500)
 		return
 	}
 
-	_, counts, err := GetDailyTrend()
-	if err != nil {
-		http.Error(w, err.Error(), 500)
-		return
-	}
-
-	cache, err := ParseStatsCache()
-	if err != nil {
-		http.Error(w, err.Error(), 500)
-		return
-	}
-
-	// JSON 响应
+	// 保持原有响应格式（向后兼容），但使用真实数据
 	fmt.Fprintf(w, `{
-		"commands": %s,
-		"daily_trend": {
-			"dates": %s,
-			"counts": %s
-		},
-		"model_usage": %s
-	}`,
-		toJSON(cmdStats),
-		toJSON([]string{"2025-12-31", "2026-01-01", "2026-01-02", "2026-01-03", "2026-01-04", "2026-01-05", "2026-01-06"}),
-		toJSON(counts),
-		toJSON(cache.ModelUsage))
+			"commands": %s,
+			"daily_trend": {
+				"dates": %s,
+				"counts": %s
+			},
+			"model_usage": %s
+		}`,
+		toJSON(data.Commands),
+		toJSON(data.DailyTrend.Dates),
+		toJSON(data.DailyTrend.Counts),
+		toJSON(data.ModelUsage))
 }
 
 // reloadHandler 重新加载数据
