@@ -788,3 +788,91 @@ func TestStatsAPIHandler_NoFakeData(t *testing.T) {
 
 	t.Logf("✅ /api/stats 返回真实数据: dates=%v, commands=%d", dateList, len(cmds))
 }
+
+// TestQueryByTimeRange_FilterGlobalStats 测试缓存查询应过滤全局统计
+//
+// 🔴 红阶段: 当前 QueryByTimeRange 只过滤了 DailyStats，
+// 但 HourlyStats/WeekdayStats/ProjectStats/ModelUsage/MCPToolStats 全量复制。
+// 选"最近7天"时返回全量项目排名和模型使用，与用户预期不符。
+func TestQueryByTimeRange_FilterGlobalStats(t *testing.T) {
+	// Arrange: 创建一个跨多天的缓存
+	cache := &CacheFile{
+		Version:    "1.0",
+		LastUpdate: time.Now(),
+		DailyStats:  make(map[string]*DayAggregate),
+		HourlyStats: [24]*HourAggregate{},
+		ProjectStats: make(map[string]*ProjectStatItem),
+		ModelUsage:   make(map[string]*ModelUsageItem),
+		MCPToolStats: make(map[string]int),
+	}
+
+	// Day1 (在范围内): project-A 有活动, model-X 有使用
+	cache.DailyStats["2026-01-01"] = &DayAggregate{
+		Date:         "2026-01-01",
+		MessageCount:  10,
+		ProjectCounts: map[string]int{"project-a": 10},
+		ModelCounts:   map[string]int{"model-x": 10},
+	}
+	// Day2 (在范围内): project-B 有活动, model-Y 有使用
+	cache.DailyStats["2026-01-02"] = &DayAggregate{
+		Date:         "2026-01-02",
+		MessageCount:  5,
+		ProjectCounts: map[string]int{"project-b": 5},
+		ModelCounts:   map[string]int{"model-y": 5},
+	}
+	// Day3 (范围外): project-C 有大量活动（应被过滤掉）
+	cache.DailyStats["2026-12-01"] = &DayAggregate{
+		Date:         "2026-12-01",
+		MessageCount:  100,
+		ProjectCounts: map[string]int{"project-c": 100},
+		ModelCounts:   map[string]int{"model-z": 100},
+	}
+
+	// 全量 ProjectStats（包含范围外的 project-c）
+	cache.ProjectStats["project-a"] = &ProjectStatItem{Project: "project-a", MessageCount: 10}
+	cache.ProjectStats["project-b"] = &ProjectStatItem{Project: "project-b", MessageCount: 5}
+	cache.ProjectStats["project-c"] = &ProjectStatItem{Project: "project-c", MessageCount: 100}
+
+	// 全量 ModelUsage（包含范围外的 model-z）
+	cache.ModelUsage["model-x"] = &ModelUsageItem{Model: "model-x", Count: 10}
+	cache.ModelUsage["model-y"] = &ModelUsageItem{Model: "model-y", Count: 5}
+	cache.ModelUsage["model-z"] = &ModelUsageItem{Model: "model-z", Count: 100}
+
+	// Act: 查询 2026-01-01 到 2026-01-02 范围（不包含 project-c/model-z）
+	start, _ := time.Parse("2006-01-02", "2026-01-01")
+	end, _ := time.Parse("2006-01-02", "2026-01-03")
+	result := cache.QueryByTimeRange(start, end)
+
+	// Assert: DailyStats 应只包含 2 天
+	if len(result.DailyStats) != 2 {
+		t.Errorf("❌ FAILED: DailyStats 数量=%d, 期望=2", len(result.DailyStats))
+	}
+
+	// 🔴 关键断言: ProjectStats 应排除范围外的 project-c
+	if len(result.ProjectStats) != 2 {
+		t.Errorf("❌ FAILED: ProjectStats 数量=%d, 期望=2 (应排除范围外项目)\n"+
+			"   实际项目: %+v", len(result.ProjectStats), result.ProjectStats)
+		return
+	}
+
+	for proj := range result.ProjectStats {
+		if proj == "project-c" {
+			t.Error("❌ FAILED: ProjectStats 包含范围外的 'project-c'")
+		}
+	}
+
+	// 🔴 关键断言: ModelUsage 应排除范围外的 model-z
+	if len(result.ModelUsage) != 2 {
+		t.Errorf("❌ FAILED: ModelUsage 数量=%d, 期望=2 (应排除范围外模型)", len(result.ModelUsage))
+		return
+	}
+
+	for model := range result.ModelUsage {
+		if model == "model-z" {
+			t.Error("❌ FAILED: ModelUsage 包含范围外的 'model-z'")
+		}
+	}
+
+	t.Logf("✅ QueryByTimeRange 正确过滤了全局统计: projects=%d, models=%d",
+		len(result.ProjectStats), len(result.ModelUsage))
+}
