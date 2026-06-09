@@ -34,6 +34,7 @@ type DashboardData struct {
 	WeekdayStats   *WeekdayStats     `json:"weekday_stats,omitempty"`
 	ModelUsage     []ModelUsageItem  `json:"model_usage,omitempty"`
 	WorkHoursStats *WorkHoursStats   `json:"work_hours_stats,omitempty"`
+	ToolAnalysis   *ToolAnalysisData `json:"tool_analysis,omitempty"`
 }
 
 // TimeRangeInfo 时间范围信息
@@ -279,6 +280,7 @@ func buildDataFromCache(tf TimeFilter, preset string) (*DashboardData, error) {
 		PeakHour:       peakHour,
 		PeakHourCount:  peakHourCount,
 	}
+	toolAnalysis := buildToolAnalysisFromCache(cached)
 
 	// 构建时间范围信息
 	rangeInfo := TimeRangeInfo{Preset: preset}
@@ -305,6 +307,7 @@ func buildDataFromCache(tf TimeFilter, preset string) (*DashboardData, error) {
 		WeekdayStats:   weekdayStats,
 		ModelUsage:     modelUsage,
 		WorkHoursStats: workHoursStats,
+		ToolAnalysis:   toolAnalysis,
 	}, nil
 }
 
@@ -392,7 +395,38 @@ func buildDataFromParsing(tf TimeFilter, preset string) (*DashboardData, error) 
 		WeekdayStats:   aggregate.WeekdayStats,
 		ModelUsage:     aggregate.ModelUsageList,
 		WorkHoursStats: aggregate.WorkHoursStats,
+		ToolAnalysis:   aggregate.ToolAnalysis,
 	}, nil
+}
+
+func buildToolAnalysisFromCache(cache *CacheFile) *ToolAnalysisData {
+	analysis := &ToolAnalysisData{
+		Tools:          make([]ToolStatItem, 0, len(cache.ToolStats)),
+		FailureKinds:   make([]ToolFailureKind, 0, len(cache.ToolFailures)),
+		FailureSamples: append([]ToolFailureSample(nil), cache.ToolSamples...),
+	}
+
+	for _, stat := range cache.ToolStats {
+		if stat == nil {
+			continue
+		}
+		statCopy := *stat
+		if statCopy.CallCount > 0 {
+			statCopy.FailureRate = float64(statCopy.FailureCount) / float64(statCopy.CallCount) * 100
+		}
+		analysis.TotalCalls += statCopy.CallCount
+		analysis.TotalFailures += statCopy.FailureCount
+		analysis.MissingResults += statCopy.MissingResultCount
+		analysis.Tools = append(analysis.Tools, statCopy)
+	}
+	sortToolStats(analysis.Tools)
+
+	for kind, count := range cache.ToolFailures {
+		analysis.FailureKinds = append(analysis.FailureKinds, ToolFailureKind{Kind: kind, Count: count})
+	}
+	sortFailureKinds(analysis.FailureKinds)
+
+	return analysis
 }
 
 // sortDatesAndCounts 按日期排序日期和计数数组
@@ -421,6 +455,30 @@ func sortProjectStats(projects []ProjectStatItem) {
 	}
 }
 
+func sortToolStats(tools []ToolStatItem) {
+	n := len(tools)
+	for i := 0; i < n-1; i++ {
+		for j := 0; j < n-i-1; j++ {
+			if tools[j].CallCount < tools[j+1].CallCount ||
+				(tools[j].CallCount == tools[j+1].CallCount && tools[j].Tool > tools[j+1].Tool) {
+				tools[j], tools[j+1] = tools[j+1], tools[j]
+			}
+		}
+	}
+}
+
+func sortFailureKinds(kinds []ToolFailureKind) {
+	n := len(kinds)
+	for i := 0; i < n-1; i++ {
+		for j := 0; j < n-i-1; j++ {
+			if kinds[j].Count < kinds[j+1].Count ||
+				(kinds[j].Count == kinds[j+1].Count && kinds[j].Kind > kinds[j+1].Kind) {
+				kinds[j], kinds[j+1] = kinds[j+1], kinds[j]
+			}
+		}
+	}
+}
+
 // sendJSON 发送 JSON 响应
 func sendJSON(w http.ResponseWriter, v interface{}) error {
 	return json.NewEncoder(w).Encode(v)
@@ -440,10 +498,13 @@ func sendError(w http.ResponseWriter, message string) {
 // emptyProjectAggregate 返回安全的空 ProjectAggregate
 func emptyProjectAggregate() *ProjectAggregate {
 	agg := &ProjectAggregate{
-		ProjectStats:  make(map[string]*ProjectStatItem),
-		DailyActivity: make(map[string]int),
-		ModelUsage:    make(map[string]*ModelUsageItem),
-		HourlyCounts:  [24]int{},
+		ProjectStats:     make(map[string]*ProjectStatItem),
+		DailyActivity:    make(map[string]int),
+		DailySessions:    make(map[string]map[string]bool),
+		ModelUsage:       make(map[string]*ModelUsageItem),
+		ToolStats:        make(map[string]*ToolStatItem),
+		ToolFailureKinds: make(map[string]int),
+		HourlyCounts:     [24]int{},
 	}
 	weekdayNames := []string{"周一", "周二", "周三", "周四", "周五", "周六", "周日"}
 	for i := 0; i < 7; i++ {

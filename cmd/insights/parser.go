@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -87,6 +88,42 @@ type ModelUsageItem struct {
 	Tokens int    `json:"tokens"`
 }
 
+// ToolAnalysisData 工具调用分析结果
+type ToolAnalysisData struct {
+	TotalCalls     int                 `json:"total_calls"`
+	TotalFailures  int                 `json:"total_failures"`
+	MissingResults int                 `json:"missing_results"`
+	Tools          []ToolStatItem      `json:"tools"`
+	FailureKinds   []ToolFailureKind   `json:"failure_kinds"`
+	FailureSamples []ToolFailureSample `json:"failure_samples"`
+}
+
+// ToolStatItem 单个工具调用统计
+type ToolStatItem struct {
+	Tool               string  `json:"tool"`
+	CallCount          int     `json:"call_count"`
+	SuccessCount       int     `json:"success_count"`
+	FailureCount       int     `json:"failure_count"`
+	MissingResultCount int     `json:"missing_result_count"`
+	FailureRate        float64 `json:"failure_rate"`
+}
+
+// ToolFailureKind 工具失败类型聚合
+type ToolFailureKind struct {
+	Kind  string `json:"kind"`
+	Count int    `json:"count"`
+}
+
+// ToolFailureSample 工具失败样例（只保存短摘要，不保存完整对话）
+type ToolFailureSample struct {
+	Tool           string `json:"tool"`
+	Kind           string `json:"kind"`
+	Project        string `json:"project"`
+	SessionID      string `json:"session_id"`
+	Timestamp      string `json:"timestamp"`
+	ContentPreview string `json:"content_preview"`
+}
+
 // WorkHoursStats 工作时段统计
 type WorkHoursStats struct {
 	HourlyData     []HourlyItem `json:"hourly_data"` // 每小时数据
@@ -118,6 +155,9 @@ type ProjectAggregate struct {
 	HourlyData        []HourlyItem                `json:"-"`          // 小时数据
 	ModelUsage        map[string]*ModelUsageItem  `json:"-"`          // 模型使用（map）
 	ModelUsageList    []ModelUsageItem            `json:"models"`     // 模型使用（输出格式）
+	ToolStats         map[string]*ToolStatItem    `json:"-"`          // 工具调用统计
+	ToolFailureKinds  map[string]int              `json:"-"`          // 工具失败类型
+	ToolAnalysis      *ToolAnalysisData           `json:"tools"`      // 工具分析（输出格式）
 	WorkHoursStats    *WorkHoursStats             `json:"work_hours"` // 工作时段统计
 	mu                sync.RWMutex                `json:"-"`          // 保护并发写入
 }
@@ -153,9 +193,15 @@ type AssistantMessage struct {
 
 // AssistantContent 支持多种内容类型（text, thinking）
 type AssistantContent struct {
-	Type     string `json:"type"`               // "text" | "thinking"
-	Text     string `json:"text"`               // text 类型内容
-	Thinking string `json:"thinking,omitempty"` // thinking 类型内容
+	Type      string          `json:"type"`               // "text" | "thinking" | "tool_use" | "tool_result"
+	Text      string          `json:"text"`               // text 类型内容
+	Thinking  string          `json:"thinking,omitempty"` // thinking 类型内容
+	ID        string          `json:"id,omitempty"`       // tool_use ID
+	Name      string          `json:"name,omitempty"`     // tool_use name
+	Input     json.RawMessage `json:"input,omitempty"`    // tool_use input
+	ToolUseID string          `json:"tool_use_id"`        // tool_result 关联 ID
+	Content   json.RawMessage `json:"content,omitempty"`  // tool_result content
+	IsError   bool            `json:"is_error,omitempty"` // tool_result 显式失败
 }
 
 // SessionIndexEntry sessions-index.json 单个条目
@@ -191,8 +237,17 @@ type DebugFileInfo struct {
 	ModTime time.Time
 }
 
+type pendingToolCall struct {
+	ID        string
+	Tool      string
+	Project   string
+	SessionID string
+	Timestamp time.Time
+}
+
 var (
-	mcpPattern = regexp.MustCompile(`mcp__(\w+)__(\w+)`)
+	mcpPattern      = regexp.MustCompile(`mcp__(\w+)__(\w+)`)
+	toolFailureExpr = regexp.MustCompile(`(?i)(error|failed|exception|traceback|timed out|timeout|permission denied|no such file|command failed|exit code|is_error|\"success\"\s*:\s*false|失败|错误|异常|超时|权限|不存在)`)
 )
 
 // ParseHistoryWithFilter 带时间过滤解析 history.jsonl
@@ -544,12 +599,14 @@ func ParseProjectsConcurrentOnceFromDir(tf TimeFilter, dataDir string) (*Project
 
 	// 初始化聚合数据
 	aggregate := &ProjectAggregate{
-		ProjectStats:  make(map[string]*ProjectStatItem),
-		DailyActivity: make(map[string]int),
-		DailySessions: make(map[string]map[string]bool),
-		ModelUsage:    make(map[string]*ModelUsageItem),
-		HourlyCounts:  [24]int{},
-		mu:            sync.RWMutex{},
+		ProjectStats:     make(map[string]*ProjectStatItem),
+		DailyActivity:    make(map[string]int),
+		DailySessions:    make(map[string]map[string]bool),
+		ModelUsage:       make(map[string]*ModelUsageItem),
+		ToolStats:        make(map[string]*ToolStatItem),
+		ToolFailureKinds: make(map[string]int),
+		HourlyCounts:     [24]int{},
+		mu:               sync.RWMutex{},
 	}
 
 	// 初始化星期数据
@@ -613,6 +670,7 @@ func parseProjectFileAggregate(filePath string, tf TimeFilter, agg *ProjectAggre
 	}
 	defer f.Close()
 
+	pendingTools := make(map[string]pendingToolCall)
 	decoder := json.NewDecoder(f)
 	for {
 		var record ProjectRecord
@@ -634,8 +692,23 @@ func parseProjectFileAggregate(filePath string, tf TimeFilter, agg *ProjectAggre
 			continue
 		}
 
+		projectName := record.Cwd
+		if projectName == "" {
+			projectName = "Unknown"
+		}
+
+		if record.Type == "user" {
+			parseToolResults(record, timestamp, projectName, pendingTools, agg)
+			continue
+		}
+
 		// 只统计 assistant 消息
 		if record.Type != "assistant" {
+			continue
+		}
+
+		var msg AssistantMessage
+		if err := json.Unmarshal(record.Message, &msg); err != nil {
 			continue
 		}
 
@@ -643,10 +716,6 @@ func parseProjectFileAggregate(filePath string, tf TimeFilter, agg *ProjectAggre
 		agg.mu.Lock()
 
 		// 1. 项目统计
-		projectName := record.Cwd
-		if projectName == "" {
-			projectName = "Unknown"
-		}
 		if agg.ProjectStats[projectName] == nil {
 			agg.ProjectStats[projectName] = &ProjectStatItem{
 				Project: projectName,
@@ -678,21 +747,196 @@ func parseProjectFileAggregate(filePath string, tf TimeFilter, agg *ProjectAggre
 		agg.HourlyCounts[hour]++
 
 		// 5. 模型使用统计
-		var msg AssistantMessage
-		if err := json.Unmarshal(record.Message, &msg); err == nil {
-			if msg.Model != "" {
-				if agg.ModelUsage[msg.Model] == nil {
-					agg.ModelUsage[msg.Model] = &ModelUsageItem{
-						Model: msg.Model,
-					}
+		if msg.Model != "" {
+			if agg.ModelUsage[msg.Model] == nil {
+				agg.ModelUsage[msg.Model] = &ModelUsageItem{
+					Model: msg.Model,
 				}
-				agg.ModelUsage[msg.Model].Count++
-				agg.ModelUsage[msg.Model].Tokens += msg.Usage.InputTokens + msg.Usage.OutputTokens
 			}
+			agg.ModelUsage[msg.Model].Count++
+			agg.ModelUsage[msg.Model].Tokens += msg.Usage.InputTokens + msg.Usage.OutputTokens
+		}
+
+		// 6. 工具调用统计
+		for _, content := range msg.Content {
+			if content.Type != "tool_use" || content.ID == "" || content.Name == "" {
+				continue
+			}
+			pendingTools[content.ID] = pendingToolCall{
+				ID:        content.ID,
+				Tool:      content.Name,
+				Project:   projectName,
+				SessionID: record.SessionID,
+				Timestamp: timestamp,
+			}
+			addToolCallLocked(agg, content.Name)
 		}
 
 		agg.mu.Unlock()
 	}
+
+	if len(pendingTools) > 0 {
+		agg.mu.Lock()
+		for _, call := range pendingTools {
+			addMissingToolResultLocked(agg, call)
+		}
+		agg.mu.Unlock()
+	}
+}
+
+func parseToolResults(record ProjectRecord, timestamp time.Time, projectName string, pendingTools map[string]pendingToolCall, agg *ProjectAggregate) {
+	var msg struct {
+		Content json.RawMessage `json:"content"`
+	}
+	if err := json.Unmarshal(record.Message, &msg); err != nil {
+		return
+	}
+
+	contentRaw := bytes.TrimSpace(msg.Content)
+	if len(contentRaw) == 0 || contentRaw[0] != '[' {
+		return
+	}
+
+	var contents []AssistantContent
+	if err := json.Unmarshal(contentRaw, &contents); err != nil {
+		return
+	}
+
+	for _, content := range contents {
+		if content.Type != "tool_result" || content.ToolUseID == "" {
+			continue
+		}
+
+		call, ok := pendingTools[content.ToolUseID]
+		if !ok {
+			call = pendingToolCall{
+				ID:        content.ToolUseID,
+				Tool:      "unknown",
+				Project:   projectName,
+				SessionID: record.SessionID,
+				Timestamp: timestamp,
+			}
+		}
+
+		kind, failed := classifyToolResult(content)
+		preview := toolResultPreview(content.Content)
+
+		agg.mu.Lock()
+		if !ok {
+			addToolCallLocked(agg, call.Tool)
+		}
+		addToolResultLocked(agg, call, failed, kind, preview, timestamp)
+		agg.mu.Unlock()
+
+		delete(pendingTools, content.ToolUseID)
+	}
+}
+
+func addToolCallLocked(agg *ProjectAggregate, tool string) {
+	stat := ensureToolStat(agg, tool)
+	stat.CallCount++
+}
+
+func addToolResultLocked(agg *ProjectAggregate, call pendingToolCall, failed bool, kind string, preview string, timestamp time.Time) {
+	stat := ensureToolStat(agg, call.Tool)
+	if failed {
+		stat.FailureCount++
+		agg.ToolFailureKinds[kind]++
+		if len(agg.ToolAnalysisFailureSamples()) < 30 {
+			agg.ToolAnalysisAddFailureSample(ToolFailureSample{
+				Tool:           call.Tool,
+				Kind:           kind,
+				Project:        call.Project,
+				SessionID:      call.SessionID,
+				Timestamp:      timestamp.Format(time.RFC3339),
+				ContentPreview: preview,
+			})
+		}
+		return
+	}
+	stat.SuccessCount++
+}
+
+func addMissingToolResultLocked(agg *ProjectAggregate, call pendingToolCall) {
+	stat := ensureToolStat(agg, call.Tool)
+	stat.MissingResultCount++
+}
+
+func ensureToolStat(agg *ProjectAggregate, tool string) *ToolStatItem {
+	if agg.ToolStats == nil {
+		agg.ToolStats = make(map[string]*ToolStatItem)
+	}
+	if tool == "" {
+		tool = "unknown"
+	}
+	if agg.ToolStats[tool] == nil {
+		agg.ToolStats[tool] = &ToolStatItem{Tool: tool}
+	}
+	return agg.ToolStats[tool]
+}
+
+func classifyToolResult(content AssistantContent) (string, bool) {
+	if content.IsError {
+		return "explicit_error", true
+	}
+
+	text := toolResultText(content.Content)
+	if text == "" {
+		return "", false
+	}
+	lower := strings.ToLower(text)
+	switch {
+	case strings.Contains(lower, `"success":false`) || strings.Contains(lower, `"success": false`):
+		return "api_failure", true
+	case strings.Contains(lower, "timed out") || strings.Contains(lower, "timeout") || strings.Contains(lower, "超时"):
+		return "timeout", true
+	case strings.Contains(lower, "permission denied") || strings.Contains(lower, "权限"):
+		return "permission", true
+	case strings.Contains(lower, "no such file") || strings.Contains(lower, "不存在"):
+		return "not_found", true
+	case strings.Contains(lower, "exit code") || strings.Contains(lower, "command failed"):
+		return "command_failed", true
+	case toolFailureExpr.MatchString(text):
+		return "error_text", true
+	default:
+		return "", false
+	}
+}
+
+func toolResultPreview(raw json.RawMessage) string {
+	text := toolResultText(raw)
+	text = strings.Join(strings.Fields(text), " ")
+	if len(text) > 240 {
+		return text[:240]
+	}
+	return text
+}
+
+func toolResultText(raw json.RawMessage) string {
+	raw = bytes.TrimSpace(raw)
+	if len(raw) == 0 {
+		return ""
+	}
+
+	var s string
+	if err := json.Unmarshal(raw, &s); err == nil {
+		return s
+	}
+	return string(raw)
+}
+
+func (agg *ProjectAggregate) ToolAnalysisFailureSamples() []ToolFailureSample {
+	if agg.ToolAnalysis == nil {
+		return nil
+	}
+	return agg.ToolAnalysis.FailureSamples
+}
+
+func (agg *ProjectAggregate) ToolAnalysisAddFailureSample(sample ToolFailureSample) {
+	if agg.ToolAnalysis == nil {
+		agg.ToolAnalysis = &ToolAnalysisData{}
+	}
+	agg.ToolAnalysis.FailureSamples = append(agg.ToolAnalysis.FailureSamples, sample)
 }
 
 // finalize 生成输出格式的数据
@@ -745,7 +989,10 @@ func (agg *ProjectAggregate) finalize() {
 		return agg.ModelUsageList[i].Count > agg.ModelUsageList[j].Count
 	})
 
-	// 6. 生成工作时段统计
+	// 6. 转换工具分析
+	agg.finalizeToolAnalysis()
+
+	// 7. 生成工作时段统计
 	var workHoursCount, offHoursCount int
 	var peakHour, peakCount int
 
@@ -776,4 +1023,44 @@ func (agg *ProjectAggregate) finalize() {
 		PeakHour:       peakHour,
 		PeakHourCount:  peakCount,
 	}
+}
+
+func (agg *ProjectAggregate) finalizeToolAnalysis() {
+	analysis := &ToolAnalysisData{
+		Tools:          make([]ToolStatItem, 0, len(agg.ToolStats)),
+		FailureKinds:   make([]ToolFailureKind, 0, len(agg.ToolFailureKinds)),
+		FailureSamples: nil,
+	}
+	if agg.ToolAnalysis != nil {
+		analysis.FailureSamples = agg.ToolAnalysis.FailureSamples
+	}
+
+	for _, stat := range agg.ToolStats {
+		statCopy := *stat
+		if statCopy.CallCount > 0 {
+			statCopy.FailureRate = float64(statCopy.FailureCount) / float64(statCopy.CallCount) * 100
+		}
+		analysis.TotalCalls += statCopy.CallCount
+		analysis.TotalFailures += statCopy.FailureCount
+		analysis.MissingResults += statCopy.MissingResultCount
+		analysis.Tools = append(analysis.Tools, statCopy)
+	}
+	sort.Slice(analysis.Tools, func(i, j int) bool {
+		if analysis.Tools[i].CallCount == analysis.Tools[j].CallCount {
+			return analysis.Tools[i].Tool < analysis.Tools[j].Tool
+		}
+		return analysis.Tools[i].CallCount > analysis.Tools[j].CallCount
+	})
+
+	for kind, count := range agg.ToolFailureKinds {
+		analysis.FailureKinds = append(analysis.FailureKinds, ToolFailureKind{Kind: kind, Count: count})
+	}
+	sort.Slice(analysis.FailureKinds, func(i, j int) bool {
+		if analysis.FailureKinds[i].Count == analysis.FailureKinds[j].Count {
+			return analysis.FailureKinds[i].Kind < analysis.FailureKinds[j].Kind
+		}
+		return analysis.FailureKinds[i].Count > analysis.FailureKinds[j].Count
+	})
+
+	agg.ToolAnalysis = analysis
 }

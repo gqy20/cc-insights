@@ -43,8 +43,8 @@ func TestCacheBuilderBuildFullCache(t *testing.T) {
 	}
 
 	// 验证基本字段
-	if cache.Version == "" {
-		t.Error("Cache version is empty")
+	if cache.Version != CacheVersion {
+		t.Errorf("Cache version = %s, want %s", cache.Version, CacheVersion)
 	}
 
 	if cache.TotalMessages == 0 {
@@ -125,6 +125,12 @@ func TestCacheBuilderNeedsRebuild(t *testing.T) {
 			dataLastModified: time.Now().Add(-1 * time.Hour),
 			wantNeedsRebuild: true,
 		},
+		{
+			name:             "缓存版本过旧，需要重建",
+			cacheLastUpdate:  time.Now().Add(-1 * time.Hour),
+			dataLastModified: time.Now().Add(-2 * time.Hour),
+			wantNeedsRebuild: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -135,8 +141,11 @@ func TestCacheBuilderNeedsRebuild(t *testing.T) {
 
 			// 创建缓存文件
 			cache := &CacheFile{
-				Version:    "1.0",
+				Version:    CacheVersion,
 				LastUpdate: tt.cacheLastUpdate,
+			}
+			if tt.name == "缓存版本过旧，需要重建" {
+				cache.Version = "1.0"
 			}
 			if err := cache.Save(cachePath); err != nil {
 				t.Fatalf("Setup: Save cache failed: %v", err)

@@ -52,7 +52,7 @@ func (cb *CacheBuilder) BuildFullCache() error {
 
 	// 创建缓存结构
 	cache := &CacheFile{
-		Version:       "1.0",
+		Version:       CacheVersion,
 		LastUpdate:    time.Now(),
 		TimeRange:     TimeRange{},
 		DailyStats:    make(map[string]*DayAggregate),
@@ -61,6 +61,8 @@ func (cb *CacheBuilder) BuildFullCache() error {
 		ProjectStats:  make(map[string]*ProjectStatItem),
 		ModelUsage:    make(map[string]*ModelUsageItem),
 		MCPToolStats:  make(map[string]int),
+		ToolStats:     make(map[string]*ToolStatItem),
+		ToolFailures:  make(map[string]int),
 	}
 	// 填充 HourlyStats
 	for i := 0; i < 24; i++ {
@@ -109,6 +111,16 @@ func (cb *CacheBuilder) BuildFullCache() error {
 		key := tool.Server + "::" + tool.Tool
 		cache.MCPToolStats[key] = tool.Count
 	}
+
+	// 填充工具调用分析
+	for _, tool := range aggregate.ToolAnalysis.Tools {
+		toolCopy := tool
+		cache.ToolStats[tool.Tool] = &toolCopy
+	}
+	for _, kind := range aggregate.ToolAnalysis.FailureKinds {
+		cache.ToolFailures[kind.Kind] = kind.Count
+	}
+	cache.ToolSamples = append(cache.ToolSamples, aggregate.ToolAnalysis.FailureSamples...)
 
 	// 4. 保存缓存
 	if err := cache.Save(cb.CachePath); err != nil {
@@ -160,6 +172,9 @@ func (cb *CacheBuilder) NeedsRebuild() bool {
 	cache, err := LoadCacheFile(cb.CachePath)
 	if err != nil {
 		return true // 缓存损坏，需要重建
+	}
+	if cache.Version != CacheVersion {
+		return true
 	}
 
 	// 获取数据最后修改时间

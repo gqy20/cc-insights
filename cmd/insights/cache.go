@@ -8,6 +8,8 @@ import (
 	"time"
 )
 
+const CacheVersion = "2.0"
+
 // CacheFile 缓存文件结构
 type CacheFile struct {
 	Version    string    // 缓存格式版本
@@ -25,6 +27,9 @@ type CacheFile struct {
 	ModelUsage    map[string]*ModelUsageItem
 	WeekdayStats  [7]*WeekdayItem
 	MCPToolStats  map[string]int
+	ToolStats     map[string]*ToolStatItem
+	ToolFailures  map[string]int
+	ToolSamples   []ToolFailureSample
 }
 
 // DayAggregate 每日聚合数据
@@ -135,6 +140,8 @@ func (cf *CacheFile) QueryByTimeRange(start, end time.Time) *CacheFile {
 		ProjectStats: make(map[string]*ProjectStatItem),
 		ModelUsage:   make(map[string]*ModelUsageItem),
 		MCPToolStats: make(map[string]int),
+		ToolStats:    make(map[string]*ToolStatItem),
+		ToolFailures: make(map[string]int),
 	}
 
 	queryRange := TimeRange{Start: start, End: end}
@@ -202,6 +209,18 @@ func (cf *CacheFile) QueryByTimeRange(start, end time.Time) *CacheFile {
 	for tool, count := range cf.MCPToolStats {
 		result.MCPToolStats[tool] = count
 	}
+
+	// ToolStats（全局统计，v1 暂不按日分解）
+	for tool, stats := range cf.ToolStats {
+		if stats != nil {
+			statsCopy := *stats
+			result.ToolStats[tool] = &statsCopy
+		}
+	}
+	for kind, count := range cf.ToolFailures {
+		result.ToolFailures[kind] = count
+	}
+	result.ToolSamples = append(result.ToolSamples, cf.ToolSamples...)
 
 	return result
 }
