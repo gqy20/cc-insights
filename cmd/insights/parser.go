@@ -802,18 +802,13 @@ func ParseProjectsConcurrentOnceFromDir(tf TimeFilter, dataDir string) (*Project
 		}
 
 		projectDir := filepath.Join(projectsDir, entry.Name())
-		subEntries, err := os.ReadDir(projectDir)
+		projectFiles, err := projectJSONLFiles(projectDir)
 		if err != nil {
 			continue
 		}
 
 		// 为每个文件启动一个goroutine
-		for _, file := range subEntries {
-			if file.IsDir() || !strings.HasSuffix(file.Name(), ".jsonl") {
-				continue
-			}
-
-			filePath := filepath.Join(projectDir, file.Name())
+		for _, filePath := range projectFiles {
 			wg.Add(1)
 			go func(fp string) {
 				defer wg.Done()
@@ -831,6 +826,27 @@ func ParseProjectsConcurrentOnceFromDir(tf TimeFilter, dataDir string) (*Project
 	aggregate.finalize()
 
 	return aggregate, nil
+}
+
+func projectJSONLFiles(projectDir string) ([]string, error) {
+	var files []string
+	err := filepath.WalkDir(projectDir, func(path string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if entry.IsDir() {
+			return nil
+		}
+		if strings.HasSuffix(entry.Name(), ".jsonl") {
+			files = append(files, path)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	sort.Strings(files)
+	return files, nil
 }
 
 // parseProjectFileAggregate 解析单个项目文件并更新聚合数据
@@ -852,14 +868,11 @@ func parseProjectFileAggregate(filePath string, tf TimeFilter, agg *ProjectAggre
 			continue
 		}
 
-		// 解析时间戳
-		timestamp, err := time.Parse(time.RFC3339Nano, record.Timestamp)
-		if err != nil {
+		timestamp, hasTimestamp := parseProjectRecordTimestamp(record.Timestamp)
+		if hasTimestamp && !tf.Contains(timestamp) {
 			continue
 		}
-
-		// 时间过滤
-		if !tf.Contains(timestamp) {
+		if !hasTimestamp && hasTimeFilter(tf) {
 			continue
 		}
 
@@ -965,6 +978,21 @@ func parseProjectFileAggregate(filePath string, tf TimeFilter, agg *ProjectAggre
 		}
 		agg.mu.Unlock()
 	}
+}
+
+func parseProjectRecordTimestamp(value string) (time.Time, bool) {
+	if value == "" {
+		return time.Time{}, false
+	}
+	timestamp, err := time.Parse(time.RFC3339Nano, value)
+	if err != nil {
+		return time.Time{}, false
+	}
+	return timestamp, true
+}
+
+func hasTimeFilter(tf TimeFilter) bool {
+	return tf.Start != nil || tf.End != nil
 }
 
 func parseToolResults(record ProjectRecord, timestamp time.Time, projectName string, pendingTools map[string]pendingToolCall, agg *ProjectAggregate) {
@@ -1346,7 +1374,7 @@ func ensureBashCommandStat(agg *ProjectAggregate, commandName string) *BashComma
 }
 
 func bashCommandName(command string) string {
-	fields := strings.Fields(strings.TrimSpace(command))
+	fields := strings.Fields(firstExecutableShellSegment(command))
 	if len(fields) == 0 {
 		return "unknown"
 	}
@@ -1357,21 +1385,37 @@ func bashCommandName(command string) string {
 }
 
 func classifyBashRisk(command string) (string, string) {
-	lower := strings.ToLower(command)
+	lower := strings.ToLower(firstExecutableShellSegment(command))
 	switch {
-	case strings.Contains(lower, "rm -rf") || strings.Contains(lower, "rm -fr"):
+	case strings.HasPrefix(lower, "rm -rf ") || strings.HasPrefix(lower, "rm -fr ") || lower == "rm -rf" || lower == "rm -fr":
 		return "high", "recursive delete"
-	case strings.Contains(lower, "git reset --hard") || strings.Contains(lower, "git clean -fd"):
+	case strings.HasPrefix(lower, "git reset --hard") || strings.HasPrefix(lower, "git clean -fd"):
 		return "high", "destructive git cleanup"
-	case strings.Contains(lower, "sudo "):
+	case strings.HasPrefix(lower, "sudo "):
 		return "medium", "privileged command"
-	case strings.Contains(lower, "curl ") && strings.Contains(lower, "| sh"):
+	case strings.HasPrefix(lower, "curl ") && strings.Contains(lower, "| sh"):
 		return "high", "download pipe to shell"
-	case strings.Contains(lower, "wget ") && strings.Contains(lower, "| sh"):
+	case strings.HasPrefix(lower, "wget ") && strings.Contains(lower, "| sh"):
 		return "high", "download pipe to shell"
 	default:
 		return "", ""
 	}
+}
+
+func firstExecutableShellSegment(command string) string {
+	for _, segment := range strings.Split(command, "\n") {
+		segment = strings.TrimSpace(segment)
+		if segment == "" || strings.HasPrefix(segment, "#") {
+			continue
+		}
+		for _, separator := range []string{"&&", ";"} {
+			if idx := strings.Index(segment, separator); idx >= 0 {
+				segment = strings.TrimSpace(segment[:idx])
+			}
+		}
+		return segment
+	}
+	return ""
 }
 
 func filePathFromToolInput(raw json.RawMessage) string {
