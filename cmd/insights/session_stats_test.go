@@ -1,34 +1,28 @@
 package main
 
 import (
-	"os"
-	"path/filepath"
 	"reflect"
 	"testing"
 	"time"
 )
 
-// TestMain 设置测试环境
-func TestMain(m *testing.M) {
-	// 设置数据目录（从 cmd/insights/ 到 data/ 需要向上三级）
-	cfg.DataDir = "../../../data"
-	m.Run()
-}
-
 // TestParseSessionStatsWithTimeFilter 测试带时间过滤的会话统计
 // 重写后使用 ParseProjectsConcurrentOnce + extractSessionStatsFromAggregate
 func TestParseSessionStatsWithTimeFilter(t *testing.T) {
-	// 检查实际数据目录是否存在
-	if _, err := os.Stat(filepath.Join(cfg.DataDir, "projects")); os.IsNotExist(err) {
-		t.Skip("跳过：projects 数据目录不存在")
-	}
+	tmpDir := t.TempDir()
+	dataDir := createTestDataDir(t, tmpDir)
+
+	origDataDir := cfg.DataDir
+	cfg.DataDir = dataDir
+	defer func() { cfg.DataDir = origDataDir }()
 
 	// Arrange - 准备时间过滤器（最近7天）
 	now := time.Now()
 	start := now.AddDate(0, 0, -7)
+	end := now.Add(2 * time.Hour)
 	filter := TimeFilter{
 		Start: &start,
-		End:   &now,
+		End:   &end,
 	}
 
 	// Act - 调用函数（内部使用 aggregate 而非冗余遍历）
@@ -39,9 +33,9 @@ func TestParseSessionStatsWithTimeFilter(t *testing.T) {
 		t.Fatalf("ParseSessionStatsWithFilter() error = %v", err)
 	}
 
-	// 验证过滤后的数据量应该非负
-	if stats.TotalSessions < 0 {
-		t.Errorf("Filtered TotalSessions >= 0, got %d", stats.TotalSessions)
+	// 验证 fixture 中的两条会话记录
+	if stats.TotalSessions != 2 {
+		t.Errorf("Filtered TotalSessions = %d, want 2", stats.TotalSessions)
 	}
 
 	t.Logf("最近7天会话统计: 总数=%d", stats.TotalSessions)

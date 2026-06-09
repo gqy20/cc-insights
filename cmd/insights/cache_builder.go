@@ -21,17 +21,22 @@ type CacheBuilder struct {
 func (cb *CacheBuilder) BuildFullCache() error {
 	fmt.Println("🔨 开始构建完整缓存...")
 
+	dataDir := cb.DataDir
+	if dataDir == "" {
+		dataDir = cfg.DataDir
+	}
+
 	// 创建时间过滤器（全部数据）
 	tf := TimeFilter{Start: nil, End: nil}
 
 	// 使用一次遍历获取所有统计数据
-	aggregate, err := ParseProjectsConcurrentOnce(tf)
+	aggregate, err := ParseProjectsConcurrentOnceFromDir(tf, dataDir)
 	if err != nil {
 		return fmt.Errorf("解析项目数据失败: %w", err)
 	}
 
 	// 解析 debug 日志获取 MCP 工具统计
-	mcpStats, err := ParseDebugLogsConcurrent(tf)
+	mcpStats, err := ParseDebugLogsConcurrentFromDir(tf, dataDir)
 	if err != nil {
 		return fmt.Errorf("解析 debug 日志失败: %w", err)
 	}

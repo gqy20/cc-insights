@@ -132,8 +132,12 @@ func ParseHistoryConcurrent(tf TimeFilter) ([]CommandStats, map[string]int, erro
 
 // ParseDebugLogsConcurrent 并发解析 debug 日志（优化版）
 func ParseDebugLogsConcurrent(tf TimeFilter) ([]MCPToolStats, error) {
-	debugDir := GetDataPath("debug")
+	return ParseDebugLogsConcurrentFromDir(tf, cfg.DataDir)
+}
 
+// ParseDebugLogsConcurrentFromDir 并发解析指定数据目录下的 debug 日志
+func ParseDebugLogsConcurrentFromDir(tf TimeFilter, dataDir string) ([]MCPToolStats, error) {
+	debugDir := filepath.Join(dataDir, "debug")
 	entries, err := os.ReadDir(debugDir)
 	if err != nil {
 		return nil, err

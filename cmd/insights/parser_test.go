@@ -17,10 +17,12 @@ import (
 //   - ParseModelUsageFromProjects（模型使用）
 //   - ParseWorkHoursStats（工作时段）
 func TestParseProjectsConcurrentOnce(t *testing.T) {
-	// 检查实际数据目录是否存在
-	if _, err := os.Stat(filepath.Join(cfg.DataDir, "projects")); os.IsNotExist(err) {
-		t.Skip("跳过：projects 数据目录不存在")
-	}
+	tmpDir := t.TempDir()
+	dataDir := createTestDataDir(t, tmpDir)
+
+	origDataDir := cfg.DataDir
+	cfg.DataDir = dataDir
+	defer func() { cfg.DataDir = origDataDir }()
 
 	// Arrange
 	tf := TimeFilter{Start: nil, End: nil}

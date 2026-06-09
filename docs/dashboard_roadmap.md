@@ -2,33 +2,39 @@
 
 > 本文档记录 Claude Code Dashboard 可以新增的统计功能和分析维度
 
-**当前状态**: Dashboard v1.0 已实现基础功能
+**当前状态**: Dashboard v1.5 已实现基础统计、核心扩展、缓存预聚合和 API 超时保护
 
 ---
 
 ## 📊 当前已实现功能
 
-### ✅ 核心统计 (v1.0)
+### ✅ 核心统计
 
 | 功能 | 数据源 | 可视化类型 |
 |------|--------|------------|
 | Slash Commands 使用统计 | history.jsonl | 横向柱状图 (Top 15) |
-| 每日活动趋势 | stats-cache.json | 折线图 |
-| 24小时活动分布 | history.jsonl | 柱状图 |
+| 每日活动趋势 | projects/*.jsonl / cache | 折线图 |
 | MCP 工具调用统计 | debug/ 目录 | 饼图 (Top 10) |
+| 每日会话趋势 | projects/*.jsonl / cache | 折线图 |
+| 项目活跃度排名 | projects/*.jsonl / cache | 柱状图 (Top 15) |
+| 星期活动分布 | projects/*.jsonl / cache | 柱状图 |
+| 模型使用分析 | projects/*.jsonl / cache | 柱状图 + 折线图 |
+| 工作时段分布 | projects/*.jsonl / cache | 柱状图 |
 | 时间范围筛选 | - | 快捷预设 + 自定义 |
+| 缓存预聚合 | projects/debug 数据 | cache/cache.db |
+| API 超时保护 | HTTP context | 60 秒超时 |
 
 ---
 
-## 🆕 可新增的统计功能
+## ✅ 已完成的扩展功能
 
-### 1️⃣ 项目活跃度排名 (高优先级)
+### 1️⃣ 项目活跃度排名
 
-**数据源**: `history.jsonl` 中的 `project` 字段
+**数据源**: `projects/*.jsonl` 中的 `cwd` 字段
 
 **统计内容**:
 - 各项目使用次数排名
-- Top 20 项目展示
+- Top 15 项目展示
 - 项目路径简化显示
 - 时间范围内项目活跃度变化
 
@@ -42,76 +48,48 @@ article_mcp:                       476次
 ```
 
 **可视化方案**:
-- 图表类型: 横向柱状图
-- 交互: 点击显示项目详情
-- 配色: 按活跃度渐变
+- 图表类型: 柱状图
+- 交互: tooltip 显示完整项目路径
 
-**实施难度**: ⭐ 简单
-**价值评估**: ⭐⭐⭐⭐⭐
+**状态**: 已实现
 
 ---
 
-### 2️⃣ 模型使用统计 (高优先级)
+### 2️⃣ 模型使用统计
 
-**数据源**: `stats-cache.json` 中的 `modelUsage` 和 `dailyModelTokens`
+**数据源**: `projects/*.jsonl` assistant message 中的 `model` 和 `usage`
 
 **统计内容**:
-- 各模型 Token 使用量 (输入/输出/缓存)
-- Token 使用趋势折线图
-- 缓存命中率分析
-- 模型切换时间点
-
-**示例数据**:
-```
-glm-4.6:
-  - 输入: 114M tokens
-  - 输出: 10.8M tokens
-  - 缓存读取: 4.38G tokens
-  - 缓存创建: 0 tokens
-
-claude-sonnet-4.5:
-  - 输入: 3.1K tokens
-  - 输出: 65K tokens
-  - 缓存读取: 27M tokens
-  - 缓存创建: 2.2M tokens
-```
+- 各模型请求次数
+- 各模型 Token 总量
+- 平均每次请求 Token 数
 
 **可视化方案**:
-- 图表类型: 堆叠柱状图 + 折线图
-- 双轴: Token 数量 (左轴) + 缓存命中率 (右轴)
-- 交互: 切换不同模型视图
+- 图表类型: 柱状图 + 折线图
+- 双轴: 请求数 (左轴) + Token 数 (右轴)
 
-**实施难度**: ⭐ 简单
-**价值评估**: ⭐⭐⭐⭐⭐
+**状态**: 已实现
 
 ---
 
-### 3️⃣ 会话统计分析 (中优先级)
+### 3️⃣ 会话统计分析
 
-**数据源**: `stats-cache.json` 中的 `sessionCount`
+**数据源**: `projects/*.jsonl` 中的 `sessionId`
 
 **统计内容**:
-- 总会话数: 可从 `totalSessions` 获取
+- 总会话数
 - 每日会话数趋势
-- 会话平均时长
-- 最长会话信息
-
-**示例数据**:
-```
-总会话数: 1,309
-峰值日期: 2026-01-04 (23个会话)
-谷值日期: 2025-11-19 (2个会话)
-```
+- 峰值/谷值日期
 
 **可视化方案**:
 - 图表类型: 折线图 + 统计卡片
-- 卡片显示: 总会话数、平均会话时长
-- 交互: 悬停显示详细统计
+- 交互: 悬停显示每日会话数
 
-**实施难度**: ⭐ 简单
-**价值评估**: ⭐⭐⭐⭐
+**状态**: 已实现
 
 ---
+
+## 🆕 可新增的统计功能
 
 ### 4️⃣ 工具调用密度分析 (中优先级)
 
@@ -245,15 +223,19 @@ claude-sonnet-4.5:
 
 ## 🎯 实施优先级
 
-### Phase 2: 核心扩展 (建议优先实现)
+### 已完成
 
-| 功能 | 优先级 | 复杂度 | 预计工作量 |
-|------|--------|--------|------------|
-| 项目活跃度排名 | ⭐⭐⭐ | 简单 | 2-3小时 |
-| 模型使用统计 | ⭐⭐⭐ | 简单 | 3-4小时 |
-| 会话统计 | ⭐⭐ | 简单 | 1-2小时 |
+| 功能 | 状态 | 说明 |
+|------|------|------|
+| 项目活跃度排名 | ✅ 已完成 | 从 `projects/*.jsonl` 聚合并支持缓存筛选 |
+| 模型使用统计 | ✅ 已完成 | 统计请求数和 Token 总量 |
+| 会话统计 | ✅ 已完成 | 从一次遍历的 aggregate 提取，避免重复 I/O |
+| 星期分布 | ✅ 已完成 | 输出 7 天活动分布 |
+| 工作时段统计 | ✅ 已完成 | 统计 9-18 点与非工作时段占比 |
+| 缓存预聚合 | ✅ 已完成 | `BuildFullCache` 生成 `cache.db` |
+| API 超时保护 | ✅ 已完成 | `/api/data` 60 秒超时 |
 
-### Phase 3: 增强功能
+### Phase 2: 增强功能
 
 | 功能 | 优先级 | 复杂度 | 预计工作量 |
 |------|--------|--------|------------|
@@ -261,7 +243,7 @@ claude-sonnet-4.5:
 | Agent 使用统计 | ⭐⭐ | 中等 | 3-4小时 |
 | 活动峰值分析 | ⭐ | 中等 | 2-3小时 |
 
-### Phase 4: 高级功能
+### Phase 3: 高级功能
 
 | 功能 | 优先级 | 复杂度 | 预计工作量 |
 |------|--------|--------|------------|
@@ -272,97 +254,19 @@ claude-sonnet-4.5:
 
 ## 📋 技术实施要点
 
-### 数据解析
+### 当前架构
 
-**项目活跃度**:
-```go
-// history.jsonl 中的 project 字段直接可用
-type ProjectStats struct {
-    Project string `json:"project"`
-    Count   int    `json:"count"`
-}
-```
+- `ParseProjectsConcurrentOnce` 一次遍历 `projects/*.jsonl`，同时产出项目、日期、会话、星期、小时和模型统计。
+- `BuildFullCache` 基于 aggregate 和 debug 日志构建本地缓存，API 优先通过 `QueryByTimeRange` 读取缓存。
+- `/api/data` 在缓存失败时会降级为实时解析，并有 60 秒超时保护。
+- 前端图表集中在 `cmd/insights/static/app.js`，后端响应结构集中在 `DashboardData`。
 
-**模型使用统计**:
-```go
-// stats-cache.json 中的 modelUsage
-type ModelUsage struct {
-    InputTokens             int `json:"inputTokens"`
-    OutputTokens            int `json:"outputTokens"`
-    CacheReadInputTokens    int `json:"cacheReadInputTokens"`
-    CacheCreationInputTokens int `json:"cacheCreationInputTokens"`
-}
-```
+### 已知限制
 
-**会话统计**:
-```go
-// stats-cache.json 中的 sessionCount
-// 可从 totalSessions 和 dailyActivity 获取
-```
-
-### API 扩展
-
-在 `api.go` 中新增接口：
-```go
-type ExtendedDashboardData struct {
-    // 现有字段...
-
-    // 新增字段
-    Projects   []ProjectStats   `json:"projects"`
-    ModelUsage []ModelStats     `json:"model_usage"`
-    Sessions   SessionInfo      `json:"sessions"`
-}
-```
-
-### 前端扩展
-
-在 `static/app.js` 中新增图表渲染函数：
-```javascript
-function initProjectsChart(projects) { ... }
-function initModelUsageChart(modelData) { ... }
-function initSessionChart(sessionData) { ... }
-```
+- `IncrementalUpdate` 目前检测到数据更新后仍执行完整重建，尚未做真正的增量合并。
+- MCP 工具统计来自 `debug/` 日志，缓存中没有按日分解，所以时间范围筛选下仍是全局统计。
+- 部分旧的 go-echarts 服务端渲染代码仍保留，但当前 Dashboard 主要走前端 ECharts 渲染。
 
 ---
 
-## 🚀 快速开始
-
-### 1. 项目活跃度排名实现
-
-**文件**: `parser.go`
-```go
-// ParseProjectStats 解析项目统计
-func ParseProjectStats(tf TimeFilter) ([]ProjectStats, error) {
-    path := GetDataPath("history.jsonl")
-    // ... 解析逻辑
-}
-```
-
-**文件**: `api.go`
-```go
-// 在 handleDataAPI 中添加
-projectStats, err := ParseProjectStats(tf)
-```
-
-**文件**: `static/app.js`
-```javascript
-function initProjectsChart(projects) {
-    const chart = echarts.init(document.getElementById('projects'), 'wonderland');
-    // ... 图表配置
-}
-```
-
-### 2. 模型使用统计实现
-
-**文件**: `parser.go`
-```go
-// ParseModelUsage 解析模型使用统计
-func ParseModelUsage() ([]ModelUsageStats, error) {
-    cache, err := ParseStatsCache()
-    // ... 解析逻辑
-}
-```
-
----
-
-*最后更新: 2026-01-08*
+*最后更新: 2026-06-09*

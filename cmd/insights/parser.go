@@ -107,19 +107,19 @@ type HourlyItem struct {
 
 // ProjectAggregate 一次遍历获取的所有统计数据
 type ProjectAggregate struct {
-	ProjectStats      map[string]*ProjectStatItem       `json:"-"`          // 项目统计（map用于快速查找）
-	Projects          []ProjectStatItem                `json:"projects"`   // 项目列表（排序后）
-	WeekdayData       [7]WeekdayItem                   `json:"-"`          // 星期数据
-	WeekdayStats      *WeekdayStats                    `json:"weekday"`    // 星期统计（输出格式）
-	DailyActivity     map[string]int                    `json:"-"`          // 每日消息数（map）
-	DailyActivityList []DailyActivity                  `json:"daily"`      // 每日活动（输出格式）
-	DailySessions     map[string]map[string]bool         `json:"-"`          // 每日会话集 date→sessionID→true（用于提取SessionStats，避免重复解析）
-	HourlyCounts      [24]int                          `json:"-"`          // 小时统计
-	HourlyData        []HourlyItem                     `json:"-"`          // 小时数据
-	ModelUsage        map[string]*ModelUsageItem         `json:"-"`          // 模型使用（map）
-	ModelUsageList    []ModelUsageItem                 `json:"models"`     // 模型使用（输出格式）
-	WorkHoursStats    *WorkHoursStats                  `json:"work_hours"` // 工作时段统计
-	mu                sync.RWMutex                     `json:"-"`          // 保护并发写入
+	ProjectStats      map[string]*ProjectStatItem `json:"-"`          // 项目统计（map用于快速查找）
+	Projects          []ProjectStatItem           `json:"projects"`   // 项目列表（排序后）
+	WeekdayData       [7]WeekdayItem              `json:"-"`          // 星期数据
+	WeekdayStats      *WeekdayStats               `json:"weekday"`    // 星期统计（输出格式）
+	DailyActivity     map[string]int              `json:"-"`          // 每日消息数（map）
+	DailyActivityList []DailyActivity             `json:"daily"`      // 每日活动（输出格式）
+	DailySessions     map[string]map[string]bool  `json:"-"`          // 每日会话集 date→sessionID→true（用于提取SessionStats，避免重复解析）
+	HourlyCounts      [24]int                     `json:"-"`          // 小时统计
+	HourlyData        []HourlyItem                `json:"-"`          // 小时数据
+	ModelUsage        map[string]*ModelUsageItem  `json:"-"`          // 模型使用（map）
+	ModelUsageList    []ModelUsageItem            `json:"models"`     // 模型使用（输出格式）
+	WorkHoursStats    *WorkHoursStats             `json:"work_hours"` // 工作时段统计
+	mu                sync.RWMutex                `json:"-"`          // 保护并发写入
 }
 
 // ProjectRecord projects/*.jsonl 记录
@@ -139,12 +139,12 @@ type ProjectRecord struct {
 
 // AssistantMessage assistant 消息详情
 type AssistantMessage struct {
-	ID      string `json:"id"`
-	Type    string `json:"type"`
-	Role    string `json:"role"`
-	Model   string `json:"model"`
+	ID      string             `json:"id"`
+	Type    string             `json:"type"`
+	Role    string             `json:"role"`
+	Model   string             `json:"model"`
 	Content []AssistantContent `json:"content"`
-	Usage struct {
+	Usage   struct {
 		InputTokens          int `json:"input_tokens"`
 		OutputTokens         int `json:"output_tokens"`
 		CacheReadInputTokens int `json:"cache_read_input_tokens"`
@@ -153,29 +153,29 @@ type AssistantMessage struct {
 
 // AssistantContent 支持多种内容类型（text, thinking）
 type AssistantContent struct {
-	Type     string `json:"type"`              // "text" | "thinking"
-	Text     string `json:"text"`              // text 类型内容
+	Type     string `json:"type"`               // "text" | "thinking"
+	Text     string `json:"text"`               // text 类型内容
 	Thinking string `json:"thinking,omitempty"` // thinking 类型内容
 }
 
 // SessionIndexEntry sessions-index.json 单个条目
 type SessionIndexEntry struct {
-	SessionID   string `json:"sessionId"`
-	FullPath    string `json:"fullPath"`
-	FileMtime   int64  `json:"fileMtime"`
-	FirstPrompt string `json:"firstPrompt"`
-	Summary     string `json:"summary"`
-	MessageCount int   `json:"messageCount"`
-	Created     string `json:"created"`
-	Modified    string `json:"modified"`
-	ProjectPath string `json:"projectPath"`
-	IsSidechain bool   `json:"isSidechain"`
+	SessionID    string `json:"sessionId"`
+	FullPath     string `json:"fullPath"`
+	FileMtime    int64  `json:"fileMtime"`
+	FirstPrompt  string `json:"firstPrompt"`
+	Summary      string `json:"summary"`
+	MessageCount int    `json:"messageCount"`
+	Created      string `json:"created"`
+	Modified     string `json:"modified"`
+	ProjectPath  string `json:"projectPath"`
+	IsSidechain  bool   `json:"isSidechain"`
 }
 
 // SessionIndexResult sessions-index.json 解析结果
 type SessionIndexResult struct {
-	Version int                  `json:"version"`
-	Entries []SessionIndexEntry  `json:"entries"`
+	Version int                 `json:"version"`
+	Entries []SessionIndexEntry `json:"entries"`
 }
 
 // MCPToolStats MCP工具统计
@@ -531,7 +531,12 @@ func ParseSessionStatsWithFilter(tf TimeFilter) (*SessionStats, error) {
 // ParseProjectsConcurrentOnce 一次遍历并发解析所有项目统计
 // 这个函数将所有统计合并到一次遍历中，大幅提升性能
 func ParseProjectsConcurrentOnce(tf TimeFilter) (*ProjectAggregate, error) {
-	projectsDir := GetDataPath("projects")
+	return ParseProjectsConcurrentOnceFromDir(tf, cfg.DataDir)
+}
+
+// ParseProjectsConcurrentOnceFromDir 一次遍历并发解析指定数据目录下的项目统计
+func ParseProjectsConcurrentOnceFromDir(tf TimeFilter, dataDir string) (*ProjectAggregate, error) {
+	projectsDir := filepath.Join(dataDir, "projects")
 	entries, err := os.ReadDir(projectsDir)
 	if err != nil {
 		return nil, fmt.Errorf("读取 projects 目录失败: %w", err)

@@ -12,8 +12,9 @@ import (
 
 // TestMainInitialization 测试主函数初始化缓存
 func TestMainInitialization(t *testing.T) {
-	// Arrange - 测试默认使用上级项目目录的 data 文件夹
-	dataDir := filepath.Join("..", "..", "..", "data")
+	// Arrange
+	tmpDir := t.TempDir()
+	dataDir := createTestDataDir(t, tmpDir)
 	cacheDir := t.TempDir()
 	cachePath := filepath.Join(cacheDir, "cache.db")
 
@@ -52,18 +53,21 @@ func TestMainInitialization(t *testing.T) {
 // TestAPIUsesCachedData 测试API使用缓存数据
 func TestAPIUsesCachedData(t *testing.T) {
 	// Arrange
-	dataDir := filepath.Join("..", "..", "..", "data")
+	tmpDir := t.TempDir()
+	dataDir := createTestDataDir(t, tmpDir)
 	cacheDir := t.TempDir()
 	cachePath := filepath.Join(cacheDir, "cache.db")
 
 	// 设置配置
 	originalDataDir := cfg.DataDir
 	originalCacheDir := cfg.CacheDir
+	originalGlobalCache := globalCache
 	cfg.DataDir = dataDir
 	cfg.CacheDir = cacheDir
 	defer func() {
 		cfg.DataDir = originalDataDir
 		cfg.CacheDir = originalCacheDir
+		globalCache = originalGlobalCache
 	}()
 
 	// 构建缓存
@@ -110,15 +114,18 @@ func TestAPIUsesCachedData(t *testing.T) {
 // TestAPIFallbackWhenNoCache 测试无缓存时的降级处理
 func TestAPIFallbackWhenNoCache(t *testing.T) {
 	// Arrange
-	dataDir := filepath.Join("..", "..", "..", "data")
+	tmpDir := t.TempDir()
+	dataDir := filepath.Join(tmpDir, "data")
 
 	// 设置配置
 	originalDataDir := cfg.DataDir
 	originalCacheDir := cfg.CacheDir
+	originalGlobalCache := globalCache
 	cfg.DataDir = dataDir
 	defer func() {
 		cfg.DataDir = originalDataDir
 		cfg.CacheDir = originalCacheDir
+		globalCache = originalGlobalCache
 	}()
 
 	// 确保没有缓存

@@ -1,29 +1,26 @@
-//go:build !prod
+//go:build bench
 
 package main
 
 import (
+	"flag"
 	"fmt"
-	"os"
 	"time"
 )
 
 func main() {
-	// 解析参数
-	dataDir := "../data"
-	for i, arg := range os.Args {
-		if arg == "-data" && i+1 < len(os.Args) {
-			dataDir = os.Args[i+1]
-		}
-	}
-	cfg.DataDir = dataDir
+	rangePreset := flag.String("range", "7d", "测试时间范围: 7d 或 all")
+	flag.Parse()
 
 	fmt.Println("=== Claude Code Dashboard 性能测试 ===")
-	fmt.Printf("数据目录: %s\n\n", dataDir)
+	fmt.Printf("数据目录: %s\n\n", cfg.DataDir)
 
-	// 测试 7 天数据
-	fmt.Println("测试时间范围: 最近 7 天")
-	tf := NewTimeFilterFromPreset(Range7Days)
+	preset := Range7Days
+	if *rangePreset == "all" {
+		preset = RangeAll
+	}
+	fmt.Printf("测试时间范围: %s\n", *rangePreset)
+	tf := NewTimeFilterFromPreset(preset)
 
 	// 测试 history.jsonl 解析
 	fmt.Println("\n1. history.jsonl 解析测试:")

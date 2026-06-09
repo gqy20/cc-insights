@@ -3,7 +3,6 @@ package main
 import (
 	"os"
 	"path/filepath"
-	"strconv"
 	"testing"
 	"time"
 )
@@ -12,21 +11,7 @@ import (
 func TestCacheBuilderBuildFullCache(t *testing.T) {
 	// Arrange
 	tmpDir := t.TempDir()
-
-	// 创建测试数据目录
-	dataDir := filepath.Join(tmpDir, "data")
-	if err := os.MkdirAll(dataDir, 0755); err != nil {
-		t.Fatalf("创建测试数据目录失败: %v", err)
-	}
-
-	// 创建最小的测试数据
-	historyPath := filepath.Join(dataDir, "history.jsonl")
-	historyContent := `{"display":"test","timestamp":` + strconv.FormatInt(time.Now().UnixMilli(), 10) + `,"project":"test-project"}
-{"display":"/help","timestamp":` + strconv.FormatInt(time.Now().UnixMilli(), 10) + `,"project":"test-project"}
-`
-	if err := os.WriteFile(historyPath, []byte(historyContent), 0644); err != nil {
-		t.Fatalf("创建测试history.jsonl失败: %v", err)
-	}
+	dataDir := createTestDataDir(t, tmpDir)
 
 	cachePath := filepath.Join(tmpDir, "cache.db")
 	builder := &CacheBuilder{
@@ -71,22 +56,8 @@ func TestCacheBuilderBuildFullCache(t *testing.T) {
 func TestCacheBuilderIncrementalUpdate(t *testing.T) {
 	// Arrange
 	tmpDir := t.TempDir()
-	dataDir := filepath.Join(tmpDir, "data")
+	dataDir := createTestDataDir(t, tmpDir)
 	cachePath := filepath.Join(tmpDir, "cache.db")
-
-	// 创建数据目录
-	if err := os.MkdirAll(dataDir, 0755); err != nil {
-		t.Fatalf("创建数据目录失败: %v", err)
-	}
-
-	// 创建初始数据
-	baseTime := time.Now().Add(-2 * 24 * time.Hour)
-	historyPath := filepath.Join(dataDir, "history.jsonl")
-	initialContent := `{"display":"old","timestamp":` + strconv.FormatInt(baseTime.UnixMilli(), 10) + `,"project":"test"}
-`
-	if err := os.WriteFile(historyPath, []byte(initialContent), 0644); err != nil {
-		t.Fatalf("创建初始数据失败: %v", err)
-	}
 
 	// 第一次构建完整缓存
 	builder := &CacheBuilder{
@@ -103,12 +74,10 @@ func TestCacheBuilderIncrementalUpdate(t *testing.T) {
 
 	// 添加新数据
 	newTime := time.Now().Add(1 * time.Minute)
-	newContent := `
-{"display":"new1","timestamp":` + strconv.FormatInt(newTime.UnixMilli(), 10) + `,"project":"test"}
-{"display":"new2","timestamp":` + strconv.FormatInt(newTime.Add(time.Second).UnixMilli(), 10) + `,"project":"test"}
-`
-	if err := os.WriteFile(historyPath, []byte(initialContent+newContent), 0644); err != nil {
-		t.Fatalf("添加新数据失败: %v", err)
+	appendProjectRecord(t, dataDir, "/tmp/test-project", "session-3", newTime)
+	projectPath := filepath.Join(dataDir, "projects", "test-project", "session.jsonl")
+	if err := os.Chtimes(projectPath, newTime, newTime); err != nil {
+		t.Fatalf("更新 projects 文件修改时间失败: %v", err)
 	}
 
 	// Act - 增量更新

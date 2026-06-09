@@ -18,6 +18,9 @@ type APIResponse struct {
 	Error   string      `json:"error,omitempty"`
 }
 
+// globalCache 全局缓存实例
+var globalCache *CacheFile
+
 // DashboardData Dashboard 数据
 type DashboardData struct {
 	Timestamp      string            `json:"timestamp"`
