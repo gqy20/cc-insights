@@ -21,15 +21,19 @@ type CacheFile struct {
 	HourlyStats [24]*HourAggregate       // 每小时统计
 
 	// 全局统计
-	TotalMessages int // 总消息数
-	TotalSessions int // 总会话数
-	ProjectStats  map[string]*ProjectStatItem
-	ModelUsage    map[string]*ModelUsageItem
-	WeekdayStats  [7]*WeekdayItem
-	MCPToolStats  map[string]int
-	ToolStats     map[string]*ToolStatItem
-	ToolFailures  map[string]int
-	ToolSamples   []ToolFailureSample
+	TotalMessages   int // 总消息数
+	TotalSessions   int // 总会话数
+	ProjectStats    map[string]*ProjectStatItem
+	ModelUsage      map[string]*ModelUsageItem
+	WeekdayStats    [7]*WeekdayItem
+	MCPToolStats    map[string]int
+	ToolStats       map[string]*ToolStatItem
+	ToolFailures    map[string]int
+	ToolSamples     []ToolFailureSample
+	ToolAnalysis    *ToolAnalysisData
+	EventAnalysis   *EventAnalysisData
+	AgentAnalysis   *AgentAnalysisData
+	CommandAnalysis *CommandAnalysisData
 }
 
 // DayAggregate 每日聚合数据
@@ -221,8 +225,57 @@ func (cf *CacheFile) QueryByTimeRange(start, end time.Time) *CacheFile {
 		result.ToolFailures[kind] = count
 	}
 	result.ToolSamples = append(result.ToolSamples, cf.ToolSamples...)
+	if cf.ToolAnalysis != nil {
+		analysisCopy := *cf.ToolAnalysis
+		analysisCopy.Tools = append([]ToolStatItem(nil), cf.ToolAnalysis.Tools...)
+		analysisCopy.ByModel = append([]ToolModelStatItem(nil), cf.ToolAnalysis.ByModel...)
+		analysisCopy.FailureKinds = append([]ToolFailureKind(nil), cf.ToolAnalysis.FailureKinds...)
+		analysisCopy.FailureSamples = append([]ToolFailureSample(nil), cf.ToolAnalysis.FailureSamples...)
+		result.ToolAnalysis = &analysisCopy
+	}
+	result.EventAnalysis = cloneEventAnalysis(cf.EventAnalysis)
+	result.AgentAnalysis = cloneAgentAnalysis(cf.AgentAnalysis)
+	result.CommandAnalysis = cloneCommandAnalysis(cf.CommandAnalysis)
 
 	return result
+}
+
+func cloneEventAnalysis(source *EventAnalysisData) *EventAnalysisData {
+	if source == nil {
+		return nil
+	}
+	copyValue := *source
+	copyValue.ByType = append([]EventTypeStat(nil), source.ByType...)
+	copyValue.Hooks = append([]HookStatItem(nil), source.Hooks...)
+	copyValue.Skills = append([]SkillStatItem(nil), source.Skills...)
+	copyValue.PermissionModes = append([]PermissionModeStat(nil), source.PermissionModes...)
+	copyValue.OpenedFiles = append([]FileAccessStat(nil), source.OpenedFiles...)
+	copyValue.Samples = append([]EventSample(nil), source.Samples...)
+	if source.Budget != nil {
+		budgetCopy := *source.Budget
+		copyValue.Budget = &budgetCopy
+	}
+	return &copyValue
+}
+
+func cloneAgentAnalysis(source *AgentAnalysisData) *AgentAnalysisData {
+	if source == nil {
+		return nil
+	}
+	copyValue := *source
+	copyValue.Agents = append([]AgentStatItem(nil), source.Agents...)
+	return &copyValue
+}
+
+func cloneCommandAnalysis(source *CommandAnalysisData) *CommandAnalysisData {
+	if source == nil {
+		return nil
+	}
+	copyValue := *source
+	copyValue.BashCommands = append([]BashCommandStat(nil), source.BashCommands...)
+	copyValue.RiskyCommands = append([]BashCommandStat(nil), source.RiskyCommands...)
+	copyValue.FileOperations = append([]FileOperationStat(nil), source.FileOperations...)
+	return &copyValue
 }
 
 // AddMessage 添加一条消息记录到每日聚合

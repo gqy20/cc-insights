@@ -52,17 +52,21 @@ func (cb *CacheBuilder) BuildFullCache() error {
 
 	// 创建缓存结构
 	cache := &CacheFile{
-		Version:       CacheVersion,
-		LastUpdate:    time.Now(),
-		TimeRange:     TimeRange{},
-		DailyStats:    make(map[string]*DayAggregate),
-		TotalMessages: totalMessages,
-		TotalSessions: sessionStats.TotalSessions,
-		ProjectStats:  make(map[string]*ProjectStatItem),
-		ModelUsage:    make(map[string]*ModelUsageItem),
-		MCPToolStats:  make(map[string]int),
-		ToolStats:     make(map[string]*ToolStatItem),
-		ToolFailures:  make(map[string]int),
+		Version:         CacheVersion,
+		LastUpdate:      time.Now(),
+		TimeRange:       TimeRange{},
+		DailyStats:      make(map[string]*DayAggregate),
+		TotalMessages:   totalMessages,
+		TotalSessions:   sessionStats.TotalSessions,
+		ProjectStats:    make(map[string]*ProjectStatItem),
+		ModelUsage:      make(map[string]*ModelUsageItem),
+		MCPToolStats:    make(map[string]int),
+		ToolStats:       make(map[string]*ToolStatItem),
+		ToolFailures:    make(map[string]int),
+		ToolAnalysis:    aggregate.ToolAnalysis,
+		EventAnalysis:   aggregate.EventAnalysis,
+		AgentAnalysis:   aggregate.AgentAnalysis,
+		CommandAnalysis: aggregate.CommandAnalysis,
 	}
 	// 填充 HourlyStats
 	for i := 0; i < 24; i++ {

@@ -23,18 +23,21 @@ var globalCache *CacheFile
 
 // DashboardData Dashboard 数据
 type DashboardData struct {
-	Timestamp      string            `json:"timestamp"`
-	TimeRange      TimeRangeInfo     `json:"time_range"`
-	Commands       []CommandStats    `json:"commands"`
-	HourlyCounts   map[string]int    `json:"hourly_counts"`
-	DailyTrend     DailyTrendData    `json:"daily_trend"`
-	MCPTools       []MCPToolStats    `json:"mcp_tools"`
-	Sessions       *SessionStats     `json:"sessions"`
-	ProjectStats   *ProjectStatsData `json:"project_stats,omitempty"`
-	WeekdayStats   *WeekdayStats     `json:"weekday_stats,omitempty"`
-	ModelUsage     []ModelUsageItem  `json:"model_usage,omitempty"`
-	WorkHoursStats *WorkHoursStats   `json:"work_hours_stats,omitempty"`
-	ToolAnalysis   *ToolAnalysisData `json:"tool_analysis,omitempty"`
+	Timestamp       string               `json:"timestamp"`
+	TimeRange       TimeRangeInfo        `json:"time_range"`
+	Commands        []CommandStats       `json:"commands"`
+	HourlyCounts    map[string]int       `json:"hourly_counts"`
+	DailyTrend      DailyTrendData       `json:"daily_trend"`
+	MCPTools        []MCPToolStats       `json:"mcp_tools"`
+	Sessions        *SessionStats        `json:"sessions"`
+	ProjectStats    *ProjectStatsData    `json:"project_stats,omitempty"`
+	WeekdayStats    *WeekdayStats        `json:"weekday_stats,omitempty"`
+	ModelUsage      []ModelUsageItem     `json:"model_usage,omitempty"`
+	WorkHoursStats  *WorkHoursStats      `json:"work_hours_stats,omitempty"`
+	ToolAnalysis    *ToolAnalysisData    `json:"tool_analysis,omitempty"`
+	EventAnalysis   *EventAnalysisData   `json:"event_analysis,omitempty"`
+	AgentAnalysis   *AgentAnalysisData   `json:"agent_analysis,omitempty"`
+	CommandAnalysis *CommandAnalysisData `json:"command_analysis,omitempty"`
 }
 
 // TimeRangeInfo 时间范围信息
@@ -281,6 +284,9 @@ func buildDataFromCache(tf TimeFilter, preset string) (*DashboardData, error) {
 		PeakHourCount:  peakHourCount,
 	}
 	toolAnalysis := buildToolAnalysisFromCache(cached)
+	eventAnalysis := cloneEventAnalysis(cached.EventAnalysis)
+	agentAnalysis := cloneAgentAnalysis(cached.AgentAnalysis)
+	commandAnalysis := cloneCommandAnalysis(cached.CommandAnalysis)
 
 	// 构建时间范围信息
 	rangeInfo := TimeRangeInfo{Preset: preset}
@@ -304,10 +310,13 @@ func buildDataFromCache(tf TimeFilter, preset string) (*DashboardData, error) {
 			TotalMessages: cached.TotalMessages,
 			TotalSessions: cached.TotalSessions,
 		},
-		WeekdayStats:   weekdayStats,
-		ModelUsage:     modelUsage,
-		WorkHoursStats: workHoursStats,
-		ToolAnalysis:   toolAnalysis,
+		WeekdayStats:    weekdayStats,
+		ModelUsage:      modelUsage,
+		WorkHoursStats:  workHoursStats,
+		ToolAnalysis:    toolAnalysis,
+		EventAnalysis:   eventAnalysis,
+		AgentAnalysis:   agentAnalysis,
+		CommandAnalysis: commandAnalysis,
 	}, nil
 }
 
@@ -384,22 +393,34 @@ func buildDataFromParsing(tf TimeFilter, preset string) (*DashboardData, error) 
 	}
 
 	return &DashboardData{
-		Timestamp:      time.Now().Format("2006-01-02 15:04:05"),
-		TimeRange:      rangeInfo,
-		Commands:       cmdStats,
-		HourlyCounts:   hourlyCountsMap,
-		DailyTrend:     DailyTrendData{Dates: dates, Counts: counts},
-		MCPTools:       toolStats,
-		Sessions:       sessionStats,
-		ProjectStats:   projectStatsData,
-		WeekdayStats:   aggregate.WeekdayStats,
-		ModelUsage:     aggregate.ModelUsageList,
-		WorkHoursStats: aggregate.WorkHoursStats,
-		ToolAnalysis:   aggregate.ToolAnalysis,
+		Timestamp:       time.Now().Format("2006-01-02 15:04:05"),
+		TimeRange:       rangeInfo,
+		Commands:        cmdStats,
+		HourlyCounts:    hourlyCountsMap,
+		DailyTrend:      DailyTrendData{Dates: dates, Counts: counts},
+		MCPTools:        toolStats,
+		Sessions:        sessionStats,
+		ProjectStats:    projectStatsData,
+		WeekdayStats:    aggregate.WeekdayStats,
+		ModelUsage:      aggregate.ModelUsageList,
+		WorkHoursStats:  aggregate.WorkHoursStats,
+		ToolAnalysis:    aggregate.ToolAnalysis,
+		EventAnalysis:   aggregate.EventAnalysis,
+		AgentAnalysis:   aggregate.AgentAnalysis,
+		CommandAnalysis: aggregate.CommandAnalysis,
 	}, nil
 }
 
 func buildToolAnalysisFromCache(cache *CacheFile) *ToolAnalysisData {
+	if cache.ToolAnalysis != nil {
+		analysisCopy := *cache.ToolAnalysis
+		analysisCopy.Tools = append([]ToolStatItem(nil), cache.ToolAnalysis.Tools...)
+		analysisCopy.ByModel = append([]ToolModelStatItem(nil), cache.ToolAnalysis.ByModel...)
+		analysisCopy.FailureKinds = append([]ToolFailureKind(nil), cache.ToolAnalysis.FailureKinds...)
+		analysisCopy.FailureSamples = append([]ToolFailureSample(nil), cache.ToolAnalysis.FailureSamples...)
+		return &analysisCopy
+	}
+
 	analysis := &ToolAnalysisData{
 		Tools:          make([]ToolStatItem, 0, len(cache.ToolStats)),
 		FailureKinds:   make([]ToolFailureKind, 0, len(cache.ToolFailures)),
@@ -498,13 +519,23 @@ func sendError(w http.ResponseWriter, message string) {
 // emptyProjectAggregate 返回安全的空 ProjectAggregate
 func emptyProjectAggregate() *ProjectAggregate {
 	agg := &ProjectAggregate{
-		ProjectStats:     make(map[string]*ProjectStatItem),
-		DailyActivity:    make(map[string]int),
-		DailySessions:    make(map[string]map[string]bool),
-		ModelUsage:       make(map[string]*ModelUsageItem),
-		ToolStats:        make(map[string]*ToolStatItem),
-		ToolFailureKinds: make(map[string]int),
-		HourlyCounts:     [24]int{},
+		ProjectStats:       make(map[string]*ProjectStatItem),
+		DailyActivity:      make(map[string]int),
+		DailySessions:      make(map[string]map[string]bool),
+		ModelUsage:         make(map[string]*ModelUsageItem),
+		ToolStats:          make(map[string]*ToolStatItem),
+		ToolModelStats:     make(map[string]*ToolModelStatItem),
+		ToolFailureKinds:   make(map[string]int),
+		EventTypes:         make(map[string]int),
+		HookStats:          make(map[string]*HookStatItem),
+		SkillStats:         make(map[string]*SkillStatItem),
+		PermissionModes:    make(map[string]int),
+		OpenedFiles:        make(map[string]*FileAccessStat),
+		AgentStats:         make(map[string]*AgentStatItem),
+		AgentSessions:      make(map[string]map[string]bool),
+		BashCommandStats:   make(map[string]*BashCommandStat),
+		FileOperationStats: make(map[string]*FileOperationStat),
+		HourlyCounts:       [24]int{},
 	}
 	weekdayNames := []string{"周一", "周二", "周三", "周四", "周五", "周六", "周日"}
 	for i := 0; i < 7; i++ {

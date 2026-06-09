@@ -94,12 +94,147 @@ type ToolAnalysisData struct {
 	TotalFailures  int                 `json:"total_failures"`
 	MissingResults int                 `json:"missing_results"`
 	Tools          []ToolStatItem      `json:"tools"`
+	ByModel        []ToolModelStatItem `json:"by_model"`
 	FailureKinds   []ToolFailureKind   `json:"failure_kinds"`
 	FailureSamples []ToolFailureSample `json:"failure_samples"`
 }
 
+// EventAnalysisData Claude Code 运行事件分析结果
+type EventAnalysisData struct {
+	TotalEvents       int                  `json:"total_events"`
+	ByType            []EventTypeStat      `json:"by_type"`
+	Hooks             []HookStatItem       `json:"hooks"`
+	Skills            []SkillStatItem      `json:"skills"`
+	PermissionModes   []PermissionModeStat `json:"permission_modes"`
+	QueuedCommands    int                  `json:"queued_commands"`
+	PlanModeCount     int                  `json:"plan_mode_count"`
+	PlanModeExitCount int                  `json:"plan_mode_exit_count"`
+	OpenedFiles       []FileAccessStat     `json:"opened_files"`
+	Budget            *BudgetSummary       `json:"budget,omitempty"`
+	Samples           []EventSample        `json:"samples"`
+}
+
+// EventTypeStat 顶层/附件事件类型统计
+type EventTypeStat struct {
+	Type  string `json:"type"`
+	Count int    `json:"count"`
+}
+
+// HookStatItem hook 执行状态统计
+type HookStatItem struct {
+	HookName       string  `json:"hook_name"`
+	HookEvent      string  `json:"hook_event"`
+	SuccessCount   int     `json:"success_count"`
+	CancelledCount int     `json:"cancelled_count"`
+	ErrorCount     int     `json:"error_count"`
+	TotalCount     int     `json:"total_count"`
+	FailureRate    float64 `json:"failure_rate"`
+	AvgDurationMs  float64 `json:"avg_duration_ms"`
+	LastError      string  `json:"last_error,omitempty"`
+	LastCommand    string  `json:"last_command,omitempty"`
+}
+
+// SkillStatItem skill 调用统计
+type SkillStatItem struct {
+	Name  string `json:"name"`
+	Path  string `json:"path,omitempty"`
+	Count int    `json:"count"`
+}
+
+// PermissionModeStat 权限模式统计
+type PermissionModeStat struct {
+	Mode  string `json:"mode"`
+	Count int    `json:"count"`
+}
+
+// FileAccessStat 文件访问统计
+type FileAccessStat struct {
+	Path  string `json:"path"`
+	Count int    `json:"count"`
+}
+
+// BudgetSummary 预算事件摘要
+type BudgetSummary struct {
+	LatestUsed      float64 `json:"latest_used"`
+	LatestTotal     float64 `json:"latest_total"`
+	LatestRemaining float64 `json:"latest_remaining"`
+	MaxUsed         float64 `json:"max_used"`
+	EventCount      int     `json:"event_count"`
+}
+
+// EventSample 运行事件样例
+type EventSample struct {
+	Type           string `json:"type"`
+	Project        string `json:"project"`
+	SessionID      string `json:"session_id"`
+	Timestamp      string `json:"timestamp"`
+	ContentPreview string `json:"content_preview"`
+}
+
+// AgentAnalysisData agent/subagent 分析结果
+type AgentAnalysisData struct {
+	MainToolCalls      int             `json:"main_tool_calls"`
+	SidechainToolCalls int             `json:"sidechain_tool_calls"`
+	Agents             []AgentStatItem `json:"agents"`
+}
+
+// AgentStatItem 单个 agent 统计
+type AgentStatItem struct {
+	AgentID            string  `json:"agent_id"`
+	AgentName          string  `json:"agent_name,omitempty"`
+	IsSidechain        bool    `json:"is_sidechain"`
+	SessionCount       int     `json:"session_count"`
+	MessageCount       int     `json:"message_count"`
+	ToolCallCount      int     `json:"tool_call_count"`
+	ToolFailureCount   int     `json:"tool_failure_count"`
+	MissingResultCount int     `json:"missing_result_count"`
+	FailureRate        float64 `json:"failure_rate"`
+}
+
+// CommandAnalysisData Bash 与文件操作分析结果
+type CommandAnalysisData struct {
+	BashCommands   []BashCommandStat   `json:"bash_commands"`
+	RiskyCommands  []BashCommandStat   `json:"risky_commands"`
+	FileOperations []FileOperationStat `json:"file_operations"`
+}
+
+// BashCommandStat Bash 命令统计
+type BashCommandStat struct {
+	CommandName        string  `json:"command_name"`
+	CallCount          int     `json:"call_count"`
+	SuccessCount       int     `json:"success_count"`
+	FailureCount       int     `json:"failure_count"`
+	MissingResultCount int     `json:"missing_result_count"`
+	FailureRate        float64 `json:"failure_rate"`
+	RiskLevel          string  `json:"risk_level,omitempty"`
+	RiskReason         string  `json:"risk_reason,omitempty"`
+	SampleCommand      string  `json:"sample_command,omitempty"`
+}
+
+// FileOperationStat 文件工具操作统计
+type FileOperationStat struct {
+	Operation          string  `json:"operation"`
+	Path               string  `json:"path"`
+	CallCount          int     `json:"call_count"`
+	SuccessCount       int     `json:"success_count"`
+	FailureCount       int     `json:"failure_count"`
+	MissingResultCount int     `json:"missing_result_count"`
+	FailureRate        float64 `json:"failure_rate"`
+}
+
 // ToolStatItem 单个工具调用统计
 type ToolStatItem struct {
+	Tool               string  `json:"tool"`
+	CallCount          int     `json:"call_count"`
+	SuccessCount       int     `json:"success_count"`
+	FailureCount       int     `json:"failure_count"`
+	MissingResultCount int     `json:"missing_result_count"`
+	FailureRate        float64 `json:"failure_rate"`
+}
+
+// ToolModelStatItem 单个模型下的工具调用统计
+type ToolModelStatItem struct {
+	Model              string  `json:"model"`
 	Tool               string  `json:"tool"`
 	CallCount          int     `json:"call_count"`
 	SuccessCount       int     `json:"success_count"`
@@ -117,6 +252,7 @@ type ToolFailureKind struct {
 // ToolFailureSample 工具失败样例（只保存短摘要，不保存完整对话）
 type ToolFailureSample struct {
 	Tool           string `json:"tool"`
+	Model          string `json:"model,omitempty"`
 	Kind           string `json:"kind"`
 	Project        string `json:"project"`
 	SessionID      string `json:"session_id"`
@@ -144,37 +280,56 @@ type HourlyItem struct {
 
 // ProjectAggregate 一次遍历获取的所有统计数据
 type ProjectAggregate struct {
-	ProjectStats      map[string]*ProjectStatItem `json:"-"`          // 项目统计（map用于快速查找）
-	Projects          []ProjectStatItem           `json:"projects"`   // 项目列表（排序后）
-	WeekdayData       [7]WeekdayItem              `json:"-"`          // 星期数据
-	WeekdayStats      *WeekdayStats               `json:"weekday"`    // 星期统计（输出格式）
-	DailyActivity     map[string]int              `json:"-"`          // 每日消息数（map）
-	DailyActivityList []DailyActivity             `json:"daily"`      // 每日活动（输出格式）
-	DailySessions     map[string]map[string]bool  `json:"-"`          // 每日会话集 date→sessionID→true（用于提取SessionStats，避免重复解析）
-	HourlyCounts      [24]int                     `json:"-"`          // 小时统计
-	HourlyData        []HourlyItem                `json:"-"`          // 小时数据
-	ModelUsage        map[string]*ModelUsageItem  `json:"-"`          // 模型使用（map）
-	ModelUsageList    []ModelUsageItem            `json:"models"`     // 模型使用（输出格式）
-	ToolStats         map[string]*ToolStatItem    `json:"-"`          // 工具调用统计
-	ToolFailureKinds  map[string]int              `json:"-"`          // 工具失败类型
-	ToolAnalysis      *ToolAnalysisData           `json:"tools"`      // 工具分析（输出格式）
-	WorkHoursStats    *WorkHoursStats             `json:"work_hours"` // 工作时段统计
-	mu                sync.RWMutex                `json:"-"`          // 保护并发写入
+	ProjectStats       map[string]*ProjectStatItem   `json:"-"`          // 项目统计（map用于快速查找）
+	Projects           []ProjectStatItem             `json:"projects"`   // 项目列表（排序后）
+	WeekdayData        [7]WeekdayItem                `json:"-"`          // 星期数据
+	WeekdayStats       *WeekdayStats                 `json:"weekday"`    // 星期统计（输出格式）
+	DailyActivity      map[string]int                `json:"-"`          // 每日消息数（map）
+	DailyActivityList  []DailyActivity               `json:"daily"`      // 每日活动（输出格式）
+	DailySessions      map[string]map[string]bool    `json:"-"`          // 每日会话集 date→sessionID→true（用于提取SessionStats，避免重复解析）
+	HourlyCounts       [24]int                       `json:"-"`          // 小时统计
+	HourlyData         []HourlyItem                  `json:"-"`          // 小时数据
+	ModelUsage         map[string]*ModelUsageItem    `json:"-"`          // 模型使用（map）
+	ModelUsageList     []ModelUsageItem              `json:"models"`     // 模型使用（输出格式）
+	ToolStats          map[string]*ToolStatItem      `json:"-"`          // 工具调用统计
+	ToolModelStats     map[string]*ToolModelStatItem `json:"-"`          // 模型+工具调用统计
+	ToolFailureKinds   map[string]int                `json:"-"`          // 工具失败类型
+	ToolAnalysis       *ToolAnalysisData             `json:"tools"`      // 工具分析（输出格式）
+	EventTypes         map[string]int                `json:"-"`          // 运行事件类型
+	HookStats          map[string]*HookStatItem      `json:"-"`          // hook 统计
+	SkillStats         map[string]*SkillStatItem     `json:"-"`          // skill 统计
+	PermissionModes    map[string]int                `json:"-"`          // 权限模式统计
+	OpenedFiles        map[string]*FileAccessStat    `json:"-"`          // IDE 打开文件统计
+	BudgetSummary      *BudgetSummary                `json:"-"`          // 预算事件摘要
+	EventSamples       []EventSample                 `json:"-"`          // 事件样例
+	EventAnalysis      *EventAnalysisData            `json:"events"`     // 事件分析（输出格式）
+	AgentStats         map[string]*AgentStatItem     `json:"-"`          // agent 统计
+	AgentSessions      map[string]map[string]bool    `json:"-"`          // agent 会话去重
+	AgentAnalysis      *AgentAnalysisData            `json:"agents"`     // agent 分析（输出格式）
+	BashCommandStats   map[string]*BashCommandStat   `json:"-"`          // Bash 命令统计
+	FileOperationStats map[string]*FileOperationStat `json:"-"`          // 文件操作统计
+	CommandAnalysis    *CommandAnalysisData          `json:"commands"`   // 命令/文件分析（输出格式）
+	WorkHoursStats     *WorkHoursStats               `json:"work_hours"` // 工作时段统计
+	mu                 sync.RWMutex                  `json:"-"`          // 保护并发写入
 }
 
 // ProjectRecord projects/*.jsonl 记录
 type ProjectRecord struct {
-	ParentUUID  string          `json:"parentUuid"`
-	IsSidechain bool            `json:"isSidechain"`
-	UserType    string          `json:"userType"`
-	Cwd         string          `json:"cwd"`
-	SessionID   string          `json:"sessionId"`
-	Version     string          `json:"version"`
-	GitBranch   string          `json:"gitBranch"`
-	AgentID     string          `json:"agentId"`
-	Type        string          `json:"type"`    // "user" | "assistant"
-	Message     json.RawMessage `json:"message"` // 可以是 user 或 assistant 消息
-	Timestamp   string          `json:"timestamp"`
+	ParentUUID     string          `json:"parentUuid"`
+	IsSidechain    bool            `json:"isSidechain"`
+	UserType       string          `json:"userType"`
+	Cwd            string          `json:"cwd"`
+	SessionID      string          `json:"sessionId"`
+	Version        string          `json:"version"`
+	GitBranch      string          `json:"gitBranch"`
+	AgentID        string          `json:"agentId"`
+	Type           string          `json:"type"`    // "user" | "assistant"
+	Message        json.RawMessage `json:"message"` // 可以是 user 或 assistant 消息
+	Attachment     json.RawMessage `json:"attachment"`
+	Content        json.RawMessage `json:"content"`
+	Name           string          `json:"name"`
+	PermissionMode string          `json:"permissionMode"`
+	Timestamp      string          `json:"timestamp"`
 }
 
 // AssistantMessage assistant 消息详情
@@ -238,11 +393,17 @@ type DebugFileInfo struct {
 }
 
 type pendingToolCall struct {
-	ID        string
-	Tool      string
-	Project   string
-	SessionID string
-	Timestamp time.Time
+	ID          string
+	Tool        string
+	Model       string
+	Project     string
+	SessionID   string
+	AgentID     string
+	IsSidechain bool
+	Timestamp   time.Time
+	Input       json.RawMessage
+	CommandName string
+	FileOpKey   string
 }
 
 var (
@@ -599,14 +760,24 @@ func ParseProjectsConcurrentOnceFromDir(tf TimeFilter, dataDir string) (*Project
 
 	// 初始化聚合数据
 	aggregate := &ProjectAggregate{
-		ProjectStats:     make(map[string]*ProjectStatItem),
-		DailyActivity:    make(map[string]int),
-		DailySessions:    make(map[string]map[string]bool),
-		ModelUsage:       make(map[string]*ModelUsageItem),
-		ToolStats:        make(map[string]*ToolStatItem),
-		ToolFailureKinds: make(map[string]int),
-		HourlyCounts:     [24]int{},
-		mu:               sync.RWMutex{},
+		ProjectStats:       make(map[string]*ProjectStatItem),
+		DailyActivity:      make(map[string]int),
+		DailySessions:      make(map[string]map[string]bool),
+		ModelUsage:         make(map[string]*ModelUsageItem),
+		ToolStats:          make(map[string]*ToolStatItem),
+		ToolModelStats:     make(map[string]*ToolModelStatItem),
+		ToolFailureKinds:   make(map[string]int),
+		EventTypes:         make(map[string]int),
+		HookStats:          make(map[string]*HookStatItem),
+		SkillStats:         make(map[string]*SkillStatItem),
+		PermissionModes:    make(map[string]int),
+		OpenedFiles:        make(map[string]*FileAccessStat),
+		AgentStats:         make(map[string]*AgentStatItem),
+		AgentSessions:      make(map[string]map[string]bool),
+		BashCommandStats:   make(map[string]*BashCommandStat),
+		FileOperationStats: make(map[string]*FileOperationStat),
+		HourlyCounts:       [24]int{},
+		mu:                 sync.RWMutex{},
 	}
 
 	// 初始化星期数据
@@ -697,6 +868,10 @@ func parseProjectFileAggregate(filePath string, tf TimeFilter, agg *ProjectAggre
 			projectName = "Unknown"
 		}
 
+		agg.mu.Lock()
+		recordRuntimeEventLocked(agg, record, timestamp, projectName)
+		agg.mu.Unlock()
+
 		if record.Type == "user" {
 			parseToolResults(record, timestamp, projectName, pendingTools, agg)
 			continue
@@ -763,13 +938,21 @@ func parseProjectFileAggregate(filePath string, tf TimeFilter, agg *ProjectAggre
 				continue
 			}
 			pendingTools[content.ID] = pendingToolCall{
-				ID:        content.ID,
-				Tool:      content.Name,
-				Project:   projectName,
-				SessionID: record.SessionID,
-				Timestamp: timestamp,
+				ID:          content.ID,
+				Tool:        content.Name,
+				Model:       msg.Model,
+				Project:     projectName,
+				SessionID:   record.SessionID,
+				AgentID:     record.AgentID,
+				IsSidechain: record.IsSidechain,
+				Timestamp:   timestamp,
+				Input:       content.Input,
 			}
-			addToolCallLocked(agg, content.Name)
+			call := pendingTools[content.ID]
+			addToolCallLocked(agg, content.Name, msg.Model)
+			addAgentToolCallLocked(agg, call)
+			recordStructuredToolInputLocked(agg, &call)
+			pendingTools[content.ID] = call
 		}
 
 		agg.mu.Unlock()
@@ -810,11 +993,14 @@ func parseToolResults(record ProjectRecord, timestamp time.Time, projectName str
 		call, ok := pendingTools[content.ToolUseID]
 		if !ok {
 			call = pendingToolCall{
-				ID:        content.ToolUseID,
-				Tool:      "unknown",
-				Project:   projectName,
-				SessionID: record.SessionID,
-				Timestamp: timestamp,
+				ID:          content.ToolUseID,
+				Tool:        "unknown",
+				Model:       "unknown",
+				Project:     projectName,
+				SessionID:   record.SessionID,
+				AgentID:     record.AgentID,
+				IsSidechain: record.IsSidechain,
+				Timestamp:   timestamp,
 			}
 		}
 
@@ -823,7 +1009,8 @@ func parseToolResults(record ProjectRecord, timestamp time.Time, projectName str
 
 		agg.mu.Lock()
 		if !ok {
-			addToolCallLocked(agg, call.Tool)
+			addToolCallLocked(agg, call.Tool, call.Model)
+			addAgentToolCallLocked(agg, call)
 		}
 		addToolResultLocked(agg, call, failed, kind, preview, timestamp)
 		agg.mu.Unlock()
@@ -832,19 +1019,26 @@ func parseToolResults(record ProjectRecord, timestamp time.Time, projectName str
 	}
 }
 
-func addToolCallLocked(agg *ProjectAggregate, tool string) {
+func addToolCallLocked(agg *ProjectAggregate, tool string, model string) {
 	stat := ensureToolStat(agg, tool)
 	stat.CallCount++
+	modelStat := ensureToolModelStat(agg, tool, model)
+	modelStat.CallCount++
 }
 
 func addToolResultLocked(agg *ProjectAggregate, call pendingToolCall, failed bool, kind string, preview string, timestamp time.Time) {
 	stat := ensureToolStat(agg, call.Tool)
+	modelStat := ensureToolModelStat(agg, call.Tool, call.Model)
 	if failed {
 		stat.FailureCount++
+		modelStat.FailureCount++
+		addAgentToolResultLocked(agg, call, true, false)
+		addCommandOrFileResultLocked(agg, call, true, false)
 		agg.ToolFailureKinds[kind]++
 		if len(agg.ToolAnalysisFailureSamples()) < 30 {
 			agg.ToolAnalysisAddFailureSample(ToolFailureSample{
 				Tool:           call.Tool,
+				Model:          call.Model,
 				Kind:           kind,
 				Project:        call.Project,
 				SessionID:      call.SessionID,
@@ -855,11 +1049,367 @@ func addToolResultLocked(agg *ProjectAggregate, call pendingToolCall, failed boo
 		return
 	}
 	stat.SuccessCount++
+	modelStat.SuccessCount++
+	addAgentToolResultLocked(agg, call, false, false)
+	addCommandOrFileResultLocked(agg, call, false, false)
 }
 
 func addMissingToolResultLocked(agg *ProjectAggregate, call pendingToolCall) {
 	stat := ensureToolStat(agg, call.Tool)
 	stat.MissingResultCount++
+	modelStat := ensureToolModelStat(agg, call.Tool, call.Model)
+	modelStat.MissingResultCount++
+	addAgentToolResultLocked(agg, call, false, true)
+	addCommandOrFileResultLocked(agg, call, false, true)
+}
+
+func recordRuntimeEventLocked(agg *ProjectAggregate, record ProjectRecord, timestamp time.Time, projectName string) {
+	eventType := record.Type
+	if eventType == "" {
+		eventType = "unknown"
+	}
+
+	if eventType == "attachment" {
+		var attachment struct {
+			Type       string  `json:"type"`
+			HookName   string  `json:"hookName"`
+			HookEvent  string  `json:"hookEvent"`
+			Command    string  `json:"command"`
+			Stdout     string  `json:"stdout"`
+			Stderr     string  `json:"stderr"`
+			ExitCode   int     `json:"exitCode"`
+			DurationMs int     `json:"durationMs"`
+			Filename   string  `json:"filename"`
+			Used       float64 `json:"used"`
+			Total      float64 `json:"total"`
+			Remaining  float64 `json:"remaining"`
+			Skills     []struct {
+				Name string `json:"name"`
+				Path string `json:"path"`
+			} `json:"skills"`
+		}
+		if err := json.Unmarshal(record.Attachment, &attachment); err == nil && attachment.Type != "" {
+			eventType = "attachment:" + attachment.Type
+			switch attachment.Type {
+			case "hook_success", "hook_cancelled", "hook_non_blocking_error":
+				recordHookEventLocked(agg, attachment.Type, attachment.HookName, attachment.HookEvent, attachment.Command, attachment.Stderr, attachment.DurationMs)
+			case "invoked_skills":
+				for _, skill := range attachment.Skills {
+					recordSkillLocked(agg, skill.Name, skill.Path)
+				}
+			case "opened_file_in_ide":
+				recordOpenedFileLocked(agg, attachment.Filename)
+			case "budget_usd":
+				recordBudgetLocked(agg, attachment.Used, attachment.Total, attachment.Remaining)
+			case "queued_command":
+				// Counted through event type below.
+			}
+			if len(agg.EventSamples) < 40 && (strings.HasPrefix(attachment.Type, "hook_") || attachment.Type == "invoked_skills" || attachment.Type == "queued_command") {
+				addEventSampleLocked(agg, eventType, projectName, record.SessionID, timestamp, string(record.Attachment))
+			}
+		}
+	}
+
+	agg.EventTypes[eventType]++
+	switch eventType {
+	case "attachment:queued_command":
+		// Derived count comes from EventTypes in finalize.
+	case "attachment:plan_mode", "attachment:plan_mode_exit":
+		// Derived count comes from EventTypes in finalize.
+	case "permission-mode":
+		mode := record.PermissionMode
+		if mode == "" {
+			mode = rawStringField(record.Content, "mode")
+		}
+		if mode == "" {
+			mode = rawStringField(record.Message, "permissionMode")
+		}
+		if mode == "" {
+			mode = "unknown"
+		}
+		agg.PermissionModes[mode]++
+	case "agent-name":
+		name := record.Name
+		if name == "" {
+			name = rawStringField(record.Content, "name")
+		}
+		if name == "" {
+			name = rawStringField(record.Message, "name")
+		}
+		if name != "" {
+			agent := ensureAgentStat(agg, record.AgentID, record.IsSidechain)
+			agent.AgentName = name
+		}
+	}
+
+	agent := ensureAgentStat(agg, record.AgentID, record.IsSidechain)
+	if record.Type == "assistant" || record.Type == "user" {
+		agent.MessageCount++
+	}
+	if record.SessionID != "" {
+		key := agent.AgentID
+		if agg.AgentSessions[key] == nil {
+			agg.AgentSessions[key] = make(map[string]bool)
+		}
+		if !agg.AgentSessions[key][record.SessionID] {
+			agg.AgentSessions[key][record.SessionID] = true
+			agent.SessionCount++
+		}
+	}
+}
+
+func recordHookEventLocked(agg *ProjectAggregate, attachmentType, hookName, hookEvent, command, stderr string, durationMs int) {
+	if hookName == "" {
+		hookName = "unknown"
+	}
+	key := hookName + "\x00" + hookEvent
+	if agg.HookStats[key] == nil {
+		agg.HookStats[key] = &HookStatItem{HookName: hookName, HookEvent: hookEvent}
+	}
+	stat := agg.HookStats[key]
+	stat.TotalCount++
+	switch attachmentType {
+	case "hook_success":
+		stat.SuccessCount++
+	case "hook_cancelled":
+		stat.CancelledCount++
+	default:
+		stat.ErrorCount++
+		if stderr != "" {
+			stat.LastError = previewString(stderr, 240)
+		}
+	}
+	if command != "" {
+		stat.LastCommand = previewString(command, 160)
+	}
+	if durationMs > 0 {
+		previous := float64(stat.TotalCount - 1)
+		stat.AvgDurationMs = (stat.AvgDurationMs*previous + float64(durationMs)) / float64(stat.TotalCount)
+	}
+}
+
+func recordSkillLocked(agg *ProjectAggregate, name, path string) {
+	if name == "" {
+		name = "unknown"
+	}
+	if agg.SkillStats[name] == nil {
+		agg.SkillStats[name] = &SkillStatItem{Name: name, Path: path}
+	}
+	agg.SkillStats[name].Count++
+	if agg.SkillStats[name].Path == "" {
+		agg.SkillStats[name].Path = path
+	}
+}
+
+func recordOpenedFileLocked(agg *ProjectAggregate, path string) {
+	if path == "" {
+		return
+	}
+	if agg.OpenedFiles[path] == nil {
+		agg.OpenedFiles[path] = &FileAccessStat{Path: path}
+	}
+	agg.OpenedFiles[path].Count++
+}
+
+func recordBudgetLocked(agg *ProjectAggregate, used, total, remaining float64) {
+	if agg.BudgetSummary == nil {
+		agg.BudgetSummary = &BudgetSummary{}
+	}
+	agg.BudgetSummary.LatestUsed = used
+	agg.BudgetSummary.LatestTotal = total
+	agg.BudgetSummary.LatestRemaining = remaining
+	agg.BudgetSummary.EventCount++
+	if used > agg.BudgetSummary.MaxUsed {
+		agg.BudgetSummary.MaxUsed = used
+	}
+}
+
+func addEventSampleLocked(agg *ProjectAggregate, eventType, project, sessionID string, timestamp time.Time, raw string) {
+	agg.EventSamples = append(agg.EventSamples, EventSample{
+		Type:           eventType,
+		Project:        project,
+		SessionID:      sessionID,
+		Timestamp:      timestamp.Format(time.RFC3339),
+		ContentPreview: previewString(raw, 240),
+	})
+}
+
+func addAgentToolCallLocked(agg *ProjectAggregate, call pendingToolCall) {
+	agent := ensureAgentStat(agg, call.AgentID, call.IsSidechain)
+	agent.ToolCallCount++
+	if call.IsSidechain {
+		return
+	}
+}
+
+func addAgentToolResultLocked(agg *ProjectAggregate, call pendingToolCall, failed bool, missing bool) {
+	agent := ensureAgentStat(agg, call.AgentID, call.IsSidechain)
+	if failed {
+		agent.ToolFailureCount++
+	}
+	if missing {
+		agent.MissingResultCount++
+	}
+}
+
+func ensureAgentStat(agg *ProjectAggregate, agentID string, isSidechain bool) *AgentStatItem {
+	if agg.AgentStats == nil {
+		agg.AgentStats = make(map[string]*AgentStatItem)
+	}
+	if agentID == "" {
+		if isSidechain {
+			agentID = "sidechain:unknown"
+		} else {
+			agentID = "main"
+		}
+	}
+	if agg.AgentStats[agentID] == nil {
+		agg.AgentStats[agentID] = &AgentStatItem{AgentID: agentID, IsSidechain: isSidechain}
+	}
+	if isSidechain {
+		agg.AgentStats[agentID].IsSidechain = true
+	}
+	return agg.AgentStats[agentID]
+}
+
+func recordStructuredToolInputLocked(agg *ProjectAggregate, call *pendingToolCall) {
+	switch call.Tool {
+	case "Bash":
+		var input struct {
+			Command string `json:"command"`
+		}
+		if err := json.Unmarshal(call.Input, &input); err != nil || strings.TrimSpace(input.Command) == "" {
+			return
+		}
+		commandName := bashCommandName(input.Command)
+		riskLevel, riskReason := classifyBashRisk(input.Command)
+		call.CommandName = commandName
+		stat := ensureBashCommandStat(agg, commandName)
+		stat.CallCount++
+		if stat.SampleCommand == "" {
+			stat.SampleCommand = previewString(input.Command, 180)
+		}
+		if riskLevel != "" {
+			stat.RiskLevel = riskLevel
+			stat.RiskReason = riskReason
+		}
+	case "Read", "Edit", "Write", "MultiEdit":
+		path := filePathFromToolInput(call.Input)
+		if path == "" {
+			return
+		}
+		key := call.Tool + "\x00" + path
+		call.FileOpKey = key
+		if agg.FileOperationStats[key] == nil {
+			agg.FileOperationStats[key] = &FileOperationStat{Operation: call.Tool, Path: path}
+		}
+		agg.FileOperationStats[key].CallCount++
+	}
+}
+
+func addCommandOrFileResultLocked(agg *ProjectAggregate, call pendingToolCall, failed bool, missing bool) {
+	if call.CommandName != "" {
+		stat := ensureBashCommandStat(agg, call.CommandName)
+		switch {
+		case missing:
+			stat.MissingResultCount++
+		case failed:
+			stat.FailureCount++
+		default:
+			stat.SuccessCount++
+		}
+	}
+	if call.FileOpKey != "" && agg.FileOperationStats[call.FileOpKey] != nil {
+		stat := agg.FileOperationStats[call.FileOpKey]
+		switch {
+		case missing:
+			stat.MissingResultCount++
+		case failed:
+			stat.FailureCount++
+		default:
+			stat.SuccessCount++
+		}
+	}
+}
+
+func ensureBashCommandStat(agg *ProjectAggregate, commandName string) *BashCommandStat {
+	if agg.BashCommandStats == nil {
+		agg.BashCommandStats = make(map[string]*BashCommandStat)
+	}
+	if commandName == "" {
+		commandName = "unknown"
+	}
+	if agg.BashCommandStats[commandName] == nil {
+		agg.BashCommandStats[commandName] = &BashCommandStat{CommandName: commandName}
+	}
+	return agg.BashCommandStats[commandName]
+}
+
+func bashCommandName(command string) string {
+	fields := strings.Fields(strings.TrimSpace(command))
+	if len(fields) == 0 {
+		return "unknown"
+	}
+	if fields[0] == "sudo" && len(fields) > 1 {
+		return "sudo " + fields[1]
+	}
+	return fields[0]
+}
+
+func classifyBashRisk(command string) (string, string) {
+	lower := strings.ToLower(command)
+	switch {
+	case strings.Contains(lower, "rm -rf") || strings.Contains(lower, "rm -fr"):
+		return "high", "recursive delete"
+	case strings.Contains(lower, "git reset --hard") || strings.Contains(lower, "git clean -fd"):
+		return "high", "destructive git cleanup"
+	case strings.Contains(lower, "sudo "):
+		return "medium", "privileged command"
+	case strings.Contains(lower, "curl ") && strings.Contains(lower, "| sh"):
+		return "high", "download pipe to shell"
+	case strings.Contains(lower, "wget ") && strings.Contains(lower, "| sh"):
+		return "high", "download pipe to shell"
+	default:
+		return "", ""
+	}
+}
+
+func filePathFromToolInput(raw json.RawMessage) string {
+	var input struct {
+		FilePath string `json:"file_path"`
+		Path     string `json:"path"`
+	}
+	if err := json.Unmarshal(raw, &input); err != nil {
+		return ""
+	}
+	if input.FilePath != "" {
+		return input.FilePath
+	}
+	return input.Path
+}
+
+func rawStringField(raw json.RawMessage, field string) string {
+	if len(bytes.TrimSpace(raw)) == 0 {
+		return ""
+	}
+	var data map[string]interface{}
+	if err := json.Unmarshal(raw, &data); err != nil {
+		return ""
+	}
+	value, ok := data[field]
+	if !ok {
+		return ""
+	}
+	s, _ := value.(string)
+	return s
+}
+
+func previewString(value string, limit int) string {
+	value = strings.Join(strings.Fields(value), " ")
+	if len(value) > limit {
+		return value[:limit]
+	}
+	return value
 }
 
 func ensureToolStat(agg *ProjectAggregate, tool string) *ToolStatItem {
@@ -873,6 +1423,23 @@ func ensureToolStat(agg *ProjectAggregate, tool string) *ToolStatItem {
 		agg.ToolStats[tool] = &ToolStatItem{Tool: tool}
 	}
 	return agg.ToolStats[tool]
+}
+
+func ensureToolModelStat(agg *ProjectAggregate, tool string, model string) *ToolModelStatItem {
+	if agg.ToolModelStats == nil {
+		agg.ToolModelStats = make(map[string]*ToolModelStatItem)
+	}
+	if tool == "" {
+		tool = "unknown"
+	}
+	if model == "" {
+		model = "unknown"
+	}
+	key := model + "\x00" + tool
+	if agg.ToolModelStats[key] == nil {
+		agg.ToolModelStats[key] = &ToolModelStatItem{Model: model, Tool: tool}
+	}
+	return agg.ToolModelStats[key]
 }
 
 func classifyToolResult(content AssistantContent) (string, bool) {
@@ -992,7 +1559,12 @@ func (agg *ProjectAggregate) finalize() {
 	// 6. 转换工具分析
 	agg.finalizeToolAnalysis()
 
-	// 7. 生成工作时段统计
+	// 7. 转换运行事件、agent、命令/文件分析
+	agg.finalizeEventAnalysis()
+	agg.finalizeAgentAnalysis()
+	agg.finalizeCommandAnalysis()
+
+	// 8. 生成工作时段统计
 	var workHoursCount, offHoursCount int
 	var peakHour, peakCount int
 
@@ -1028,6 +1600,7 @@ func (agg *ProjectAggregate) finalize() {
 func (agg *ProjectAggregate) finalizeToolAnalysis() {
 	analysis := &ToolAnalysisData{
 		Tools:          make([]ToolStatItem, 0, len(agg.ToolStats)),
+		ByModel:        make([]ToolModelStatItem, 0, len(agg.ToolModelStats)),
 		FailureKinds:   make([]ToolFailureKind, 0, len(agg.ToolFailureKinds)),
 		FailureSamples: nil,
 	}
@@ -1052,6 +1625,26 @@ func (agg *ProjectAggregate) finalizeToolAnalysis() {
 		return analysis.Tools[i].CallCount > analysis.Tools[j].CallCount
 	})
 
+	for _, stat := range agg.ToolModelStats {
+		statCopy := *stat
+		if statCopy.CallCount > 0 {
+			statCopy.FailureRate = float64(statCopy.FailureCount) / float64(statCopy.CallCount) * 100
+		}
+		analysis.ByModel = append(analysis.ByModel, statCopy)
+	}
+	sort.Slice(analysis.ByModel, func(i, j int) bool {
+		if analysis.ByModel[i].FailureCount == analysis.ByModel[j].FailureCount {
+			if analysis.ByModel[i].CallCount == analysis.ByModel[j].CallCount {
+				if analysis.ByModel[i].Model == analysis.ByModel[j].Model {
+					return analysis.ByModel[i].Tool < analysis.ByModel[j].Tool
+				}
+				return analysis.ByModel[i].Model < analysis.ByModel[j].Model
+			}
+			return analysis.ByModel[i].CallCount > analysis.ByModel[j].CallCount
+		}
+		return analysis.ByModel[i].FailureCount > analysis.ByModel[j].FailureCount
+	})
+
 	for kind, count := range agg.ToolFailureKinds {
 		analysis.FailureKinds = append(analysis.FailureKinds, ToolFailureKind{Kind: kind, Count: count})
 	}
@@ -1063,4 +1656,179 @@ func (agg *ProjectAggregate) finalizeToolAnalysis() {
 	})
 
 	agg.ToolAnalysis = analysis
+}
+
+func (agg *ProjectAggregate) finalizeEventAnalysis() {
+	analysis := &EventAnalysisData{
+		ByType:          make([]EventTypeStat, 0, len(agg.EventTypes)),
+		Hooks:           make([]HookStatItem, 0, len(agg.HookStats)),
+		Skills:          make([]SkillStatItem, 0, len(agg.SkillStats)),
+		PermissionModes: make([]PermissionModeStat, 0, len(agg.PermissionModes)),
+		OpenedFiles:     make([]FileAccessStat, 0, len(agg.OpenedFiles)),
+		Samples:         append([]EventSample(nil), agg.EventSamples...),
+	}
+	for eventType, count := range agg.EventTypes {
+		analysis.TotalEvents += count
+		analysis.ByType = append(analysis.ByType, EventTypeStat{Type: eventType, Count: count})
+	}
+	sort.Slice(analysis.ByType, func(i, j int) bool {
+		if analysis.ByType[i].Count == analysis.ByType[j].Count {
+			return analysis.ByType[i].Type < analysis.ByType[j].Type
+		}
+		return analysis.ByType[i].Count > analysis.ByType[j].Count
+	})
+
+	for _, stat := range agg.HookStats {
+		statCopy := *stat
+		if statCopy.TotalCount > 0 {
+			statCopy.FailureRate = float64(statCopy.CancelledCount+statCopy.ErrorCount) / float64(statCopy.TotalCount) * 100
+		}
+		analysis.Hooks = append(analysis.Hooks, statCopy)
+	}
+	sort.Slice(analysis.Hooks, func(i, j int) bool {
+		if analysis.Hooks[i].ErrorCount == analysis.Hooks[j].ErrorCount {
+			return analysis.Hooks[i].TotalCount > analysis.Hooks[j].TotalCount
+		}
+		return analysis.Hooks[i].ErrorCount > analysis.Hooks[j].ErrorCount
+	})
+
+	for _, stat := range agg.SkillStats {
+		analysis.Skills = append(analysis.Skills, *stat)
+	}
+	sort.Slice(analysis.Skills, func(i, j int) bool {
+		if analysis.Skills[i].Count == analysis.Skills[j].Count {
+			return analysis.Skills[i].Name < analysis.Skills[j].Name
+		}
+		return analysis.Skills[i].Count > analysis.Skills[j].Count
+	})
+
+	for mode, count := range agg.PermissionModes {
+		analysis.PermissionModes = append(analysis.PermissionModes, PermissionModeStat{Mode: mode, Count: count})
+	}
+	sort.Slice(analysis.PermissionModes, func(i, j int) bool {
+		if analysis.PermissionModes[i].Count == analysis.PermissionModes[j].Count {
+			return analysis.PermissionModes[i].Mode < analysis.PermissionModes[j].Mode
+		}
+		return analysis.PermissionModes[i].Count > analysis.PermissionModes[j].Count
+	})
+
+	for _, stat := range agg.OpenedFiles {
+		analysis.OpenedFiles = append(analysis.OpenedFiles, *stat)
+	}
+	sort.Slice(analysis.OpenedFiles, func(i, j int) bool {
+		if analysis.OpenedFiles[i].Count == analysis.OpenedFiles[j].Count {
+			return analysis.OpenedFiles[i].Path < analysis.OpenedFiles[j].Path
+		}
+		return analysis.OpenedFiles[i].Count > analysis.OpenedFiles[j].Count
+	})
+	if len(analysis.OpenedFiles) > 50 {
+		analysis.OpenedFiles = analysis.OpenedFiles[:50]
+	}
+
+	analysis.QueuedCommands = agg.EventTypes["attachment:queued_command"]
+	analysis.PlanModeCount = agg.EventTypes["attachment:plan_mode"]
+	analysis.PlanModeExitCount = agg.EventTypes["attachment:plan_mode_exit"]
+	if agg.BudgetSummary != nil {
+		budgetCopy := *agg.BudgetSummary
+		analysis.Budget = &budgetCopy
+	}
+	agg.EventAnalysis = analysis
+}
+
+func (agg *ProjectAggregate) finalizeAgentAnalysis() {
+	analysis := &AgentAnalysisData{
+		Agents: make([]AgentStatItem, 0, len(agg.AgentStats)),
+	}
+	for _, stat := range agg.AgentStats {
+		statCopy := *stat
+		if statCopy.ToolCallCount > 0 {
+			statCopy.FailureRate = float64(statCopy.ToolFailureCount) / float64(statCopy.ToolCallCount) * 100
+		}
+		if statCopy.IsSidechain {
+			analysis.SidechainToolCalls += statCopy.ToolCallCount
+		} else {
+			analysis.MainToolCalls += statCopy.ToolCallCount
+		}
+		analysis.Agents = append(analysis.Agents, statCopy)
+	}
+	sort.Slice(analysis.Agents, func(i, j int) bool {
+		if analysis.Agents[i].ToolFailureCount == analysis.Agents[j].ToolFailureCount {
+			if analysis.Agents[i].ToolCallCount == analysis.Agents[j].ToolCallCount {
+				return analysis.Agents[i].AgentID < analysis.Agents[j].AgentID
+			}
+			return analysis.Agents[i].ToolCallCount > analysis.Agents[j].ToolCallCount
+		}
+		return analysis.Agents[i].ToolFailureCount > analysis.Agents[j].ToolFailureCount
+	})
+	agg.AgentAnalysis = analysis
+}
+
+func (agg *ProjectAggregate) finalizeCommandAnalysis() {
+	analysis := &CommandAnalysisData{
+		BashCommands:   make([]BashCommandStat, 0, len(agg.BashCommandStats)),
+		RiskyCommands:  make([]BashCommandStat, 0),
+		FileOperations: make([]FileOperationStat, 0, len(agg.FileOperationStats)),
+	}
+	for _, stat := range agg.BashCommandStats {
+		statCopy := *stat
+		if statCopy.CallCount > 0 {
+			statCopy.FailureRate = float64(statCopy.FailureCount) / float64(statCopy.CallCount) * 100
+		}
+		analysis.BashCommands = append(analysis.BashCommands, statCopy)
+		if statCopy.RiskLevel != "" {
+			analysis.RiskyCommands = append(analysis.RiskyCommands, statCopy)
+		}
+	}
+	sort.Slice(analysis.BashCommands, func(i, j int) bool {
+		if analysis.BashCommands[i].CallCount == analysis.BashCommands[j].CallCount {
+			return analysis.BashCommands[i].CommandName < analysis.BashCommands[j].CommandName
+		}
+		return analysis.BashCommands[i].CallCount > analysis.BashCommands[j].CallCount
+	})
+	sort.Slice(analysis.RiskyCommands, func(i, j int) bool {
+		if analysis.RiskyCommands[i].RiskLevel == analysis.RiskyCommands[j].RiskLevel {
+			return analysis.RiskyCommands[i].CallCount > analysis.RiskyCommands[j].CallCount
+		}
+		return riskRank(analysis.RiskyCommands[i].RiskLevel) > riskRank(analysis.RiskyCommands[j].RiskLevel)
+	})
+
+	for _, stat := range agg.FileOperationStats {
+		statCopy := *stat
+		if statCopy.CallCount > 0 {
+			statCopy.FailureRate = float64(statCopy.FailureCount) / float64(statCopy.CallCount) * 100
+		}
+		analysis.FileOperations = append(analysis.FileOperations, statCopy)
+	}
+	sort.Slice(analysis.FileOperations, func(i, j int) bool {
+		if analysis.FileOperations[i].FailureCount == analysis.FileOperations[j].FailureCount {
+			if analysis.FileOperations[i].CallCount == analysis.FileOperations[j].CallCount {
+				return analysis.FileOperations[i].Path < analysis.FileOperations[j].Path
+			}
+			return analysis.FileOperations[i].CallCount > analysis.FileOperations[j].CallCount
+		}
+		return analysis.FileOperations[i].FailureCount > analysis.FileOperations[j].FailureCount
+	})
+	if len(analysis.BashCommands) > 50 {
+		analysis.BashCommands = analysis.BashCommands[:50]
+	}
+	if len(analysis.RiskyCommands) > 50 {
+		analysis.RiskyCommands = analysis.RiskyCommands[:50]
+	}
+	if len(analysis.FileOperations) > 100 {
+		analysis.FileOperations = analysis.FileOperations[:100]
+	}
+	agg.CommandAnalysis = analysis
+}
+
+func riskRank(level string) int {
+	switch level {
+	case "high":
+		return 3
+	case "medium":
+		return 2
+	case "low":
+		return 1
+	default:
+		return 0
+	}
 }
