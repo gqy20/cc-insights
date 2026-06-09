@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"time"
 )
 
@@ -33,12 +34,6 @@ func (cb *CacheBuilder) BuildFullCache() error {
 	aggregate, err := ParseProjectsConcurrentOnceFromDir(tf, dataDir)
 	if err != nil {
 		return fmt.Errorf("解析项目数据失败: %w", err)
-	}
-
-	// 解析 debug 日志获取 MCP 工具统计
-	mcpStats, err := ParseDebugLogsConcurrentFromDir(tf, dataDir)
-	if err != nil {
-		return fmt.Errorf("解析 debug 日志失败: %w", err)
 	}
 
 	// 从已解析的 aggregate 中提取会话统计（无需重新遍历 projects 文件）
@@ -110,16 +105,13 @@ func (cb *CacheBuilder) BuildFullCache() error {
 		cache.ModelUsage[mu.Model] = mu
 	}
 
-	// 填充 MCPToolStats
-	for _, tool := range mcpStats {
-		key := tool.Server + "::" + tool.Tool
-		cache.MCPToolStats[key] = tool.Count
-	}
-
 	// 填充工具调用分析
 	for _, tool := range aggregate.ToolAnalysis.Tools {
 		toolCopy := tool
 		cache.ToolStats[tool.Tool] = &toolCopy
+		if server, name, ok := splitMCPToolName(tool.Tool); ok {
+			cache.MCPToolStats[server+"::"+name] = tool.CallCount
+		}
 	}
 	for _, kind := range aggregate.ToolAnalysis.FailureKinds {
 		cache.ToolFailures[kind.Kind] = kind.Count
@@ -133,6 +125,17 @@ func (cb *CacheBuilder) BuildFullCache() error {
 
 	fmt.Printf("✅ 缓存构建完成！共 %d 条消息，%d 个会话\n", cache.TotalMessages, cache.TotalSessions)
 	return nil
+}
+
+func splitMCPToolName(tool string) (string, string, bool) {
+	if !strings.HasPrefix(tool, "mcp__") {
+		return "", "", false
+	}
+	parts := strings.SplitN(strings.TrimPrefix(tool, "mcp__"), "__", 2)
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return "", "", false
+	}
+	return parts[0], parts[1], true
 }
 
 // IncrementalUpdate 增量更新缓存

@@ -758,7 +758,67 @@ func ParseProjectsConcurrentOnceFromDir(tf TimeFilter, dataDir string) (*Project
 		return nil, fmt.Errorf("读取 projects 目录失败: %w", err)
 	}
 
-	// 初始化聚合数据
+	aggregate := newProjectAggregate()
+
+	var files []string
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+
+		projectDir := filepath.Join(projectsDir, entry.Name())
+		projectFiles, err := projectJSONLFiles(projectDir)
+		if err != nil {
+			continue
+		}
+		files = append(files, projectFiles...)
+	}
+	sort.Strings(files)
+
+	maxWorkers := runtime.NumCPU()
+	if len(files) < maxWorkers {
+		maxWorkers = len(files)
+	}
+	if maxWorkers == 0 {
+		aggregate.finalize()
+		return aggregate, nil
+	}
+
+	jobs := make(chan string, maxWorkers*2)
+	results := make(chan *ProjectAggregate, maxWorkers)
+	var wg sync.WaitGroup
+	for i := 0; i < maxWorkers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			workerAggregate := newProjectAggregate()
+			for filePath := range jobs {
+				parseProjectFileAggregate(filePath, tf, workerAggregate)
+			}
+			results <- workerAggregate
+		}()
+	}
+
+	for _, filePath := range files {
+		jobs <- filePath
+	}
+	close(jobs)
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
+
+	for fileAggregate := range results {
+		mergeProjectAggregate(aggregate, fileAggregate)
+	}
+
+	// 后处理：生成输出格式数据
+	aggregate.finalize()
+
+	return aggregate, nil
+}
+
+func newProjectAggregate() *ProjectAggregate {
 	aggregate := &ProjectAggregate{
 		ProjectStats:       make(map[string]*ProjectStatItem),
 		DailyActivity:      make(map[string]int),
@@ -789,43 +849,179 @@ func ParseProjectsConcurrentOnceFromDir(tf TimeFilter, dataDir string) (*Project
 			MessageCount: 0,
 		}
 	}
+	return aggregate
+}
 
-	// 使用信号量控制并发数（使用所有CPU核心，因为是I/O密集）
-	maxWorkers := runtime.NumCPU()
-	sem := make(chan struct{}, maxWorkers)
-	var wg sync.WaitGroup
-
-	// 遍历项目目录
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
+func mergeProjectAggregate(dst, src *ProjectAggregate) {
+	for project, stat := range src.ProjectStats {
+		if dst.ProjectStats[project] == nil {
+			dst.ProjectStats[project] = &ProjectStatItem{Project: project}
 		}
-
-		projectDir := filepath.Join(projectsDir, entry.Name())
-		projectFiles, err := projectJSONLFiles(projectDir)
-		if err != nil {
-			continue
+		dst.ProjectStats[project].MessageCount += stat.MessageCount
+		dst.ProjectStats[project].SessionCount += stat.SessionCount
+	}
+	for i := range src.WeekdayData {
+		dst.WeekdayData[i].MessageCount += src.WeekdayData[i].MessageCount
+	}
+	for date, count := range src.DailyActivity {
+		dst.DailyActivity[date] += count
+	}
+	for date, sessions := range src.DailySessions {
+		if dst.DailySessions[date] == nil {
+			dst.DailySessions[date] = make(map[string]bool)
 		}
-
-		// 为每个文件启动一个goroutine
-		for _, filePath := range projectFiles {
-			wg.Add(1)
-			go func(fp string) {
-				defer wg.Done()
-				defer func() { <-sem }()
-
-				sem <- struct{}{}
-				parseProjectFileAggregate(fp, tf, aggregate)
-			}(filePath)
+		for sessionID := range sessions {
+			dst.DailySessions[date][sessionID] = true
 		}
 	}
-
-	wg.Wait()
-
-	// 后处理：生成输出格式数据
-	aggregate.finalize()
-
-	return aggregate, nil
+	for hour, count := range src.HourlyCounts {
+		dst.HourlyCounts[hour] += count
+	}
+	for model, stat := range src.ModelUsage {
+		if dst.ModelUsage[model] == nil {
+			dst.ModelUsage[model] = &ModelUsageItem{Model: model}
+		}
+		dst.ModelUsage[model].Count += stat.Count
+		dst.ModelUsage[model].Tokens += stat.Tokens
+	}
+	for tool, stat := range src.ToolStats {
+		dstStat := ensureToolStat(dst, tool)
+		dstStat.CallCount += stat.CallCount
+		dstStat.SuccessCount += stat.SuccessCount
+		dstStat.FailureCount += stat.FailureCount
+		dstStat.MissingResultCount += stat.MissingResultCount
+	}
+	for _, stat := range src.ToolModelStats {
+		dstStat := ensureToolModelStat(dst, stat.Tool, stat.Model)
+		dstStat.CallCount += stat.CallCount
+		dstStat.SuccessCount += stat.SuccessCount
+		dstStat.FailureCount += stat.FailureCount
+		dstStat.MissingResultCount += stat.MissingResultCount
+	}
+	for kind, count := range src.ToolFailureKinds {
+		dst.ToolFailureKinds[kind] += count
+	}
+	if src.ToolAnalysis != nil {
+		if dst.ToolAnalysis == nil {
+			dst.ToolAnalysis = &ToolAnalysisData{}
+		}
+		remaining := 30 - len(dst.ToolAnalysis.FailureSamples)
+		if remaining > 0 {
+			samples := src.ToolAnalysis.FailureSamples
+			if len(samples) > remaining {
+				samples = samples[:remaining]
+			}
+			dst.ToolAnalysis.FailureSamples = append(dst.ToolAnalysis.FailureSamples, samples...)
+		}
+	}
+	for eventType, count := range src.EventTypes {
+		dst.EventTypes[eventType] += count
+	}
+	for key, stat := range src.HookStats {
+		if dst.HookStats[key] == nil {
+			statCopy := *stat
+			dst.HookStats[key] = &statCopy
+			continue
+		}
+		dstStat := dst.HookStats[key]
+		oldTotal := dstStat.TotalCount
+		dstStat.SuccessCount += stat.SuccessCount
+		dstStat.CancelledCount += stat.CancelledCount
+		dstStat.ErrorCount += stat.ErrorCount
+		dstStat.TotalCount += stat.TotalCount
+		if dstStat.TotalCount > 0 {
+			dstStat.AvgDurationMs = (dstStat.AvgDurationMs*float64(oldTotal) + stat.AvgDurationMs*float64(stat.TotalCount)) / float64(dstStat.TotalCount)
+		}
+		if stat.LastError != "" {
+			dstStat.LastError = stat.LastError
+		}
+		if stat.LastCommand != "" {
+			dstStat.LastCommand = stat.LastCommand
+		}
+	}
+	for name, stat := range src.SkillStats {
+		if dst.SkillStats[name] == nil {
+			dst.SkillStats[name] = &SkillStatItem{Name: stat.Name, Path: stat.Path}
+		}
+		dst.SkillStats[name].Count += stat.Count
+		if dst.SkillStats[name].Path == "" {
+			dst.SkillStats[name].Path = stat.Path
+		}
+	}
+	for mode, count := range src.PermissionModes {
+		dst.PermissionModes[mode] += count
+	}
+	for path, stat := range src.OpenedFiles {
+		if dst.OpenedFiles[path] == nil {
+			dst.OpenedFiles[path] = &FileAccessStat{Path: path}
+		}
+		dst.OpenedFiles[path].Count += stat.Count
+	}
+	if src.BudgetSummary != nil {
+		if dst.BudgetSummary == nil {
+			budgetCopy := *src.BudgetSummary
+			dst.BudgetSummary = &budgetCopy
+		} else {
+			dst.BudgetSummary.LatestUsed = src.BudgetSummary.LatestUsed
+			dst.BudgetSummary.LatestTotal = src.BudgetSummary.LatestTotal
+			dst.BudgetSummary.LatestRemaining = src.BudgetSummary.LatestRemaining
+			dst.BudgetSummary.EventCount += src.BudgetSummary.EventCount
+			if src.BudgetSummary.MaxUsed > dst.BudgetSummary.MaxUsed {
+				dst.BudgetSummary.MaxUsed = src.BudgetSummary.MaxUsed
+			}
+		}
+	}
+	remainingEvents := 40 - len(dst.EventSamples)
+	if remainingEvents > 0 {
+		samples := src.EventSamples
+		if len(samples) > remainingEvents {
+			samples = samples[:remainingEvents]
+		}
+		dst.EventSamples = append(dst.EventSamples, samples...)
+	}
+	for agentID, stat := range src.AgentStats {
+		dstStat := ensureAgentStat(dst, agentID, stat.IsSidechain)
+		if dstStat.AgentName == "" {
+			dstStat.AgentName = stat.AgentName
+		}
+		dstStat.SessionCount += stat.SessionCount
+		dstStat.MessageCount += stat.MessageCount
+		dstStat.ToolCallCount += stat.ToolCallCount
+		dstStat.ToolFailureCount += stat.ToolFailureCount
+		dstStat.MissingResultCount += stat.MissingResultCount
+	}
+	for agentID, sessions := range src.AgentSessions {
+		if dst.AgentSessions[agentID] == nil {
+			dst.AgentSessions[agentID] = make(map[string]bool)
+		}
+		for sessionID := range sessions {
+			dst.AgentSessions[agentID][sessionID] = true
+		}
+	}
+	for commandName, stat := range src.BashCommandStats {
+		dstStat := ensureBashCommandStat(dst, commandName)
+		dstStat.CallCount += stat.CallCount
+		dstStat.SuccessCount += stat.SuccessCount
+		dstStat.FailureCount += stat.FailureCount
+		dstStat.MissingResultCount += stat.MissingResultCount
+		if dstStat.RiskLevel == "" || riskRank(stat.RiskLevel) > riskRank(dstStat.RiskLevel) {
+			dstStat.RiskLevel = stat.RiskLevel
+			dstStat.RiskReason = stat.RiskReason
+		}
+		if dstStat.SampleCommand == "" {
+			dstStat.SampleCommand = stat.SampleCommand
+		}
+	}
+	for key, stat := range src.FileOperationStats {
+		if dst.FileOperationStats[key] == nil {
+			dst.FileOperationStats[key] = &FileOperationStat{Operation: stat.Operation, Path: stat.Path}
+		}
+		dstStat := dst.FileOperationStats[key]
+		dstStat.CallCount += stat.CallCount
+		dstStat.SuccessCount += stat.SuccessCount
+		dstStat.FailureCount += stat.FailureCount
+		dstStat.MissingResultCount += stat.MissingResultCount
+	}
 }
 
 func projectJSONLFiles(projectDir string) ([]string, error) {
@@ -881,9 +1077,7 @@ func parseProjectFileAggregate(filePath string, tf TimeFilter, agg *ProjectAggre
 			projectName = "Unknown"
 		}
 
-		agg.mu.Lock()
 		recordRuntimeEventLocked(agg, record, timestamp, projectName)
-		agg.mu.Unlock()
 
 		if record.Type == "user" {
 			parseToolResults(record, timestamp, projectName, pendingTools, agg)
@@ -899,9 +1093,6 @@ func parseProjectFileAggregate(filePath string, tf TimeFilter, agg *ProjectAggre
 		if err := json.Unmarshal(record.Message, &msg); err != nil {
 			continue
 		}
-
-		// 获取锁保护并发写入
-		agg.mu.Lock()
 
 		// 1. 项目统计
 		if agg.ProjectStats[projectName] == nil {
@@ -967,16 +1158,12 @@ func parseProjectFileAggregate(filePath string, tf TimeFilter, agg *ProjectAggre
 			recordStructuredToolInputLocked(agg, &call)
 			pendingTools[content.ID] = call
 		}
-
-		agg.mu.Unlock()
 	}
 
 	if len(pendingTools) > 0 {
-		agg.mu.Lock()
 		for _, call := range pendingTools {
 			addMissingToolResultLocked(agg, call)
 		}
-		agg.mu.Unlock()
 	}
 }
 
@@ -1035,13 +1222,11 @@ func parseToolResults(record ProjectRecord, timestamp time.Time, projectName str
 		kind, failed := classifyToolResult(content)
 		preview := toolResultPreview(content.Content)
 
-		agg.mu.Lock()
 		if !ok {
 			addToolCallLocked(agg, call.Tool, call.Model)
 			addAgentToolCallLocked(agg, call)
 		}
 		addToolResultLocked(agg, call, failed, kind, preview, timestamp)
-		agg.mu.Unlock()
 
 		delete(pendingTools, content.ToolUseID)
 	}

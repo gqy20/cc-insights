@@ -161,6 +161,7 @@ func buildDataFromCache(tf TimeFilter, preset string) (*DashboardData, error) {
 			Count:  count,
 		})
 	}
+	sortMCPToolStats(mcpTools)
 
 	// 构建每日趋势
 	var dates []string
@@ -471,6 +472,18 @@ func sortProjectStats(projects []ProjectStatItem) {
 		for j := 0; j < n-i-1; j++ {
 			if projects[j].MessageCount < projects[j+1].MessageCount {
 				projects[j], projects[j+1] = projects[j+1], projects[j]
+			}
+		}
+	}
+}
+
+func sortMCPToolStats(tools []MCPToolStats) {
+	n := len(tools)
+	for i := 0; i < n-1; i++ {
+		for j := 0; j < n-i-1; j++ {
+			if tools[j].Count < tools[j+1].Count ||
+				(tools[j].Count == tools[j+1].Count && tools[j].Server+"::"+tools[j].Tool > tools[j+1].Server+"::"+tools[j+1].Tool) {
+				tools[j], tools[j+1] = tools[j+1], tools[j]
 			}
 		}
 	}
