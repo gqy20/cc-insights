@@ -105,6 +105,62 @@ func TestCacheBuilderIncrementalUpdate(t *testing.T) {
 	}
 }
 
+func TestCacheBuilderIncrementalProjectFileReuse(t *testing.T) {
+	tmpDir := t.TempDir()
+	dataDir := createTestDataDir(t, tmpDir)
+	projectDir := filepath.Join(dataDir, "projects", "test-project")
+	secondPath := filepath.Join(projectDir, "session-2.jsonl")
+	baseTime := time.Now().Add(-1 * time.Hour)
+	if err := os.WriteFile(secondPath, []byte(projectRecordJSON("/tmp/test-project", "session-extra", baseTime)+"\n"), 0644); err != nil {
+		t.Fatalf("写入第二个 projects jsonl 失败: %v", err)
+	}
+
+	cachePath := filepath.Join(tmpDir, "cache.db")
+	builder := &CacheBuilder{CachePath: cachePath, DataDir: dataDir}
+	if err := builder.BuildFullCache(); err != nil {
+		t.Fatalf("Initial BuildFullCache() failed: %v", err)
+	}
+
+	initialCache, err := LoadCacheFile(cachePath)
+	if err != nil {
+		t.Fatalf("Load initial cache failed: %v", err)
+	}
+	if len(initialCache.ProjectFiles) != 2 {
+		t.Fatalf("ProjectFiles=%d, want 2", len(initialCache.ProjectFiles))
+	}
+
+	firstPath := filepath.Join(projectDir, "session.jsonl")
+	appendProjectRecord(t, dataDir, "/tmp/test-project", "session-new", time.Now())
+	newTime := time.Now().Add(2 * time.Minute)
+	if err := os.Chtimes(firstPath, newTime, newTime); err != nil {
+		t.Fatalf("更新第一个 projects 文件修改时间失败: %v", err)
+	}
+
+	if err := builder.BuildFullCache(); err != nil {
+		t.Fatalf("Second BuildFullCache() failed: %v", err)
+	}
+
+	updatedCache, err := LoadCacheFile(cachePath)
+	if err != nil {
+		t.Fatalf("Load updated cache failed: %v", err)
+	}
+	if updatedCache.TotalMessages != 4 {
+		t.Fatalf("TotalMessages=%d, want 4", updatedCache.TotalMessages)
+	}
+
+	relSecond, err := filepath.Rel(dataDir, secondPath)
+	if err != nil {
+		t.Fatalf("Rel second path failed: %v", err)
+	}
+	relSecond = filepath.ToSlash(relSecond)
+	if updatedCache.ProjectFiles[relSecond] == nil {
+		t.Fatalf("Missing cache entry for unchanged file %s", relSecond)
+	}
+	if updatedCache.ProjectFiles[relSecond].ModTimeUnix != initialCache.ProjectFiles[relSecond].ModTimeUnix {
+		t.Fatalf("Unchanged file metadata was not reused")
+	}
+}
+
 // TestCacheBuilderNeedsRebuild 测试缓存重建检查
 func TestCacheBuilderNeedsRebuild(t *testing.T) {
 	tests := []struct {

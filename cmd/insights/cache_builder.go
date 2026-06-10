@@ -8,7 +8,10 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
+	"sort"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -16,6 +19,19 @@ import (
 type CacheBuilder struct {
 	CachePath string // 缓存文件路径
 	DataDir   string // 数据目录路径
+}
+
+type projectFileInfo struct {
+	RelPath string
+	AbsPath string
+	Size    int64
+	ModTime int64
+}
+
+type projectFileResult struct {
+	Info      projectFileInfo
+	Cache     *ProjectFileCache
+	Aggregate *ProjectAggregate
 }
 
 // BuildFullCache 构建完整缓存
@@ -27,13 +43,17 @@ func (cb *CacheBuilder) BuildFullCache() error {
 		dataDir = cfg.DataDir
 	}
 
-	// 创建时间过滤器（全部数据）
-	tf := TimeFilter{Start: nil, End: nil}
+	previous, _ := LoadCacheFile(cb.CachePath)
+	if previous != nil && previous.Version != CacheVersion {
+		previous = nil
+	}
 
-	// 使用一次遍历获取所有统计数据
-	aggregate, err := ParseProjectsConcurrentOnceFromDir(tf, dataDir)
+	aggregate, projectFiles, reused, parsed, err := cb.buildProjectAggregateIncremental(dataDir, previous)
 	if err != nil {
 		return fmt.Errorf("解析项目数据失败: %w", err)
+	}
+	if reused > 0 || parsed > 0 {
+		fmt.Printf("   项目文件: 复用 %d, 解析 %d\n", reused, parsed)
 	}
 
 	// 从已解析的 aggregate 中提取会话统计（无需重新遍历 projects 文件）
@@ -62,6 +82,7 @@ func (cb *CacheBuilder) BuildFullCache() error {
 		EventAnalysis:   aggregate.EventAnalysis,
 		AgentAnalysis:   aggregate.AgentAnalysis,
 		CommandAnalysis: aggregate.CommandAnalysis,
+		ProjectFiles:    projectFiles,
 	}
 	// 填充 HourlyStats
 	for i := 0; i < 24; i++ {
@@ -136,6 +157,127 @@ func splitMCPToolName(tool string) (string, string, bool) {
 		return "", "", false
 	}
 	return parts[0], parts[1], true
+}
+
+func (cb *CacheBuilder) buildProjectAggregateIncremental(dataDir string, previous *CacheFile) (*ProjectAggregate, map[string]*ProjectFileCache, int, int, error) {
+	files, err := listProjectJSONLFileInfos(dataDir)
+	if err != nil {
+		return nil, nil, 0, 0, err
+	}
+
+	aggregate := newProjectAggregate()
+	projectFiles := make(map[string]*ProjectFileCache, len(files))
+	var toParse []projectFileInfo
+	reused := 0
+
+	for _, info := range files {
+		if previous != nil && previous.ProjectFiles != nil {
+			if cached := previous.ProjectFiles[info.RelPath]; cached != nil && cached.Size == info.Size && cached.ModTimeUnix == info.ModTime {
+				fileAggregate := projectFileAggregateToAggregate(cached.Aggregate)
+				mergeProjectAggregate(aggregate, fileAggregate)
+				projectFiles[info.RelPath] = cached
+				reused++
+				continue
+			}
+		}
+		toParse = append(toParse, info)
+	}
+
+	parsedCaches, err := parseProjectFilesForCache(toParse)
+	if err != nil {
+		return nil, nil, 0, 0, err
+	}
+	for _, item := range parsedCaches {
+		mergeProjectAggregate(aggregate, item.Aggregate)
+		projectFiles[item.Info.RelPath] = item.Cache
+	}
+
+	aggregate.finalize()
+	return aggregate, projectFiles, reused, len(parsedCaches), nil
+}
+
+func listProjectJSONLFileInfos(dataDir string) ([]projectFileInfo, error) {
+	projectsDir := filepath.Join(dataDir, "projects")
+	var files []projectFileInfo
+	err := filepath.WalkDir(projectsDir, func(path string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".jsonl") {
+			return nil
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return nil
+		}
+		rel, err := filepath.Rel(dataDir, path)
+		if err != nil {
+			rel = path
+		}
+		files = append(files, projectFileInfo{
+			RelPath: filepath.ToSlash(rel),
+			AbsPath: path,
+			Size:    info.Size(),
+			ModTime: info.ModTime().UnixNano(),
+		})
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	sort.Slice(files, func(i, j int) bool {
+		return files[i].RelPath < files[j].RelPath
+	})
+	return files, nil
+}
+
+func parseProjectFilesForCache(files []projectFileInfo) ([]projectFileResult, error) {
+	if len(files) == 0 {
+		return nil, nil
+	}
+	maxWorkers := runtime.NumCPU()
+	if len(files) < maxWorkers {
+		maxWorkers = len(files)
+	}
+
+	jobs := make(chan projectFileInfo, maxWorkers*2)
+	results := make(chan projectFileResult, len(files))
+	var wg sync.WaitGroup
+	for i := 0; i < maxWorkers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for info := range jobs {
+				fileAggregate := newProjectAggregate()
+				parseProjectFileAggregate(info.AbsPath, TimeFilter{}, fileAggregate)
+				results <- projectFileResult{
+					Info:      info,
+					Aggregate: fileAggregate,
+					Cache: &ProjectFileCache{
+						Path:        info.RelPath,
+						Size:        info.Size,
+						ModTimeUnix: info.ModTime,
+						Aggregate:   aggregateToProjectFileAggregate(fileAggregate),
+					},
+				}
+			}
+		}()
+	}
+	for _, info := range files {
+		jobs <- info
+	}
+	close(jobs)
+	wg.Wait()
+	close(results)
+
+	items := make([]projectFileResult, 0, len(files))
+	for item := range results {
+		items = append(items, item)
+	}
+	sort.Slice(items, func(i, j int) bool {
+		return items[i].Info.RelPath < items[j].Info.RelPath
+	})
+	return items, nil
 }
 
 // IncrementalUpdate 增量更新缓存

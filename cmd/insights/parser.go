@@ -984,7 +984,6 @@ func mergeProjectAggregate(dst, src *ProjectAggregate) {
 		if dstStat.AgentName == "" {
 			dstStat.AgentName = stat.AgentName
 		}
-		dstStat.SessionCount += stat.SessionCount
 		dstStat.MessageCount += stat.MessageCount
 		dstStat.ToolCallCount += stat.ToolCallCount
 		dstStat.ToolFailureCount += stat.ToolFailureCount
@@ -994,7 +993,11 @@ func mergeProjectAggregate(dst, src *ProjectAggregate) {
 		if dst.AgentSessions[agentID] == nil {
 			dst.AgentSessions[agentID] = make(map[string]bool)
 		}
+		dstStat := ensureAgentStat(dst, agentID, src.AgentStats[agentID].IsSidechain)
 		for sessionID := range sessions {
+			if !dst.AgentSessions[agentID][sessionID] {
+				dstStat.SessionCount++
+			}
 			dst.AgentSessions[agentID][sessionID] = true
 		}
 	}
@@ -1022,6 +1025,170 @@ func mergeProjectAggregate(dst, src *ProjectAggregate) {
 		dstStat.FailureCount += stat.FailureCount
 		dstStat.MissingResultCount += stat.MissingResultCount
 	}
+}
+
+func aggregateToProjectFileAggregate(src *ProjectAggregate) ProjectFileAggregate {
+	out := ProjectFileAggregate{
+		ProjectStats:       make(map[string]ProjectStatItem, len(src.ProjectStats)),
+		WeekdayData:        src.WeekdayData,
+		DailyActivity:      copyIntMap(src.DailyActivity),
+		DailySessions:      boolSetMapToSlices(src.DailySessions),
+		HourlyCounts:       src.HourlyCounts,
+		ModelUsage:         make(map[string]ModelUsageItem, len(src.ModelUsage)),
+		ToolStats:          make(map[string]ToolStatItem, len(src.ToolStats)),
+		ToolModelStats:     make(map[string]ToolModelStatItem, len(src.ToolModelStats)),
+		ToolFailureKinds:   copyIntMap(src.ToolFailureKinds),
+		EventTypes:         copyIntMap(src.EventTypes),
+		HookStats:          make(map[string]HookStatItem, len(src.HookStats)),
+		SkillStats:         make(map[string]SkillStatItem, len(src.SkillStats)),
+		PermissionModes:    copyIntMap(src.PermissionModes),
+		OpenedFiles:        make(map[string]FileAccessStat, len(src.OpenedFiles)),
+		AgentStats:         make(map[string]AgentStatItem, len(src.AgentStats)),
+		AgentSessions:      boolSetMapToSlices(src.AgentSessions),
+		BashCommandStats:   make(map[string]BashCommandStat, len(src.BashCommandStats)),
+		FileOperationStats: make(map[string]FileOperationStat, len(src.FileOperationStats)),
+	}
+	for key, stat := range src.ProjectStats {
+		out.ProjectStats[key] = *stat
+	}
+	for key, stat := range src.ModelUsage {
+		out.ModelUsage[key] = *stat
+	}
+	for key, stat := range src.ToolStats {
+		out.ToolStats[key] = *stat
+	}
+	for key, stat := range src.ToolModelStats {
+		out.ToolModelStats[key] = *stat
+	}
+	if src.ToolAnalysis != nil {
+		out.ToolSamples = append([]ToolFailureSample(nil), src.ToolAnalysis.FailureSamples...)
+	}
+	for key, stat := range src.HookStats {
+		out.HookStats[key] = *stat
+	}
+	for key, stat := range src.SkillStats {
+		out.SkillStats[key] = *stat
+	}
+	for key, stat := range src.OpenedFiles {
+		out.OpenedFiles[key] = *stat
+	}
+	if src.BudgetSummary != nil {
+		budgetCopy := *src.BudgetSummary
+		out.BudgetSummary = &budgetCopy
+	}
+	out.EventSamples = append([]EventSample(nil), src.EventSamples...)
+	for key, stat := range src.AgentStats {
+		out.AgentStats[key] = *stat
+	}
+	for key, stat := range src.BashCommandStats {
+		out.BashCommandStats[key] = *stat
+	}
+	for key, stat := range src.FileOperationStats {
+		out.FileOperationStats[key] = *stat
+	}
+	return out
+}
+
+func projectFileAggregateToAggregate(src ProjectFileAggregate) *ProjectAggregate {
+	out := newProjectAggregate()
+	for key, stat := range src.ProjectStats {
+		statCopy := stat
+		out.ProjectStats[key] = &statCopy
+	}
+	out.WeekdayData = src.WeekdayData
+	out.DailyActivity = copyIntMap(src.DailyActivity)
+	out.DailySessions = slicesMapToBoolSets(src.DailySessions)
+	out.HourlyCounts = src.HourlyCounts
+	for key, stat := range src.ModelUsage {
+		statCopy := stat
+		out.ModelUsage[key] = &statCopy
+	}
+	for key, stat := range src.ToolStats {
+		statCopy := stat
+		out.ToolStats[key] = &statCopy
+	}
+	for key, stat := range src.ToolModelStats {
+		statCopy := stat
+		out.ToolModelStats[key] = &statCopy
+	}
+	out.ToolFailureKinds = copyIntMap(src.ToolFailureKinds)
+	if len(src.ToolSamples) > 0 {
+		out.ToolAnalysis = &ToolAnalysisData{FailureSamples: append([]ToolFailureSample(nil), src.ToolSamples...)}
+	}
+	out.EventTypes = copyIntMap(src.EventTypes)
+	for key, stat := range src.HookStats {
+		statCopy := stat
+		out.HookStats[key] = &statCopy
+	}
+	for key, stat := range src.SkillStats {
+		statCopy := stat
+		out.SkillStats[key] = &statCopy
+	}
+	out.PermissionModes = copyIntMap(src.PermissionModes)
+	for key, stat := range src.OpenedFiles {
+		statCopy := stat
+		out.OpenedFiles[key] = &statCopy
+	}
+	if src.BudgetSummary != nil {
+		budgetCopy := *src.BudgetSummary
+		out.BudgetSummary = &budgetCopy
+	}
+	out.EventSamples = append([]EventSample(nil), src.EventSamples...)
+	for key, stat := range src.AgentStats {
+		statCopy := stat
+		out.AgentStats[key] = &statCopy
+	}
+	out.AgentSessions = slicesMapToBoolSets(src.AgentSessions)
+	for key, stat := range src.BashCommandStats {
+		statCopy := stat
+		out.BashCommandStats[key] = &statCopy
+	}
+	for key, stat := range src.FileOperationStats {
+		statCopy := stat
+		out.FileOperationStats[key] = &statCopy
+	}
+	return out
+}
+
+func copyIntMap(src map[string]int) map[string]int {
+	if len(src) == 0 {
+		return nil
+	}
+	out := make(map[string]int, len(src))
+	for key, value := range src {
+		out[key] = value
+	}
+	return out
+}
+
+func boolSetMapToSlices(src map[string]map[string]bool) map[string][]string {
+	if len(src) == 0 {
+		return nil
+	}
+	out := make(map[string][]string, len(src))
+	for key, values := range src {
+		items := make([]string, 0, len(values))
+		for value := range values {
+			items = append(items, value)
+		}
+		sort.Strings(items)
+		out[key] = items
+	}
+	return out
+}
+
+func slicesMapToBoolSets(src map[string][]string) map[string]map[string]bool {
+	if len(src) == 0 {
+		return make(map[string]map[string]bool)
+	}
+	out := make(map[string]map[string]bool, len(src))
+	for key, values := range src {
+		out[key] = make(map[string]bool, len(values))
+		for _, value := range values {
+			out[key][value] = true
+		}
+	}
+	return out
 }
 
 func projectJSONLFiles(projectDir string) ([]string, error) {

@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-const CacheVersion = "2.0"
+const CacheVersion = "2.1"
 
 // CacheFile 缓存文件结构
 type CacheFile struct {
@@ -34,6 +34,40 @@ type CacheFile struct {
 	EventAnalysis   *EventAnalysisData
 	AgentAnalysis   *AgentAnalysisData
 	CommandAnalysis *CommandAnalysisData
+	ProjectFiles    map[string]*ProjectFileCache `json:"project_file_caches,omitempty"`
+}
+
+// ProjectFileCache 单个 projects JSONL 文件的增量缓存
+type ProjectFileCache struct {
+	Path        string               `json:"path"`
+	Size        int64                `json:"size"`
+	ModTimeUnix int64                `json:"mod_time_unix"`
+	Aggregate   ProjectFileAggregate `json:"aggregate"`
+}
+
+// ProjectFileAggregate 可序列化的文件级聚合快照
+type ProjectFileAggregate struct {
+	ProjectStats       map[string]ProjectStatItem   `json:"project_stats,omitempty"`
+	WeekdayData        [7]WeekdayItem               `json:"weekday_data"`
+	DailyActivity      map[string]int               `json:"daily_activity,omitempty"`
+	DailySessions      map[string][]string          `json:"daily_sessions,omitempty"`
+	HourlyCounts       [24]int                      `json:"hourly_counts"`
+	ModelUsage         map[string]ModelUsageItem    `json:"model_usage,omitempty"`
+	ToolStats          map[string]ToolStatItem      `json:"tool_stats,omitempty"`
+	ToolModelStats     map[string]ToolModelStatItem `json:"tool_model_stats,omitempty"`
+	ToolFailureKinds   map[string]int               `json:"tool_failure_kinds,omitempty"`
+	ToolSamples        []ToolFailureSample          `json:"tool_samples,omitempty"`
+	EventTypes         map[string]int               `json:"event_types,omitempty"`
+	HookStats          map[string]HookStatItem      `json:"hook_stats,omitempty"`
+	SkillStats         map[string]SkillStatItem     `json:"skill_stats,omitempty"`
+	PermissionModes    map[string]int               `json:"permission_modes,omitempty"`
+	OpenedFiles        map[string]FileAccessStat    `json:"opened_files,omitempty"`
+	BudgetSummary      *BudgetSummary               `json:"budget_summary,omitempty"`
+	EventSamples       []EventSample                `json:"event_samples,omitempty"`
+	AgentStats         map[string]AgentStatItem     `json:"agent_stats,omitempty"`
+	AgentSessions      map[string][]string          `json:"agent_sessions,omitempty"`
+	BashCommandStats   map[string]BashCommandStat   `json:"bash_command_stats,omitempty"`
+	FileOperationStats map[string]FileOperationStat `json:"file_operation_stats,omitempty"`
 }
 
 // DayAggregate 每日聚合数据
