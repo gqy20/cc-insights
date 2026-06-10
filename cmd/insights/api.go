@@ -41,6 +41,7 @@ type DashboardData struct {
 	CostAnalysis    *CostAnalysisData    `json:"cost_analysis,omitempty"`
 	FailureAnalysis *FailureAnalysisData `json:"failure_analysis,omitempty"`
 	SessionAnalysis *SessionAnalysisData `json:"session_analysis,omitempty"`
+	FileAnalysis   *FileAnalysisData    `json:"file_analysis,omitempty"`
 }
 
 // TimeRangeInfo 时间范围信息
@@ -294,6 +295,7 @@ func buildDataFromCache(tf TimeFilter, preset string) (*DashboardData, error) {
 	costAnalysis := cloneCostAnalysis(cached.CostAnalysis)
 	failureAnalysis := cloneFailureAnalysis(cached.FailureAnalysis)
 	sessionAnalysis := cloneSessionAnalysis(cached.SessionAnalysis)
+	fileAnalysis := cloneFileAnalysis(cached.FileAnalysis)
 
 	// 构建时间范围信息
 	rangeInfo := TimeRangeInfo{Preset: preset}
@@ -327,6 +329,7 @@ func buildDataFromCache(tf TimeFilter, preset string) (*DashboardData, error) {
 		CostAnalysis:    costAnalysis,
 		FailureAnalysis: failureAnalysis,
 		SessionAnalysis: sessionAnalysis,
+	FileAnalysis:   fileAnalysis,
 	}, nil
 }
 
@@ -421,6 +424,7 @@ func buildDataFromParsing(tf TimeFilter, preset string) (*DashboardData, error) 
 		CostAnalysis:    aggregate.CostAnalysis,
 		FailureAnalysis: aggregate.FailureAnalysis,
 		SessionAnalysis: aggregate.SessionAnalysis,
+	FileAnalysis:   aggregate.FileAnalysis,
 	}, nil
 }
 
@@ -523,6 +527,10 @@ func emptyProjectAggregate() *ProjectAggregate {
 		AgentSessions:       make(map[string]map[string]bool),
 		BashCommandStats:    make(map[string]*BashCommandStat),
 		FileOperationStats:  make(map[string]*FileOperationStat),
+		FileHotStats:       make(map[string]*FileHotStat),
+		FileEditFailures:   make(map[string]*FileEditFailureAgg),
+		FileSnapshotStats:  make(map[string]*FileSnapshotAgg),
+		FileEditedStats:    make(map[string]*FileEditedAgg),
 		HourlyCounts:        [24]int{},
 	}
 	weekdayNames := []string{"周一", "周二", "周三", "周四", "周五", "周六", "周日"}

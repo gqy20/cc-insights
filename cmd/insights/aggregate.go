@@ -27,6 +27,10 @@ func newProjectAggregate() *ProjectAggregate {
 		AgentSessions:       make(map[string]map[string]bool),
 		BashCommandStats:    make(map[string]*BashCommandStat),
 		FileOperationStats:  make(map[string]*FileOperationStat),
+		FileHotStats:       make(map[string]*FileHotStat),
+		FileEditFailures:   make(map[string]*FileEditFailureAgg),
+		FileSnapshotStats:  make(map[string]*FileSnapshotAgg),
+		FileEditedStats:    make(map[string]*FileEditedAgg),
 		HourlyCounts:        [24]int{},
 		CostModelStats:      make(map[string]*CostModelStat),
 		CostProjectStats:    make(map[string]*CostProjectStat),
@@ -104,6 +108,7 @@ func mergeProjectAggregate(dst, src *ProjectAggregate) {
 		dstStat.SuccessCount += stat.SuccessCount
 		dstStat.FailureCount += stat.FailureCount
 		dstStat.MissingResultCount += stat.MissingResultCount
+
 	}
 	for _, stat := range src.ToolModelStats {
 		dstStat := ensureToolModelStat(dst, stat.Tool, stat.Model)
@@ -111,6 +116,7 @@ func mergeProjectAggregate(dst, src *ProjectAggregate) {
 		dstStat.SuccessCount += stat.SuccessCount
 		dstStat.FailureCount += stat.FailureCount
 		dstStat.MissingResultCount += stat.MissingResultCount
+
 	}
 	for key, stat := range src.FailureReasons {
 		dstStat := ensureFailureReasonStat(dst, stat.Category, stat.Reason)
@@ -224,6 +230,7 @@ func mergeProjectAggregate(dst, src *ProjectAggregate) {
 		dstStat.ToolCallCount += stat.ToolCallCount
 		dstStat.ToolFailureCount += stat.ToolFailureCount
 		dstStat.MissingResultCount += stat.MissingResultCount
+
 	}
 	for agentID, sessions := range src.AgentSessions {
 		if dst.AgentSessions[agentID] == nil {
@@ -243,6 +250,7 @@ func mergeProjectAggregate(dst, src *ProjectAggregate) {
 		dstStat.SuccessCount += stat.SuccessCount
 		dstStat.FailureCount += stat.FailureCount
 		dstStat.MissingResultCount += stat.MissingResultCount
+
 		if dstStat.RiskLevel == "" || riskRank(stat.RiskLevel) > riskRank(dstStat.RiskLevel) {
 			dstStat.RiskLevel = stat.RiskLevel
 			dstStat.RiskReason = stat.RiskReason
@@ -260,8 +268,60 @@ func mergeProjectAggregate(dst, src *ProjectAggregate) {
 		dstStat.SuccessCount += stat.SuccessCount
 		dstStat.FailureCount += stat.FailureCount
 		dstStat.MissingResultCount += stat.MissingResultCount
+
 	}
-}
+
+	// file_analysis: merge FileHotStats
+	for path, stat := range src.FileHotStats {
+		if dst.FileHotStats[path] == nil {
+			dst.FileHotStats[path] = &FileHotStat{Path: path}
+		}
+		ds := dst.FileHotStats[path]
+		ds.ReadCount += stat.ReadCount
+		ds.EditCount += stat.EditCount
+		ds.WriteCount += stat.WriteCount
+		ds.SuccessCount += stat.SuccessCount
+		ds.FailureCount += stat.FailureCount
+		ds.MissingCount += stat.MissingCount
+	}
+	// file_analysis: merge FileEditFailures
+	for path, ef := range src.FileEditFailures {
+		if dst.FileEditFailures[path] == nil {
+			dst.FileEditFailures[path] = &FileEditFailureAgg{Path: path, ReasonCounts: make(map[string]int)}
+		}
+		de := dst.FileEditFailures[path]
+		de.TotalFailures += ef.TotalFailures
+		for reason, count := range ef.ReasonCounts {
+			de.ReasonCounts[reason] += count
+		}
+	}
+	// file_analysis: merge FileSnapshotStats
+	for path, ss := range src.FileSnapshotStats {
+		if dst.FileSnapshotStats[path] == nil {
+			dst.FileSnapshotStats[path] = &FileSnapshotAgg{Path: path, SessionSet: make(map[string]bool)}
+		}
+		ds := dst.FileSnapshotStats[path]
+		ds.SnapshotCount += ss.SnapshotCount
+		if ss.MaxVersion > ds.MaxVersion {
+			ds.MaxVersion = ss.MaxVersion
+		}
+		if ss.SessionSet != nil && ds.SessionSet != nil {
+			for sid := range ss.SessionSet {
+				ds.SessionSet[sid] = true
+			}
+		}
+		ds.IsUpdateCount += ss.IsUpdateCount
+	}
+	// file_analysis: merge FileEditedStats
+	for path, ed := range src.FileEditedStats {
+		if dst.FileEditedStats[path] == nil {
+			dst.FileEditedStats[path] = &FileEditedAgg{Path: path}
+		}
+		de := dst.FileEditedStats[path]
+		de.EditCount += ed.EditCount
+		de.TotalLines += ed.TotalLines
+		de.TotalChars += ed.TotalChars
+	}}
 
 func aggregateToProjectFileAggregate(src *ProjectAggregate) ProjectFileAggregate {
 	out := ProjectFileAggregate{
@@ -293,6 +353,10 @@ func aggregateToProjectFileAggregate(src *ProjectAggregate) ProjectFileAggregate
 		AgentSessions:       boolSetMapToSlices(src.AgentSessions),
 		BashCommandStats:    make(map[string]BashCommandStat, len(src.BashCommandStats)),
 		FileOperationStats:  make(map[string]FileOperationStat, len(src.FileOperationStats)),
+		FileHotStats:       make(map[string]FileHotStat, len(src.FileHotStats)),
+		FileEditFailures:   make(map[string]FileEditFailureAgg, len(src.FileEditFailures)),
+		FileSnapshotStats:  make(map[string]FileSnapshotAgg, len(src.FileSnapshotStats)),
+		FileEditedStats:    make(map[string]FileEditedAgg, len(src.FileEditedStats)),
 	}
 	for key, stat := range src.ProjectStats {
 		out.ProjectStats[key] = *stat
@@ -352,6 +416,22 @@ func aggregateToProjectFileAggregate(src *ProjectAggregate) ProjectFileAggregate
 	}
 	for key, stat := range src.FileOperationStats {
 		out.FileOperationStats[key] = *stat
+	}
+	// file_analysis: serialize new maps
+	for key, stat := range src.FileHotStats {
+		out.FileHotStats[key] = *stat
+	}
+	for key, ef := range src.FileEditFailures {
+		out.FileEditFailures[key] = *ef
+	}
+	for key, ss := range src.FileSnapshotStats {
+		ssCopy := *ss
+		ssCopy.SessionSet = nil // sessionSet is not serializable as map[bool], use slices format if needed
+		// For now store session count in a separate field or just skip SessionSet
+		out.FileSnapshotStats[key] = ssCopy
+	}
+	for key, ed := range src.FileEditedStats {
+		out.FileEditedStats[key] = *ed
 	}
 	return out
 }
@@ -444,6 +524,28 @@ func projectFileAggregateToAggregate(src ProjectFileAggregate) *ProjectAggregate
 	for key, stat := range src.FileOperationStats {
 		statCopy := stat
 		out.FileOperationStats[key] = &statCopy
+	}
+	// file_analysis: restore new maps
+	for key, stat := range src.FileHotStats {
+		statCopy := stat
+		out.FileHotStats[key] = &statCopy
+	}
+	for key, ef := range src.FileEditFailures {
+		efCopy := ef
+		efCopy.ReasonCounts = make(map[string]int)
+		for r, c := range ef.ReasonCounts {
+			efCopy.ReasonCounts[r] = c
+		}
+		out.FileEditFailures[key] = &efCopy
+	}
+	for key, ss := range src.FileSnapshotStats {
+		ssCopy := ss
+		ssCopy.SessionSet = make(map[string]bool)
+		out.FileSnapshotStats[key] = &ssCopy
+	}
+	for key, ed := range src.FileEditedStats {
+		edCopy := ed
+		out.FileEditedStats[key] = &edCopy
 	}
 	return out
 }

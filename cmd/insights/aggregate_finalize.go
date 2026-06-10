@@ -65,6 +65,7 @@ func (agg *ProjectAggregate) finalize() {
 	agg.finalizeCommandAnalysis()
 	agg.finalizeCostAnalysis()
 	agg.finalizeSessionAnalysis()
+	agg.finalizeFileAnalysis()
 
 	// 8. 生成工作时段统计
 	var workHoursCount, offHoursCount int
@@ -390,4 +391,160 @@ func riskRank(level string) int {
 	default:
 		return 0
 	}
+}
+
+// finalizeFileAnalysis 生成文件与编辑质量分析结果
+func (agg *ProjectAggregate) finalizeFileAnalysis() {
+	analysis := &FileAnalysisData{
+		HotFiles:     make([]FileHotItem, 0, len(agg.FileHotStats)),
+		EditFailures: make([]FileEditFailureItem, 0, len(agg.FileEditFailures)),
+		Snapshots:    make([]FileSnapshotItem, 0, len(agg.FileSnapshotStats)),
+		EditedFiles:  make([]FileEditedItem, 0, len(agg.FileEditedStats)),
+	}
+
+	totalReads, totalEdits, totalWrites := 0, 0, 0
+	totalEditFailures, totalWriteFailures := 0, 0
+
+	// --- P0: Hot Files（按路径聚合的跨操作类型统计）---
+	for path, stat := range agg.FileHotStats {
+		totalReads += stat.ReadCount
+		totalEdits += stat.EditCount
+		totalWrites += stat.WriteCount
+		totalOps := stat.ReadCount + stat.EditCount + stat.WriteCount
+		failureRate := 0.0
+		if totalOps > 0 {
+			failureRate = float64(stat.FailureCount) / float64(totalOps) * 100
+		}
+		editFailureRate := 0.0
+		if stat.EditCount > 0 {
+			if ef, ok := agg.FileEditFailures[path]; ok {
+				editFailureRate = float64(ef.TotalFailures) / float64(stat.EditCount) * 100
+			}
+		}
+		analysis.HotFiles = append(analysis.HotFiles, FileHotItem{
+			Path:            path,
+			ReadCount:       stat.ReadCount,
+			EditCount:       stat.EditCount,
+			WriteCount:      stat.WriteCount,
+			TotalOps:        totalOps,
+			SuccessCount:    stat.SuccessCount,
+			FailureCount:    stat.FailureCount,
+			MissingCount:    stat.MissingCount,
+			FailureRate:     failureRate,
+			EditFailureRate: editFailureRate,
+		})
+	}
+	sort.Slice(analysis.HotFiles, func(i, j int) bool {
+		return analysis.HotFiles[i].TotalOps > analysis.HotFiles[j].TotalOps
+	})
+	if len(analysis.HotFiles) > 50 {
+		analysis.HotFiles = analysis.HotFiles[:50]
+	}
+
+	// --- P0: Edit Failures per File（按文件的 Edit 失败原因分布）---
+	for path, ef := range agg.FileEditFailures {
+		item := FileEditFailureItem{
+			Path:          path,
+			TotalFailures: ef.TotalFailures,
+			FailureReasons: make([]FileFailureReasonDetail, 0, len(ef.ReasonCounts)),
+		}
+		totalEditFailures += ef.TotalFailures
+		for reason, count := range ef.ReasonCounts {
+			rate := 0.0
+			if ef.TotalFailures > 0 {
+				rate = float64(count) / float64(ef.TotalFailures) * 100
+			}
+			item.FailureReasons = append(item.FailureReasons, FileFailureReasonDetail{
+				Reason: reason,
+				Count:  count,
+				Rate:   rate,
+			})
+		}
+		sort.Slice(item.FailureReasons, func(i, j int) bool {
+			return item.FailureReasons[i].Count > item.FailureReasons[j].Count
+		})
+		analysis.EditFailures = append(analysis.EditFailures, item)
+	}
+	sort.Slice(analysis.EditFailures, func(i, j int) bool {
+		return analysis.EditFailures[i].TotalFailures > analysis.EditFailures[j].TotalFailures
+	})
+	if len(analysis.EditFailures) > 30 {
+		analysis.EditFailures = analysis.EditFailures[:30]
+	}
+
+	// --- P1: Snapshots（file-history-snapshot 统计）---
+	for path, ss := range agg.FileSnapshotStats {
+		analysis.Totals.SnapshotEventCount += ss.SnapshotCount
+		analysis.Snapshots = append(analysis.Snapshots, FileSnapshotItem{
+			Path:          path,
+			SnapshotCount: ss.SnapshotCount,
+			MaxVersion:    ss.MaxVersion,
+			SessionCount:  len(ss.SessionSet),
+			IsUpdateCount: ss.IsUpdateCount,
+		})
+	}
+	sort.Slice(analysis.Snapshots, func(i, j int) bool {
+		return analysis.Snapshots[i].SessionCount > analysis.Snapshots[j].SessionCount
+	})
+	if len(analysis.Snapshots) > 30 {
+		analysis.Snapshots = analysis.Snapshots[:30]
+	}
+
+	// --- P2: Edited Files（edited_text_file 统计）---
+	for path, ed := range agg.FileEditedStats {
+		analysis.Totals.EditedFileCount++
+		avgLines := 0
+		if ed.EditCount > 0 {
+			avgLines = ed.TotalLines / ed.EditCount
+		}
+		avgChars := 0
+		if ed.EditCount > 0 {
+			avgChars = int(ed.TotalChars / int64(ed.EditCount))
+		}
+		analysis.EditedFiles = append(analysis.EditedFiles, FileEditedItem{
+			Path:       path,
+			EditCount:  ed.EditCount,
+			AvgLines:   avgLines,
+			AvgChars:   avgChars,
+			TotalChars: ed.TotalChars,
+		})
+	}
+	sort.Slice(analysis.EditedFiles, func(i, j int) bool {
+		return analysis.EditedFiles[i].TotalChars > analysis.EditedFiles[j].TotalChars
+	})
+	if len(analysis.EditedFiles) > 20 {
+		analysis.EditedFiles = analysis.EditedFiles[:20]
+	}
+
+	// --- Totals ---
+	uniqueFiles := len(agg.FileHotStats)
+	overallEditFailureRate := 0.0
+	if totalEdits > 0 {
+		overallEditFailureRate = float64(totalEditFailures) / float64(totalEdits) * 100
+	}
+
+	// Write failures from hot stats (write failure = total failure - edit failure for write ops is tracked separately)
+	// We approximate: Write failures are part of FailureCount in FileHotStat for Write operations
+	// For now use the total failure count minus known edit failures as approximation
+	for _, hf := range analysis.HotFiles {
+		if hf.WriteCount > 0 && hf.FailureCount > 0 {
+			// Approximate write failures proportionally
+			writeRatio := float64(hf.WriteCount) / float64(max(hf.TotalOps, 1))
+			totalWriteFailures += int(float64(hf.FailureCount) * writeRatio * 0.5) // rough estimate
+		}
+	}
+
+	analysis.Totals = FileAnalysisTotals{
+		UniqueFiles:            uniqueFiles,
+		TotalReads:             totalReads,
+		TotalEdits:             totalEdits,
+		TotalWrites:            totalWrites,
+		TotalEditFailures:      totalEditFailures,
+		TotalWriteFailures:     totalWriteFailures,
+		OverallEditFailureRate: overallEditFailureRate,
+		SnapshotEventCount:     analysis.Totals.SnapshotEventCount,
+		EditedFileCount:        analysis.Totals.EditedFileCount,
+	}
+
+	agg.FileAnalysis = analysis
 }

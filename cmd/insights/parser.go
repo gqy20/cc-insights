@@ -87,6 +87,12 @@ func addToolResultLocked(agg *ProjectAggregate, call pendingToolCall, classifica
 		addSessionToolResultLocked(agg, call, true, false)
 		addCommandOrFileResultLocked(agg, call, true, false)
 		recordFailureAnalysisLocked(agg, call, classification)
+		// file_analysis: 按文件记录 Edit 失败原因
+		if (call.Tool == "Edit" || call.Tool == "MultiEdit") && call.FileOpKey != "" {
+			if parts := strings.SplitN(call.FileOpKey, "\x00", 2); len(parts) == 2 {
+				recordFileEditFailureLocked(agg, parts[1], classification.Category, classification.Reason)
+			}
+		}
 		if len(agg.FailureSamples) < 30 {
 			agg.FailureSamples = append(agg.FailureSamples, ToolFailureSample{
 				Tool:           call.Tool,
@@ -119,6 +125,111 @@ func addMissingToolResultLocked(agg *ProjectAggregate, call pendingToolCall) {
 	addCommandOrFileResultLocked(agg, call, false, true)
 }
 
+// --- file_analysis: 按文件记录 Edit 失败原因 ---
+
+func recordFileEditFailureLocked(agg *ProjectAggregate, path, category, reason string) {
+	if agg.FileEditFailures == nil {
+		agg.FileEditFailures = make(map[string]*FileEditFailureAgg)
+	}
+	if agg.FileEditFailures[path] == nil {
+		agg.FileEditFailures[path] = &FileEditFailureAgg{
+			Path:         path,
+			ReasonCounts: make(map[string]int),
+		}
+	}
+	agg.FileEditFailures[path].TotalFailures++
+	reasonKey := reason
+	if reasonKey == "" {
+		reasonKey = category
+	}
+	if reasonKey == "" {
+		reasonKey = "unknown"
+	}
+	agg.FileEditFailures[path].ReasonCounts[reasonKey]++
+}
+
+// --- file_analysis: file-history-snapshot 事件 ---
+
+func recordFileHistorySnapshotLocked(agg *ProjectAggregate, rawAttachment json.RawMessage, sessionID string) {
+	var snap struct {
+		Snapshot struct {
+			TrackedFileBackups map[string]struct {
+				BackupFileName string `json:"backupFileName"`
+				Version        int    `json:"version"`
+				BackupTime     string `json:"backupTime"`
+			} `json:"trackedFileBackups"`
+		} `json:"snapshot"`
+		IsSnapshotUpdate bool `json:"isSnapshotUpdate"`
+	}
+	if err := json.Unmarshal(rawAttachment, &snap); err != nil {
+		return
+	}
+	for filePath := range snap.Snapshot.TrackedFileBackups {
+		if agg.FileSnapshotStats == nil {
+			agg.FileSnapshotStats = make(map[string]*FileSnapshotAgg)
+		}
+		if agg.FileSnapshotStats[filePath] == nil {
+			agg.FileSnapshotStats[filePath] = &FileSnapshotAgg{
+				Path:       filePath,
+				SessionSet: make(map[string]bool),
+			}
+		}
+		s := agg.FileSnapshotStats[filePath]
+		s.SnapshotCount++
+		backup := snap.Snapshot.TrackedFileBackups[filePath]
+		if backup.Version > s.MaxVersion {
+			s.MaxVersion = backup.Version
+		}
+		if sessionID != "" && !s.SessionSet[sessionID] {
+			s.SessionSet[sessionID] = true
+		}
+		if snap.IsSnapshotUpdate {
+			s.IsUpdateCount++
+		}
+	}
+}
+
+// --- file_analysis: edited_text_file attachment ---
+
+func recordEditedTextFileLocked(agg *ProjectAggregate, filename string, rawAttachment json.RawMessage) {
+	if filename == "" || rawAttachment == nil {
+		return
+	}
+	var edited struct {
+		Snippet string `json:"snippet"`
+	}
+	if err := json.Unmarshal(rawAttachment, &edited); err != nil {
+		return
+	}
+	if agg.FileEditedStats == nil {
+		agg.FileEditedStats = make(map[string]*FileEditedAgg)
+	}
+	stat := agg.FileEditedStats[filename]
+	if stat == nil {
+		stat = &FileEditedAgg{Path: filename}
+		agg.FileEditedStats[filename] = stat
+	}
+	stat.EditCount++
+	lineCount := countLines(edited.Snippet)
+	stat.TotalLines += lineCount
+	stat.TotalChars += int64(len(edited.Snippet))
+}
+
+func countLines(s string) int {
+	if s == "" {
+		return 0
+	}
+	n := 1
+	for _, ch := range s {
+		if ch == '\n' {
+			n++
+		}
+	}
+	return n
+}
+
+// --- end file_analysis ---
+
 func recordRuntimeEventLocked(agg *ProjectAggregate, record ProjectRecord, timestamp time.Time, projectName string) {
 	recordSessionRecordLocked(agg, record, timestamp, projectName)
 
@@ -145,6 +256,7 @@ func recordRuntimeEventLocked(agg *ProjectAggregate, record ProjectRecord, times
 				Name string `json:"name"`
 				Path string `json:"path"`
 			} `json:"skills"`
+				Snapshot   json.RawMessage `json:"snapshot"` // file-analysis: for file-history-snapshot
 		}
 		if err := json.Unmarshal(record.Attachment, &attachment); err == nil && attachment.Type != "" {
 			eventType = "attachment:" + attachment.Type
@@ -161,6 +273,10 @@ func recordRuntimeEventLocked(agg *ProjectAggregate, record ProjectRecord, times
 				recordBudgetLocked(agg, attachment.Used, attachment.Total, attachment.Remaining, timestamp, projectName, record.SessionID)
 			case "queued_command":
 				// Counted through event type below.
+			case "file-history-snapshot":
+				recordFileHistorySnapshotLocked(agg, record.Attachment, record.SessionID)
+			case "edited_text_file":
+				recordEditedTextFileLocked(agg, attachment.Filename, record.Attachment)
 			}
 			if len(agg.EventSamples) < 40 && (strings.HasPrefix(attachment.Type, "hook_") || attachment.Type == "invoked_skills" || attachment.Type == "queued_command") {
 				addEventSampleLocked(agg, eventType, projectName, record.SessionID, timestamp, string(record.Attachment))

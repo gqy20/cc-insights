@@ -38,8 +38,48 @@ func recordStructuredToolInputLocked(agg *ProjectAggregate, call *pendingToolCal
 			agg.FileOperationStats[key] = &FileOperationStat{Operation: call.Tool, Path: path}
 		}
 		agg.FileOperationStats[key].CallCount++
+		// file_analysis: 按路径聚合（跨操作类型）
+		recordFileHotStatLocked(agg, call.Tool, path)
 	}
 }
+
+// --- file_analysis: 按路径聚合的文件活跃度统计 ---
+
+func ensureFileHotStat(agg *ProjectAggregate, path string) *FileHotStat {
+	if agg.FileHotStats == nil {
+		agg.FileHotStats = make(map[string]*FileHotStat)
+	}
+	if agg.FileHotStats[path] == nil {
+		agg.FileHotStats[path] = &FileHotStat{Path: path}
+	}
+	return agg.FileHotStats[path]
+}
+
+func recordFileHotStatLocked(agg *ProjectAggregate, tool, path string) {
+	stat := ensureFileHotStat(agg, path)
+	switch tool {
+	case "Read":
+		stat.ReadCount++
+	case "Edit", "MultiEdit":
+		stat.EditCount++
+	case "Write":
+		stat.WriteCount++
+	}
+}
+
+func updateFileHotResultLocked(agg *ProjectAggregate, path string, failed, missing bool) {
+	stat := ensureFileHotStat(agg, path)
+	switch {
+	case missing:
+		stat.MissingCount++
+	case failed:
+		stat.FailureCount++
+	default:
+		stat.SuccessCount++
+	}
+}
+
+// --- end file_analysis ---
 
 func addCommandOrFileResultLocked(agg *ProjectAggregate, call pendingToolCall, failed bool, missing bool) {
 	if call.CommandName != "" {
@@ -62,6 +102,12 @@ func addCommandOrFileResultLocked(agg *ProjectAggregate, call pendingToolCall, f
 			stat.FailureCount++
 		default:
 			stat.SuccessCount++
+		}
+	}
+	// file_analysis: 同步更新按路径聚合的统计
+	if call.FileOpKey != "" {
+		if parts := strings.SplitN(call.FileOpKey, "\x00", 2); len(parts) == 2 {
+			updateFileHotResultLocked(agg, parts[1], failed, missing)
 		}
 	}
 }

@@ -727,3 +727,87 @@ function sessionTooltip(item) {
         `Token: ${formatNumber(item.total_tokens)}<br/>` +
         `耗时: ${formatNumber(Math.round((item.duration_ms || 0) / 60000))} 分钟`;
 }
+
+// --- file_analysis: 文件与编辑质量分析 ---
+
+function initFileAnalysisChart(fileAnalysis) {
+    const insight = document.getElementById('fileAnalysisChart-insight');
+    if (!fileAnalysis || !fileAnalysis.totals) {
+        insight.innerHTML = '<strong>数据洞察:</strong> 暂无文件编辑分析数据';
+        return;
+    }
+
+    const chart = echarts.init(document.getElementById('fileAnalysisChart'), 'wonderland');
+    const hotFiles = (fileAnalysis.hot_files || []).slice(0, 15);
+    const editFailures = (fileAnalysis.edit_failures || []).slice(0, 10);
+    const snapshots = (fileAnalysis.snapshots || []).slice(0, 10);
+
+    const hotLabels = hotFiles.map(item => shortPath(item.path));
+    const failLabels = editFailures.map(item => shortPath(item.path));
+    const snapLabels = snapshots.map(item => shortPath(item.path));
+
+    // 为 Grid 2 准备堆叠数据：按失败原因分系列
+    const allReasons = new Set();
+    editFailures.forEach(item => (item.failure_reasons || []).forEach(r => allReasons.add(r.reason)));
+    const reasonList = Array.from(allReasons).slice(0, 6);
+    const reasonColors = ['#e74c3c', '#e67e22', '#9b59b6', '#3498db', '#1abc9c', '#95a5a6'];
+
+    chart.setOption({
+        title: { text: '文件与编辑质量分析', subtext: '热门文件 · 编辑失败 · 快照热点', left: 'center' },
+        tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+        legend: {
+            data: ['Read', 'Edit', 'Write', '失败率%', ...reasonList],
+            top: 50,
+            textStyle: { fontSize: 10 }
+        },
+        grid: [
+            { top: 90, left: 70, right: 70, height: 180, containLabel: true },
+            { top: 300, left: 70, right: 70, height: 170, containLabel: true },
+            { top: 500, left: 70, right: 350, height: 150, containLabel: true }
+        ],
+        xAxis: [
+            { type: 'category', gridIndex: 0, data: hotLabels, axisLabel: { interval: 0, rotate: 25, fontSize: 10 } },
+            { type: 'category', gridIndex: 1, data: failLabels, axisLabel: { interval: 0, rotate: 25, fontSize: 10 } },
+            { type: 'category', gridIndex: 2, data: snapLabels, axisLabel: { interval: 0, rotate: 20, fontSize: 9 } }
+        ],
+        yAxis: [
+            { type: 'value', gridIndex: 0, name: '操作次数' },
+            { type: 'value', gridIndex: 1, name: '失败次数' },
+            { type: 'value', gridIndex: 2, name: '跨会话数' }
+        ],
+        series: [
+            // Grid 1: 热门文件 - 堆叠柱状
+            { name: 'Read', type: 'bar', stack: 'ops', xAxisIndex: 0, yAxisIndex: 0, data: hotFiles.map(i => i.read_count), itemStyle: { color: '#3498db' } },
+            { name: 'Edit', type: 'bar', stack: 'ops', xAxisIndex: 0, yAxisIndex: 0, data: hotFiles.map(i => i.edit_count), itemStyle: { color: '#27ae60' } },
+            { name: 'Write', type: 'bar', stack: 'ops', xAxisIndex: 0, yAxisIndex: 0, data: hotFiles.map(i => i.write_count), itemStyle: { color: '#f39c12' } },
+            { name: '失败率%', type: 'line', xAxisIndex: 0, yAxisIndex: 0, data: hotFiles.map(i => +i.failure_rate.toFixed(1)), itemStyle: { color: '#c0392b' }, lineStyle: { width: 2 }, symbol: 'circle', symbolSize: 6 },
+            // Grid 2: 编辑失败 - 按原因堆叠
+            ...reasonList.map((reason, idx) => ({
+                name: reason, type: 'bar', stack: 'fail', xAxisIndex: 1, yAxisIndex: 1,
+                data: editFailures.map(item => {
+                    const found = (item.failure_reasons || []).find(r => r.reason === reason);
+                    return found ? found.count : 0;
+                }),
+                itemStyle: { color: reasonColors[idx % reasonColors.length] }
+            })),
+            // Grid 3: 快照热度
+            { name: '跨会话数', type: 'bar', xAxisIndex: 2, yAxisIndex: 2, data: snapshots.map(i => i.session_count), itemStyle: { color: '#8e44ad' }, barMaxWidth: 30 }
+        ]
+    });
+
+    // Insight 文字
+    const t = fileAnalysis.totals;
+    const topHot = hotFiles[0];
+    const topFail = editFailures[0];
+    const topSnap = snapshots[0];
+    const topFailReasons = topFail ? (topFail.failure_reasons || []) : [];
+    const primaryReason = topFailReasons[0] ? topFailReasons[0].reason : '-';
+
+    insight.innerHTML =
+        '<strong>数据洞察:</strong> 共追踪 <strong>' + formatNumber(t.unique_files) + '</strong> 个唯一文件，' +
+        'Read <strong>' + formatNumber(t.total_reads) + '</strong> 次 / Edit <strong>' + formatNumber(t.total_edits) + '</strong> 次 / Write <strong>' + formatNumber(t.total_writes) + '</strong> 次。' +
+        'Edit 整体失败率 <strong>' + t.overall_edit_failure_rate.toFixed(1) + '%</strong>。' +
+        '最活跃文件是 <strong>' + escapeHtml(topHot ? topHot.path : '-') + '</strong> (' + (topHot ? topHot.total_ops : 0) + ' 次操作)。' +
+        (topFail ? '最易失败的文件是 <strong>' + escapeHtml(topFail.path) + '</strong> (' + topFail.total_failures + ' 次失败，主要因 <strong>' + primaryReason + '</strong>)。' : '') +
+        (topSnap ? '快照热点文件 <strong>' + escapeHtml(topSnap.path) + '</strong> 出现在 <strong>' + topSnap.session_count + '</strong> 个会话中，最高版本 v' + topSnap.max_version + '。' : '');
+}

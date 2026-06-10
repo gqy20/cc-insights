@@ -35,6 +35,7 @@ type CacheFile struct {
 	AgentAnalysis   *AgentAnalysisData
 	CommandAnalysis *CommandAnalysisData
 	CostAnalysis    *CostAnalysisData
+	FileAnalysis   *FileAnalysisData
 	ProjectFiles    map[string]*ProjectFileCache `json:"project_file_caches,omitempty"`
 }
 
@@ -78,6 +79,10 @@ type ProjectFileAggregate struct {
 	AgentSessions       map[string][]string               `json:"agent_sessions,omitempty"`
 	BashCommandStats    map[string]BashCommandStat        `json:"bash_command_stats,omitempty"`
 	FileOperationStats  map[string]FileOperationStat      `json:"file_operation_stats,omitempty"`
+	FileHotStats       map[string]FileHotStat           `json:"file_hot_stats,omitempty"`
+	FileEditFailures   map[string]FileEditFailureAgg     `json:"file_edit_failures,omitempty"`
+	FileSnapshotStats  map[string]FileSnapshotAgg        `json:"file_snapshot_stats,omitempty"`
+	FileEditedStats    map[string]FileEditedAgg          `json:"file_edited_stats,omitempty"`
 }
 
 // DayAggregate 每日聚合数据
@@ -276,6 +281,7 @@ func (cf *CacheFile) QueryByTimeRange(start, end time.Time) *CacheFile {
 	result.CostAnalysis = cloneCostAnalysis(cf.CostAnalysis)
 	result.FailureAnalysis = cloneFailureAnalysis(cf.FailureAnalysis)
 	result.SessionAnalysis = cloneSessionAnalysis(cf.SessionAnalysis)
+	result.FileAnalysis = cloneFileAnalysis(cf.FileAnalysis)
 
 	return result
 }
@@ -356,6 +362,19 @@ func cloneCommandAnalysis(source *CommandAnalysisData) *CommandAnalysisData {
 	copyValue.FileOperations = append([]FileOperationStat(nil), source.FileOperations...)
 	return &copyValue
 }
+
+func cloneFileAnalysis(source *FileAnalysisData) *FileAnalysisData {
+	if source == nil {
+		return nil
+	}
+	copyValue := *source
+	copyValue.HotFiles = append([]FileHotItem(nil), source.HotFiles...)
+	copyValue.EditFailures = append([]FileEditFailureItem(nil), source.EditFailures...)
+	copyValue.Snapshots = append([]FileSnapshotItem(nil), source.Snapshots...)
+	copyValue.EditedFiles = append([]FileEditedItem(nil), source.EditedFiles...)
+	return &copyValue
+}
+
 
 // AddMessage 添加一条消息记录到每日聚合
 func (da *DayAggregate) AddMessage(project string, hour int) {

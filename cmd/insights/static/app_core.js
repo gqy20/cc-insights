@@ -188,6 +188,9 @@ function renderCharts(data) {
     // Session 生命周期复盘
     container.appendChild(createChartDiv('sessionAnalysisChart', '1200px', '620px'));
 
+    // 文件与编辑质量分析
+    container.appendChild(createChartDiv('fileAnalysisChart', '1200px', '700px'));
+
     // 初始化 go-echarts 图表
     initDailyTrendChart(data.daily_trend);
     initCommandsChart(data.commands);
@@ -204,6 +207,7 @@ function renderCharts(data) {
     initCommandFileChart(data.command_analysis);
     initCostAnalysisChart(data.cost_analysis);
     initSessionAnalysisChart(data.session_analysis);
+    initFileAnalysisChart(data.file_analysis);
 
     container.style.display = 'block';
 }

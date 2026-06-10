@@ -429,6 +429,109 @@ type CostAnalysisData struct {
 	BudgetTimeline []BudgetTimelineItem `json:"budget_timeline"`
 }
 
+// FileAnalysisData 文件与编辑质量分析结果
+type FileAnalysisData struct {
+	Totals       FileAnalysisTotals    `json:"totals"`
+	HotFiles     []FileHotItem         `json:"hot_files"`      // 综合活跃度 Top N（跨操作类型按路径聚合）
+	EditFailures []FileEditFailureItem `json:"edit_failures"`  // 按文件的 Edit 失败原因分布
+	Snapshots    []FileSnapshotItem    `json:"snapshots"`      // file-history-snapshot 统计
+	EditedFiles  []FileEditedItem      `json:"edited_files"`   // edited_text_file 统计
+}
+
+// FileAnalysisTotals 文件分析汇总数字
+type FileAnalysisTotals struct {
+	UniqueFiles            int     `json:"unique_files"`             // 唯一文件数
+	TotalReads             int     `json:"total_reads"`              // Read 总调用
+	TotalEdits             int     `json:"total_edits"`              // Edit+MultiEdit 总调用
+	TotalWrites            int     `json:"total_writes"`             // Write 总调用
+	TotalEditFailures      int     `json:"total_edit_failures"`      // Edit 失败总数
+	TotalWriteFailures     int     `json:"total_write_failures"`     // Write 失败总数
+	OverallEditFailureRate float64 `json:"overall_edit_failure_rate"` // Edit 整体失败率 %
+	SnapshotEventCount     int     `json:"snapshot_event_count"`     // snapshot 事件总数
+	EditedFileCount        int     `json:"edited_file_count"`        // edited_text_file 数
+}
+
+// FileHotItem 最活跃文件（按路径聚合，跨操作类型）
+type FileHotItem struct {
+	Path            string  `json:"path"`
+	ReadCount       int     `json:"read_count"`
+	EditCount       int     `json:"edit_count"`        // Edit + MultiEdit
+	WriteCount      int     `json:"write_count"`
+	TotalOps        int     `json:"total_ops"`         // Read + Edit + Write
+	SuccessCount    int     `json:"success_count"`
+	FailureCount    int     `json:"failure_count"`
+	MissingCount    int     `json:"missing_count"`
+	FailureRate     float64 `json:"failure_rate"`      // 总失败率 %
+	EditFailureRate float64 `json:"edit_failure_rate"` // 仅 Edit 操作的失败率 %
+}
+
+// FileEditFailureItem 单文件编辑失败细分
+type FileEditFailureItem struct {
+	Path           string                    `json:"path"`
+	TotalFailures  int                       `json:"total_failures"`
+	FailureReasons []FileFailureReasonDetail `json:"failure_reasons"` // 该文件的失败原因分布
+}
+
+// FileFailureReasonDetail 单文件内某原因的失败次数
+type FileFailureReasonDetail struct {
+	Reason string  `json:"reason"`
+	Count  int     `json:"count"`
+	Rate   float64 `json:"rate"` // 占该文件总失败的比例
+}
+
+// FileSnapshotItem file-history-snapshot 统计（按文件路径聚合）
+type FileSnapshotItem struct {
+	Path          string `json:"path"`
+	SnapshotCount int    `json:"snapshot_count"` // 出现在多少条 snapshot 事件中
+	MaxVersion    int    `json:"max_version"`    // 最高版本号
+	SessionCount  int    `json:"session_count"`  // 跨多少个不同 session
+	IsUpdateCount int    `json:"is_update_count"` // 增量更新次数(isSnapshotUpdate=true)
+}
+
+// FileEditedItem edited_text_file attachment 统计
+type FileEditedItem struct {
+	Path       string `json:"path"`
+	EditCount  int    `json:"edit_count"`
+	AvgLines   int    `json:"avg_lines"`  // 平均行数
+	AvgChars   int    `json:"avg_chars"`  // 平均字符数
+	TotalChars int64  `json:"total_chars"` // 累计字符数(估算编辑规模)
+}
+
+// FileHotStat 中间聚合：按文件路径汇总所有操作
+type FileHotStat struct {
+	Path         string
+	ReadCount    int
+	EditCount    int // Edit + MultiEdit
+	WriteCount   int
+	SuccessCount int
+	FailureCount int
+	MissingCount int
+}
+
+// FileEditFailureAgg 中间聚合：按文件路径汇总 Edit 失败及原因
+type FileEditFailureAgg struct {
+	Path          string
+	TotalFailures int
+	ReasonCounts  map[string]int // reason -> count
+}
+
+// FileSnapshotAgg 中间聚合：file-history-snapshot 事件
+type FileSnapshotAgg struct {
+	Path          string
+	SnapshotCount int
+	MaxVersion    int
+	SessionSet    map[string]bool // sessionID -> true (去重)
+	IsUpdateCount int
+}
+
+// FileEditedAgg 中间聚合：edited_text_file attachment
+type FileEditedAgg struct {
+	Path       string
+	EditCount  int
+	TotalLines int
+	TotalChars int64
+}
+
 // WorkHoursStats 工作时段统计
 type WorkHoursStats struct {
 	HourlyData     []HourlyItem `json:"hourly_data"` // 每小时数据
@@ -491,6 +594,11 @@ type ProjectAggregate struct {
 	BashCommandStats    map[string]*BashCommandStat        `json:"-"`                // Bash 命令统计
 	FileOperationStats  map[string]*FileOperationStat      `json:"-"`                // 文件操作统计
 	CommandAnalysis     *CommandAnalysisData               `json:"commands"`         // 命令/文件分析（输出格式）
+	FileHotStats        map[string]*FileHotStat            `json:"-"`                // 文件活跃度统计（按路径聚合）
+	FileEditFailures    map[string]*FileEditFailureAgg     `json:"-"`                // 文件编辑失败（按路径+原因聚合）
+	FileSnapshotStats   map[string]*FileSnapshotAgg        `json:"-"`                // file-history-snapshot 统计
+	FileEditedStats     map[string]*FileEditedAgg          `json:"-"`                // edited_text_file 统计
+	FileAnalysis        *FileAnalysisData                  `json:"file_analysis"`    // 文件与编辑质量分析（输出格式）
 	WorkHoursStats      *WorkHoursStats                    `json:"work_hours"`       // 工作时段统计
 	mu                  sync.RWMutex                       `json:"-"`                // 保护并发写入
 }
