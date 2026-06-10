@@ -57,6 +57,7 @@ func (agg *ProjectAggregate) finalize() {
 
 	// 6. 转换工具分析
 	agg.finalizeToolAnalysis()
+	agg.finalizeFailureAnalysis()
 
 	// 7. 转换运行事件、agent、命令/文件分析
 	agg.finalizeEventAnalysis()
@@ -156,6 +157,80 @@ func (agg *ProjectAggregate) finalizeToolAnalysis() {
 	})
 
 	agg.ToolAnalysis = analysis
+}
+
+func (agg *ProjectAggregate) finalizeFailureAnalysis() {
+	analysis := &FailureAnalysisData{
+		ByReason:      make([]FailureReasonStat, 0, len(agg.FailureReasons)),
+		ByToolReason:  make([]FailureToolReasonStat, 0, len(agg.FailureToolReasons)),
+		ByModelReason: make([]FailureModelReasonStat, 0, len(agg.FailureModelReasons)),
+	}
+	if agg.ToolAnalysis != nil {
+		analysis.Samples = append([]ToolFailureSample(nil), agg.ToolAnalysis.FailureSamples...)
+	}
+
+	for _, stat := range agg.FailureReasons {
+		statCopy := *stat
+		analysis.TotalFailures += statCopy.Count
+		analysis.ByReason = append(analysis.ByReason, statCopy)
+	}
+	sort.Slice(analysis.ByReason, func(i, j int) bool {
+		if analysis.ByReason[i].Count == analysis.ByReason[j].Count {
+			if analysis.ByReason[i].Category == analysis.ByReason[j].Category {
+				return analysis.ByReason[i].Reason < analysis.ByReason[j].Reason
+			}
+			return analysis.ByReason[i].Category < analysis.ByReason[j].Category
+		}
+		return analysis.ByReason[i].Count > analysis.ByReason[j].Count
+	})
+
+	for _, stat := range agg.FailureToolReasons {
+		statCopy := *stat
+		if toolStat := agg.ToolStats[statCopy.Tool]; toolStat != nil && toolStat.CallCount > 0 {
+			statCopy.Rate = float64(statCopy.Count) / float64(toolStat.CallCount) * 100
+		}
+		analysis.ByToolReason = append(analysis.ByToolReason, statCopy)
+	}
+	sort.Slice(analysis.ByToolReason, func(i, j int) bool {
+		if analysis.ByToolReason[i].Count == analysis.ByToolReason[j].Count {
+			if analysis.ByToolReason[i].Tool == analysis.ByToolReason[j].Tool {
+				if analysis.ByToolReason[i].Category == analysis.ByToolReason[j].Category {
+					return analysis.ByToolReason[i].Reason < analysis.ByToolReason[j].Reason
+				}
+				return analysis.ByToolReason[i].Category < analysis.ByToolReason[j].Category
+			}
+			return analysis.ByToolReason[i].Tool < analysis.ByToolReason[j].Tool
+		}
+		return analysis.ByToolReason[i].Count > analysis.ByToolReason[j].Count
+	})
+
+	for _, stat := range agg.FailureModelReasons {
+		statCopy := *stat
+		var modelCalls int
+		for _, toolStat := range agg.ToolModelStats {
+			if toolStat.Model == statCopy.Model {
+				modelCalls += toolStat.CallCount
+			}
+		}
+		if modelCalls > 0 {
+			statCopy.Rate = float64(statCopy.Count) / float64(modelCalls) * 100
+		}
+		analysis.ByModelReason = append(analysis.ByModelReason, statCopy)
+	}
+	sort.Slice(analysis.ByModelReason, func(i, j int) bool {
+		if analysis.ByModelReason[i].Count == analysis.ByModelReason[j].Count {
+			if analysis.ByModelReason[i].Model == analysis.ByModelReason[j].Model {
+				if analysis.ByModelReason[i].Category == analysis.ByModelReason[j].Category {
+					return analysis.ByModelReason[i].Reason < analysis.ByModelReason[j].Reason
+				}
+				return analysis.ByModelReason[i].Category < analysis.ByModelReason[j].Category
+			}
+			return analysis.ByModelReason[i].Model < analysis.ByModelReason[j].Model
+		}
+		return analysis.ByModelReason[i].Count > analysis.ByModelReason[j].Count
+	})
+
+	agg.FailureAnalysis = analysis
 }
 
 func (agg *ProjectAggregate) finalizeEventAnalysis() {

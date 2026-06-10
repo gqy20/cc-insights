@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-const CacheVersion = "2.2"
+const CacheVersion = "2.3"
 
 // CacheFile 缓存文件结构
 type CacheFile struct {
@@ -31,6 +31,7 @@ type CacheFile struct {
 	ToolFailures    map[string]int
 	ToolSamples     []ToolFailureSample
 	ToolAnalysis    *ToolAnalysisData
+	FailureAnalysis *FailureAnalysisData
 	EventAnalysis   *EventAnalysisData
 	AgentAnalysis   *AgentAnalysisData
 	CommandAnalysis *CommandAnalysisData
@@ -48,32 +49,35 @@ type ProjectFileCache struct {
 
 // ProjectFileAggregate 可序列化的文件级聚合快照
 type ProjectFileAggregate struct {
-	ProjectStats       map[string]ProjectStatItem   `json:"project_stats,omitempty"`
-	WeekdayData        [7]WeekdayItem               `json:"weekday_data"`
-	DailyActivity      map[string]int               `json:"daily_activity,omitempty"`
-	DailySessions      map[string][]string          `json:"daily_sessions,omitempty"`
-	HourlyCounts       [24]int                      `json:"hourly_counts"`
-	ModelUsage         map[string]ModelUsageItem    `json:"model_usage,omitempty"`
-	CostModelStats     map[string]CostModelStat     `json:"cost_model_stats,omitempty"`
-	CostProjectStats   map[string]CostProjectStat   `json:"cost_project_stats,omitempty"`
-	CostSessionStats   map[string]CostSessionStat   `json:"cost_session_stats,omitempty"`
-	CostAgentStats     map[string]CostAgentStat     `json:"cost_agent_stats,omitempty"`
-	BudgetTimeline     []BudgetTimelineItem         `json:"budget_timeline,omitempty"`
-	ToolStats          map[string]ToolStatItem      `json:"tool_stats,omitempty"`
-	ToolModelStats     map[string]ToolModelStatItem `json:"tool_model_stats,omitempty"`
-	ToolFailureKinds   map[string]int               `json:"tool_failure_kinds,omitempty"`
-	ToolSamples        []ToolFailureSample          `json:"tool_samples,omitempty"`
-	EventTypes         map[string]int               `json:"event_types,omitempty"`
-	HookStats          map[string]HookStatItem      `json:"hook_stats,omitempty"`
-	SkillStats         map[string]SkillStatItem     `json:"skill_stats,omitempty"`
-	PermissionModes    map[string]int               `json:"permission_modes,omitempty"`
-	OpenedFiles        map[string]FileAccessStat    `json:"opened_files,omitempty"`
-	BudgetSummary      *BudgetSummary               `json:"budget_summary,omitempty"`
-	EventSamples       []EventSample                `json:"event_samples,omitempty"`
-	AgentStats         map[string]AgentStatItem     `json:"agent_stats,omitempty"`
-	AgentSessions      map[string][]string          `json:"agent_sessions,omitempty"`
-	BashCommandStats   map[string]BashCommandStat   `json:"bash_command_stats,omitempty"`
-	FileOperationStats map[string]FileOperationStat `json:"file_operation_stats,omitempty"`
+	ProjectStats        map[string]ProjectStatItem        `json:"project_stats,omitempty"`
+	WeekdayData         [7]WeekdayItem                    `json:"weekday_data"`
+	DailyActivity       map[string]int                    `json:"daily_activity,omitempty"`
+	DailySessions       map[string][]string               `json:"daily_sessions,omitempty"`
+	HourlyCounts        [24]int                           `json:"hourly_counts"`
+	ModelUsage          map[string]ModelUsageItem         `json:"model_usage,omitempty"`
+	CostModelStats      map[string]CostModelStat          `json:"cost_model_stats,omitempty"`
+	CostProjectStats    map[string]CostProjectStat        `json:"cost_project_stats,omitempty"`
+	CostSessionStats    map[string]CostSessionStat        `json:"cost_session_stats,omitempty"`
+	CostAgentStats      map[string]CostAgentStat          `json:"cost_agent_stats,omitempty"`
+	BudgetTimeline      []BudgetTimelineItem              `json:"budget_timeline,omitempty"`
+	ToolStats           map[string]ToolStatItem           `json:"tool_stats,omitempty"`
+	ToolModelStats      map[string]ToolModelStatItem      `json:"tool_model_stats,omitempty"`
+	ToolFailureKinds    map[string]int                    `json:"tool_failure_kinds,omitempty"`
+	ToolSamples         []ToolFailureSample               `json:"tool_samples,omitempty"`
+	FailureReasons      map[string]FailureReasonStat      `json:"failure_reasons,omitempty"`
+	FailureToolReasons  map[string]FailureToolReasonStat  `json:"failure_tool_reasons,omitempty"`
+	FailureModelReasons map[string]FailureModelReasonStat `json:"failure_model_reasons,omitempty"`
+	EventTypes          map[string]int                    `json:"event_types,omitempty"`
+	HookStats           map[string]HookStatItem           `json:"hook_stats,omitempty"`
+	SkillStats          map[string]SkillStatItem          `json:"skill_stats,omitempty"`
+	PermissionModes     map[string]int                    `json:"permission_modes,omitempty"`
+	OpenedFiles         map[string]FileAccessStat         `json:"opened_files,omitempty"`
+	BudgetSummary       *BudgetSummary                    `json:"budget_summary,omitempty"`
+	EventSamples        []EventSample                     `json:"event_samples,omitempty"`
+	AgentStats          map[string]AgentStatItem          `json:"agent_stats,omitempty"`
+	AgentSessions       map[string][]string               `json:"agent_sessions,omitempty"`
+	BashCommandStats    map[string]BashCommandStat        `json:"bash_command_stats,omitempty"`
+	FileOperationStats  map[string]FileOperationStat      `json:"file_operation_stats,omitempty"`
 }
 
 // DayAggregate 每日聚合数据
@@ -277,8 +281,21 @@ func (cf *CacheFile) QueryByTimeRange(start, end time.Time) *CacheFile {
 	result.AgentAnalysis = cloneAgentAnalysis(cf.AgentAnalysis)
 	result.CommandAnalysis = cloneCommandAnalysis(cf.CommandAnalysis)
 	result.CostAnalysis = cloneCostAnalysis(cf.CostAnalysis)
+	result.FailureAnalysis = cloneFailureAnalysis(cf.FailureAnalysis)
 
 	return result
+}
+
+func cloneFailureAnalysis(source *FailureAnalysisData) *FailureAnalysisData {
+	if source == nil {
+		return nil
+	}
+	copyValue := *source
+	copyValue.ByReason = append([]FailureReasonStat(nil), source.ByReason...)
+	copyValue.ByToolReason = append([]FailureToolReasonStat(nil), source.ByToolReason...)
+	copyValue.ByModelReason = append([]FailureModelReasonStat(nil), source.ByModelReason...)
+	copyValue.Samples = append([]ToolFailureSample(nil), source.Samples...)
+	return &copyValue
 }
 
 func cloneCostAnalysis(source *CostAnalysisData) *CostAnalysisData {

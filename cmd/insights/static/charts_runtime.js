@@ -91,6 +91,108 @@ function initToolModelFailureChart(toolAnalysis) {
         `失败率 <strong>${worst.failure_rate.toFixed(1)}%</strong>。`;
 }
 
+function initFailureReasonChart(failureAnalysis) {
+    const insight = document.getElementById('failureReasonChart-insight');
+    if (!failureAnalysis || !failureAnalysis.by_reason || failureAnalysis.by_reason.length === 0) {
+        insight.innerHTML = '<strong>数据洞察:</strong> 暂无失败原因细分数据';
+        return;
+    }
+
+    const chart = echarts.init(document.getElementById('failureReasonChart'), 'wonderland');
+    const reasons = failureAnalysis.by_reason.slice(0, 12);
+    const toolReasons = (failureAnalysis.by_tool_reason || []).slice(0, 12);
+    const reasonLabels = reasons.map(item => `${item.category}/${item.reason}`);
+    const toolReasonLabels = toolReasons.map(item => `${shortToolName(item.tool)} / ${item.reason}`);
+
+    chart.setOption({
+        title: {
+            text: '失败原因细分',
+            subtext: '全局统计: 按原因、工具+原因排序',
+            left: 'center'
+        },
+        tooltip: {
+            trigger: 'axis',
+            axisPointer: { type: 'shadow' },
+            formatter: function(params) {
+                const first = params[0];
+                if (first.axisIndex === 0) {
+                    const item = reasons[first.dataIndex];
+                    return `${escapeHtml(item.category)} / ${escapeHtml(item.reason)}<br/>` +
+                        `次数: ${formatNumber(item.count)}`;
+                }
+                const item = toolReasons[first.dataIndex];
+                return `${escapeHtml(item.tool)}<br/>${escapeHtml(item.category)} / ${escapeHtml(item.reason)}<br/>` +
+                    `次数: ${formatNumber(item.count)}<br/>` +
+                    `占工具调用: ${Number(item.rate || 0).toFixed(1)}%`;
+            }
+        },
+        legend: {
+            data: ['原因次数', '工具原因次数', '工具原因占比'],
+            top: 55
+        },
+        grid: [
+            { top: 95, left: 70, right: 70, height: 180, containLabel: true },
+            { top: 370, left: 70, right: 70, height: 170, containLabel: true }
+        ],
+        xAxis: [
+            {
+                type: 'category',
+                gridIndex: 0,
+                data: reasonLabels,
+                axisLabel: { interval: 0, rotate: 30 }
+            },
+            {
+                type: 'category',
+                gridIndex: 1,
+                data: toolReasonLabels,
+                axisLabel: { interval: 0, rotate: 30 }
+            }
+        ],
+        yAxis: [
+            { type: 'value', gridIndex: 0, name: '失败次数' },
+            { type: 'value', gridIndex: 1, name: '工具失败次数' },
+            { type: 'value', gridIndex: 1, name: '占比 %', max: 100 }
+        ],
+        series: [
+            {
+                name: '原因次数',
+                type: 'bar',
+                xAxisIndex: 0,
+                yAxisIndex: 0,
+                data: reasons.map(item => item.count),
+                itemStyle: { color: '#e74c3c' }
+            },
+            {
+                name: '工具原因次数',
+                type: 'bar',
+                xAxisIndex: 1,
+                yAxisIndex: 1,
+                data: toolReasons.map(item => item.count),
+                itemStyle: { color: '#f39c12' }
+            },
+            {
+                name: '工具原因占比',
+                type: 'line',
+                xAxisIndex: 1,
+                yAxisIndex: 2,
+                data: toolReasons.map(item => Number(Number(item.rate || 0).toFixed(1))),
+                smooth: true,
+                itemStyle: { color: '#2c3e50' }
+            }
+        ]
+    });
+
+    const topReason = reasons[0];
+    const topToolReason = toolReasons[0];
+    insight.innerHTML =
+        `<strong>数据洞察:</strong> 共细分 <strong>${formatNumber(failureAnalysis.total_failures)}</strong> 次工具失败。` +
+        `最多的原因是 <strong>${escapeHtml(topReason.category)} / ${escapeHtml(topReason.reason)}</strong>，` +
+        `出现 <strong>${formatNumber(topReason.count)}</strong> 次。` +
+        (topToolReason
+            ? `工具维度最突出的是 <strong>${escapeHtml(topToolReason.tool)} / ${escapeHtml(topToolReason.reason)}</strong>。`
+            : '');
+}
+
 function initEventHookChart(eventAnalysis) {
     const insight = document.getElementById('eventHookChart-insight');
     if (!eventAnalysis || !eventAnalysis.by_type || eventAnalysis.by_type.length === 0) {

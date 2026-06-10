@@ -264,10 +264,46 @@ type ToolFailureSample struct {
 	Tool           string `json:"tool"`
 	Model          string `json:"model,omitempty"`
 	Kind           string `json:"kind"`
+	Category       string `json:"category,omitempty"`
+	Reason         string `json:"reason,omitempty"`
 	Project        string `json:"project"`
 	SessionID      string `json:"session_id"`
 	Timestamp      string `json:"timestamp"`
 	ContentPreview string `json:"content_preview"`
+}
+
+// FailureAnalysisData 失败原因细分分析结果
+type FailureAnalysisData struct {
+	TotalFailures int                      `json:"total_failures"`
+	ByReason      []FailureReasonStat      `json:"by_reason"`
+	ByToolReason  []FailureToolReasonStat  `json:"by_tool_reason"`
+	ByModelReason []FailureModelReasonStat `json:"by_model_reason"`
+	Samples       []ToolFailureSample      `json:"samples"`
+}
+
+// FailureReasonStat 按失败原因聚合
+type FailureReasonStat struct {
+	Category string `json:"category"`
+	Reason   string `json:"reason"`
+	Count    int    `json:"count"`
+}
+
+// FailureToolReasonStat 按工具和失败原因聚合
+type FailureToolReasonStat struct {
+	Tool     string  `json:"tool"`
+	Category string  `json:"category"`
+	Reason   string  `json:"reason"`
+	Count    int     `json:"count"`
+	Rate     float64 `json:"rate"`
+}
+
+// FailureModelReasonStat 按模型和失败原因聚合
+type FailureModelReasonStat struct {
+	Model    string  `json:"model"`
+	Category string  `json:"category"`
+	Reason   string  `json:"reason"`
+	Count    int     `json:"count"`
+	Rate     float64 `json:"rate"`
 }
 
 // TokenUsageBreakdown token 类型拆分
@@ -356,43 +392,47 @@ type HourlyItem struct {
 
 // ProjectAggregate 一次遍历获取的所有统计数据
 type ProjectAggregate struct {
-	ProjectStats       map[string]*ProjectStatItem   `json:"-"`          // 项目统计（map用于快速查找）
-	Projects           []ProjectStatItem             `json:"projects"`   // 项目列表（排序后）
-	WeekdayData        [7]WeekdayItem                `json:"-"`          // 星期数据
-	WeekdayStats       *WeekdayStats                 `json:"weekday"`    // 星期统计（输出格式）
-	DailyActivity      map[string]int                `json:"-"`          // 每日消息数（map）
-	DailyActivityList  []DailyActivity               `json:"daily"`      // 每日活动（输出格式）
-	DailySessions      map[string]map[string]bool    `json:"-"`          // 每日会话集 date→sessionID→true（用于提取SessionStats，避免重复解析）
-	HourlyCounts       [24]int                       `json:"-"`          // 小时统计
-	HourlyData         []HourlyItem                  `json:"-"`          // 小时数据
-	ModelUsage         map[string]*ModelUsageItem    `json:"-"`          // 模型使用（map）
-	ModelUsageList     []ModelUsageItem              `json:"models"`     // 模型使用（输出格式）
-	CostModelStats     map[string]*CostModelStat     `json:"-"`          // 模型 token 统计
-	CostProjectStats   map[string]*CostProjectStat   `json:"-"`          // 项目 token 统计
-	CostSessionStats   map[string]*CostSessionStat   `json:"-"`          // 会话 token 统计
-	CostAgentStats     map[string]*CostAgentStat     `json:"-"`          // agent token 统计
-	BudgetTimeline     []BudgetTimelineItem          `json:"-"`          // 预算事件时间线
-	CostAnalysis       *CostAnalysisData             `json:"costs"`      // 成本/token 分析（输出格式）
-	ToolStats          map[string]*ToolStatItem      `json:"-"`          // 工具调用统计
-	ToolModelStats     map[string]*ToolModelStatItem `json:"-"`          // 模型+工具调用统计
-	ToolFailureKinds   map[string]int                `json:"-"`          // 工具失败类型
-	ToolAnalysis       *ToolAnalysisData             `json:"tools"`      // 工具分析（输出格式）
-	EventTypes         map[string]int                `json:"-"`          // 运行事件类型
-	HookStats          map[string]*HookStatItem      `json:"-"`          // hook 统计
-	SkillStats         map[string]*SkillStatItem     `json:"-"`          // skill 统计
-	PermissionModes    map[string]int                `json:"-"`          // 权限模式统计
-	OpenedFiles        map[string]*FileAccessStat    `json:"-"`          // IDE 打开文件统计
-	BudgetSummary      *BudgetSummary                `json:"-"`          // 预算事件摘要
-	EventSamples       []EventSample                 `json:"-"`          // 事件样例
-	EventAnalysis      *EventAnalysisData            `json:"events"`     // 事件分析（输出格式）
-	AgentStats         map[string]*AgentStatItem     `json:"-"`          // agent 统计
-	AgentSessions      map[string]map[string]bool    `json:"-"`          // agent 会话去重
-	AgentAnalysis      *AgentAnalysisData            `json:"agents"`     // agent 分析（输出格式）
-	BashCommandStats   map[string]*BashCommandStat   `json:"-"`          // Bash 命令统计
-	FileOperationStats map[string]*FileOperationStat `json:"-"`          // 文件操作统计
-	CommandAnalysis    *CommandAnalysisData          `json:"commands"`   // 命令/文件分析（输出格式）
-	WorkHoursStats     *WorkHoursStats               `json:"work_hours"` // 工作时段统计
-	mu                 sync.RWMutex                  `json:"-"`          // 保护并发写入
+	ProjectStats        map[string]*ProjectStatItem        `json:"-"`          // 项目统计（map用于快速查找）
+	Projects            []ProjectStatItem                  `json:"projects"`   // 项目列表（排序后）
+	WeekdayData         [7]WeekdayItem                     `json:"-"`          // 星期数据
+	WeekdayStats        *WeekdayStats                      `json:"weekday"`    // 星期统计（输出格式）
+	DailyActivity       map[string]int                     `json:"-"`          // 每日消息数（map）
+	DailyActivityList   []DailyActivity                    `json:"daily"`      // 每日活动（输出格式）
+	DailySessions       map[string]map[string]bool         `json:"-"`          // 每日会话集 date→sessionID→true（用于提取SessionStats，避免重复解析）
+	HourlyCounts        [24]int                            `json:"-"`          // 小时统计
+	HourlyData          []HourlyItem                       `json:"-"`          // 小时数据
+	ModelUsage          map[string]*ModelUsageItem         `json:"-"`          // 模型使用（map）
+	ModelUsageList      []ModelUsageItem                   `json:"models"`     // 模型使用（输出格式）
+	CostModelStats      map[string]*CostModelStat          `json:"-"`          // 模型 token 统计
+	CostProjectStats    map[string]*CostProjectStat        `json:"-"`          // 项目 token 统计
+	CostSessionStats    map[string]*CostSessionStat        `json:"-"`          // 会话 token 统计
+	CostAgentStats      map[string]*CostAgentStat          `json:"-"`          // agent token 统计
+	BudgetTimeline      []BudgetTimelineItem               `json:"-"`          // 预算事件时间线
+	CostAnalysis        *CostAnalysisData                  `json:"costs"`      // 成本/token 分析（输出格式）
+	ToolStats           map[string]*ToolStatItem           `json:"-"`          // 工具调用统计
+	ToolModelStats      map[string]*ToolModelStatItem      `json:"-"`          // 模型+工具调用统计
+	ToolFailureKinds    map[string]int                     `json:"-"`          // 工具失败类型
+	ToolAnalysis        *ToolAnalysisData                  `json:"tools"`      // 工具分析（输出格式）
+	FailureReasons      map[string]*FailureReasonStat      `json:"-"`          // 失败原因统计
+	FailureToolReasons  map[string]*FailureToolReasonStat  `json:"-"`          // 工具+失败原因统计
+	FailureModelReasons map[string]*FailureModelReasonStat `json:"-"`          // 模型+失败原因统计
+	FailureAnalysis     *FailureAnalysisData               `json:"failures"`   // 失败原因细分（输出格式）
+	EventTypes          map[string]int                     `json:"-"`          // 运行事件类型
+	HookStats           map[string]*HookStatItem           `json:"-"`          // hook 统计
+	SkillStats          map[string]*SkillStatItem          `json:"-"`          // skill 统计
+	PermissionModes     map[string]int                     `json:"-"`          // 权限模式统计
+	OpenedFiles         map[string]*FileAccessStat         `json:"-"`          // IDE 打开文件统计
+	BudgetSummary       *BudgetSummary                     `json:"-"`          // 预算事件摘要
+	EventSamples        []EventSample                      `json:"-"`          // 事件样例
+	EventAnalysis       *EventAnalysisData                 `json:"events"`     // 事件分析（输出格式）
+	AgentStats          map[string]*AgentStatItem          `json:"-"`          // agent 统计
+	AgentSessions       map[string]map[string]bool         `json:"-"`          // agent 会话去重
+	AgentAnalysis       *AgentAnalysisData                 `json:"agents"`     // agent 分析（输出格式）
+	BashCommandStats    map[string]*BashCommandStat        `json:"-"`          // Bash 命令统计
+	FileOperationStats  map[string]*FileOperationStat      `json:"-"`          // 文件操作统计
+	CommandAnalysis     *CommandAnalysisData               `json:"commands"`   // 命令/文件分析（输出格式）
+	WorkHoursStats      *WorkHoursStats                    `json:"work_hours"` // 工作时段统计
+	mu                  sync.RWMutex                       `json:"-"`          // 保护并发写入
 }
 
 // ProjectRecord projects/*.jsonl 记录

@@ -145,7 +145,7 @@
 
 已实现：
 
-- cache version `2.2`
+- cache version `2.3`
 - project JSONL 文件级聚合缓存
 - 每个文件记录：
   - path
@@ -156,6 +156,7 @@
 - cache 使用紧凑 JSON
 - cache rebuild 只检查 `projects/`
 - `cost_analysis` token/预算分析随文件级 aggregate 缓存
+- `failure_analysis` 失败原因细分随文件级 aggregate 缓存
 
 真实数据验证：
 
@@ -204,17 +205,18 @@
 
 现状：
 
-- 当前失败分类较粗：
-  - `timeout`
-  - `permission`
-  - `not_found`
-  - `command_failed`
-  - `error_text`
+- 已实现 `failure_analysis` 初版
+- 兼容保留 `tool_analysis.failure_kinds`
+- 已新增细分字段：
+  - `category`
+  - `reason`
+- 已按 reason/tool+reason/model+reason 聚合
+- 已在 Dashboard 增加失败原因细分图
 
-待实现：
+已覆盖：
 
 - Bash 失败：
-  - exit code 1/2/126/127/130
+  - exit code N
   - command not found
   - test failure
   - permission denied
@@ -236,6 +238,13 @@
   - TLS
   - timeout
   - 403/404/429/5xx
+
+待完善：
+
+- 从 Bash 输出中提取更多测试框架失败模式
+- MCP 错误结构化字段优先于文本匹配
+- 为失败样例增加可跳转 session/file 定位
+- 失败原因与后续重试/恢复是否成功关联
 
 建议输出：
 
@@ -571,9 +580,9 @@
 
 任务：
 
-1. 实现 `cost_analysis`
-2. 实现 `failure_analysis`
-3. Dashboard 增加成本 Top 与失败原因图
+1. 实现 `cost_analysis`（已完成初版）
+2. 实现 `failure_analysis`（已完成初版）
+3. Dashboard 增加成本 Top 与失败原因图（已完成初版）
 
 ### Milestone 2: Session 级复盘
 
@@ -672,13 +681,15 @@
 
 ## 当前推荐下一步
 
-优先做 Milestone 1：
+优先做 Milestone 2：
 
-1. `cost_analysis`
-2. `failure_analysis`
+1. `session_analysis`
+2. 接入 started/result/title/last-prompt
+3. 输出高失败、高成本、长耗时 session
 
 原因：
 
 - 与核心问题最相关
-- 数据源已经具备
-- 能直接解释“哪些模型/工具/会话最贵、最容易失败、为什么失败”
+- Milestone 1 已有初版能力
+- 下一步需要把底层工具/成本/失败事件整理成 session 级复盘
+- 能回答“哪次任务出了问题、为什么、耗时和成本如何”

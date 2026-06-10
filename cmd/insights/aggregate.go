@@ -7,28 +7,31 @@ import (
 
 func newProjectAggregate() *ProjectAggregate {
 	aggregate := &ProjectAggregate{
-		ProjectStats:       make(map[string]*ProjectStatItem),
-		DailyActivity:      make(map[string]int),
-		DailySessions:      make(map[string]map[string]bool),
-		ModelUsage:         make(map[string]*ModelUsageItem),
-		ToolStats:          make(map[string]*ToolStatItem),
-		ToolModelStats:     make(map[string]*ToolModelStatItem),
-		ToolFailureKinds:   make(map[string]int),
-		EventTypes:         make(map[string]int),
-		HookStats:          make(map[string]*HookStatItem),
-		SkillStats:         make(map[string]*SkillStatItem),
-		PermissionModes:    make(map[string]int),
-		OpenedFiles:        make(map[string]*FileAccessStat),
-		AgentStats:         make(map[string]*AgentStatItem),
-		AgentSessions:      make(map[string]map[string]bool),
-		BashCommandStats:   make(map[string]*BashCommandStat),
-		FileOperationStats: make(map[string]*FileOperationStat),
-		HourlyCounts:       [24]int{},
-		CostModelStats:     make(map[string]*CostModelStat),
-		CostProjectStats:   make(map[string]*CostProjectStat),
-		CostSessionStats:   make(map[string]*CostSessionStat),
-		CostAgentStats:     make(map[string]*CostAgentStat),
-		mu:                 sync.RWMutex{},
+		ProjectStats:        make(map[string]*ProjectStatItem),
+		DailyActivity:       make(map[string]int),
+		DailySessions:       make(map[string]map[string]bool),
+		ModelUsage:          make(map[string]*ModelUsageItem),
+		ToolStats:           make(map[string]*ToolStatItem),
+		ToolModelStats:      make(map[string]*ToolModelStatItem),
+		ToolFailureKinds:    make(map[string]int),
+		FailureReasons:      make(map[string]*FailureReasonStat),
+		FailureToolReasons:  make(map[string]*FailureToolReasonStat),
+		FailureModelReasons: make(map[string]*FailureModelReasonStat),
+		EventTypes:          make(map[string]int),
+		HookStats:           make(map[string]*HookStatItem),
+		SkillStats:          make(map[string]*SkillStatItem),
+		PermissionModes:     make(map[string]int),
+		OpenedFiles:         make(map[string]*FileAccessStat),
+		AgentStats:          make(map[string]*AgentStatItem),
+		AgentSessions:       make(map[string]map[string]bool),
+		BashCommandStats:    make(map[string]*BashCommandStat),
+		FileOperationStats:  make(map[string]*FileOperationStat),
+		HourlyCounts:        [24]int{},
+		CostModelStats:      make(map[string]*CostModelStat),
+		CostProjectStats:    make(map[string]*CostProjectStat),
+		CostSessionStats:    make(map[string]*CostSessionStat),
+		CostAgentStats:      make(map[string]*CostAgentStat),
+		mu:                  sync.RWMutex{},
 	}
 
 	// 初始化星期数据
@@ -110,6 +113,21 @@ func mergeProjectAggregate(dst, src *ProjectAggregate) {
 	}
 	for kind, count := range src.ToolFailureKinds {
 		dst.ToolFailureKinds[kind] += count
+	}
+	for key, stat := range src.FailureReasons {
+		dstStat := ensureFailureReasonStat(dst, stat.Category, stat.Reason)
+		dstStat.Count += stat.Count
+		if key == "" {
+			continue
+		}
+	}
+	for _, stat := range src.FailureToolReasons {
+		dstStat := ensureFailureToolReasonStat(dst, stat.Tool, stat.Category, stat.Reason)
+		dstStat.Count += stat.Count
+	}
+	for _, stat := range src.FailureModelReasons {
+		dstStat := ensureFailureModelReasonStat(dst, stat.Model, stat.Category, stat.Reason)
+		dstStat.Count += stat.Count
 	}
 	if src.ToolAnalysis != nil {
 		if dst.ToolAnalysis == nil {
@@ -247,29 +265,32 @@ func mergeProjectAggregate(dst, src *ProjectAggregate) {
 
 func aggregateToProjectFileAggregate(src *ProjectAggregate) ProjectFileAggregate {
 	out := ProjectFileAggregate{
-		ProjectStats:       make(map[string]ProjectStatItem, len(src.ProjectStats)),
-		WeekdayData:        src.WeekdayData,
-		DailyActivity:      copyIntMap(src.DailyActivity),
-		DailySessions:      boolSetMapToSlices(src.DailySessions),
-		HourlyCounts:       src.HourlyCounts,
-		ModelUsage:         make(map[string]ModelUsageItem, len(src.ModelUsage)),
-		CostModelStats:     make(map[string]CostModelStat, len(src.CostModelStats)),
-		CostProjectStats:   make(map[string]CostProjectStat, len(src.CostProjectStats)),
-		CostSessionStats:   make(map[string]CostSessionStat, len(src.CostSessionStats)),
-		CostAgentStats:     make(map[string]CostAgentStat, len(src.CostAgentStats)),
-		BudgetTimeline:     append([]BudgetTimelineItem(nil), src.BudgetTimeline...),
-		ToolStats:          make(map[string]ToolStatItem, len(src.ToolStats)),
-		ToolModelStats:     make(map[string]ToolModelStatItem, len(src.ToolModelStats)),
-		ToolFailureKinds:   copyIntMap(src.ToolFailureKinds),
-		EventTypes:         copyIntMap(src.EventTypes),
-		HookStats:          make(map[string]HookStatItem, len(src.HookStats)),
-		SkillStats:         make(map[string]SkillStatItem, len(src.SkillStats)),
-		PermissionModes:    copyIntMap(src.PermissionModes),
-		OpenedFiles:        make(map[string]FileAccessStat, len(src.OpenedFiles)),
-		AgentStats:         make(map[string]AgentStatItem, len(src.AgentStats)),
-		AgentSessions:      boolSetMapToSlices(src.AgentSessions),
-		BashCommandStats:   make(map[string]BashCommandStat, len(src.BashCommandStats)),
-		FileOperationStats: make(map[string]FileOperationStat, len(src.FileOperationStats)),
+		ProjectStats:        make(map[string]ProjectStatItem, len(src.ProjectStats)),
+		WeekdayData:         src.WeekdayData,
+		DailyActivity:       copyIntMap(src.DailyActivity),
+		DailySessions:       boolSetMapToSlices(src.DailySessions),
+		HourlyCounts:        src.HourlyCounts,
+		ModelUsage:          make(map[string]ModelUsageItem, len(src.ModelUsage)),
+		CostModelStats:      make(map[string]CostModelStat, len(src.CostModelStats)),
+		CostProjectStats:    make(map[string]CostProjectStat, len(src.CostProjectStats)),
+		CostSessionStats:    make(map[string]CostSessionStat, len(src.CostSessionStats)),
+		CostAgentStats:      make(map[string]CostAgentStat, len(src.CostAgentStats)),
+		BudgetTimeline:      append([]BudgetTimelineItem(nil), src.BudgetTimeline...),
+		ToolStats:           make(map[string]ToolStatItem, len(src.ToolStats)),
+		ToolModelStats:      make(map[string]ToolModelStatItem, len(src.ToolModelStats)),
+		ToolFailureKinds:    copyIntMap(src.ToolFailureKinds),
+		FailureReasons:      make(map[string]FailureReasonStat, len(src.FailureReasons)),
+		FailureToolReasons:  make(map[string]FailureToolReasonStat, len(src.FailureToolReasons)),
+		FailureModelReasons: make(map[string]FailureModelReasonStat, len(src.FailureModelReasons)),
+		EventTypes:          copyIntMap(src.EventTypes),
+		HookStats:           make(map[string]HookStatItem, len(src.HookStats)),
+		SkillStats:          make(map[string]SkillStatItem, len(src.SkillStats)),
+		PermissionModes:     copyIntMap(src.PermissionModes),
+		OpenedFiles:         make(map[string]FileAccessStat, len(src.OpenedFiles)),
+		AgentStats:          make(map[string]AgentStatItem, len(src.AgentStats)),
+		AgentSessions:       boolSetMapToSlices(src.AgentSessions),
+		BashCommandStats:    make(map[string]BashCommandStat, len(src.BashCommandStats)),
+		FileOperationStats:  make(map[string]FileOperationStat, len(src.FileOperationStats)),
 	}
 	for key, stat := range src.ProjectStats {
 		out.ProjectStats[key] = *stat
@@ -294,6 +315,15 @@ func aggregateToProjectFileAggregate(src *ProjectAggregate) ProjectFileAggregate
 	}
 	for key, stat := range src.ToolModelStats {
 		out.ToolModelStats[key] = *stat
+	}
+	for key, stat := range src.FailureReasons {
+		out.FailureReasons[key] = *stat
+	}
+	for key, stat := range src.FailureToolReasons {
+		out.FailureToolReasons[key] = *stat
+	}
+	for key, stat := range src.FailureModelReasons {
+		out.FailureModelReasons[key] = *stat
 	}
 	if src.ToolAnalysis != nil {
 		out.ToolSamples = append([]ToolFailureSample(nil), src.ToolAnalysis.FailureSamples...)
@@ -364,6 +394,18 @@ func projectFileAggregateToAggregate(src ProjectFileAggregate) *ProjectAggregate
 		out.ToolModelStats[key] = &statCopy
 	}
 	out.ToolFailureKinds = copyIntMap(src.ToolFailureKinds)
+	for key, stat := range src.FailureReasons {
+		statCopy := stat
+		out.FailureReasons[key] = &statCopy
+	}
+	for key, stat := range src.FailureToolReasons {
+		statCopy := stat
+		out.FailureToolReasons[key] = &statCopy
+	}
+	for key, stat := range src.FailureModelReasons {
+		statCopy := stat
+		out.FailureModelReasons[key] = &statCopy
+	}
 	if len(src.ToolSamples) > 0 {
 		out.ToolAnalysis = &ToolAnalysisData{FailureSamples: append([]ToolFailureSample(nil), src.ToolSamples...)}
 	}

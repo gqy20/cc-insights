@@ -9,6 +9,15 @@ import (
 )
 
 var toolFailureExpr = regexp.MustCompile(`(?i)(error|failed|exception|traceback|timed out|timeout|permission denied|no such file|command failed|exit code|is_error|\"success\"\s*:\s*false|失败|错误|异常|超时|权限|不存在)`)
+var exitCodeExpr = regexp.MustCompile(`(?i)(exit code|exited with code|exit status)\s+(-?\d+)`)
+var httpStatusExpr = regexp.MustCompile(`\b(4\d\d|5\d\d)\b`)
+
+type toolFailureClassification struct {
+	Kind     string
+	Category string
+	Reason   string
+	Failed   bool
+}
 
 func parseToolResults(record ProjectRecord, timestamp time.Time, projectName string, pendingTools map[string]pendingToolCall, agg *ProjectAggregate) {
 	var msg struct {
@@ -47,14 +56,14 @@ func parseToolResults(record ProjectRecord, timestamp time.Time, projectName str
 			}
 		}
 
-		kind, failed := classifyToolResult(content)
+		classification := classifyToolResult(call.Tool, content)
 		preview := toolResultPreview(content.Content)
 
 		if !ok {
 			addToolCallLocked(agg, call.Tool, call.Model)
 			addAgentToolCallLocked(agg, call)
 		}
-		addToolResultLocked(agg, call, failed, kind, preview, timestamp)
+		addToolResultLocked(agg, call, classification, preview, timestamp)
 
 		delete(pendingTools, content.ToolUseID)
 	}
@@ -67,20 +76,23 @@ func addToolCallLocked(agg *ProjectAggregate, tool string, model string) {
 	modelStat.CallCount++
 }
 
-func addToolResultLocked(agg *ProjectAggregate, call pendingToolCall, failed bool, kind string, preview string, timestamp time.Time) {
+func addToolResultLocked(agg *ProjectAggregate, call pendingToolCall, classification toolFailureClassification, preview string, timestamp time.Time) {
 	stat := ensureToolStat(agg, call.Tool)
 	modelStat := ensureToolModelStat(agg, call.Tool, call.Model)
-	if failed {
+	if classification.Failed {
 		stat.FailureCount++
 		modelStat.FailureCount++
 		addAgentToolResultLocked(agg, call, true, false)
 		addCommandOrFileResultLocked(agg, call, true, false)
-		agg.ToolFailureKinds[kind]++
+		agg.ToolFailureKinds[classification.Kind]++
+		recordFailureAnalysisLocked(agg, call, classification)
 		if len(agg.ToolAnalysisFailureSamples()) < 30 {
 			agg.ToolAnalysisAddFailureSample(ToolFailureSample{
 				Tool:           call.Tool,
 				Model:          call.Model,
-				Kind:           kind,
+				Kind:           classification.Kind,
+				Category:       classification.Category,
+				Reason:         classification.Reason,
 				Project:        call.Project,
 				SessionID:      call.SessionID,
 				Timestamp:      timestamp.Format(time.RFC3339),
@@ -351,32 +363,256 @@ func ensureToolModelStat(agg *ProjectAggregate, tool string, model string) *Tool
 	return agg.ToolModelStats[key]
 }
 
-func classifyToolResult(content AssistantContent) (string, bool) {
+func recordFailureAnalysisLocked(agg *ProjectAggregate, call pendingToolCall, classification toolFailureClassification) {
+	ensureFailureReasonStat(agg, classification.Category, classification.Reason).Count++
+	ensureFailureToolReasonStat(agg, call.Tool, classification.Category, classification.Reason).Count++
+	ensureFailureModelReasonStat(agg, call.Model, classification.Category, classification.Reason).Count++
+}
+
+func ensureFailureReasonStat(agg *ProjectAggregate, category, reason string) *FailureReasonStat {
+	if agg.FailureReasons == nil {
+		agg.FailureReasons = make(map[string]*FailureReasonStat)
+	}
+	category, reason = normalizeFailureCategoryReason(category, reason)
+	key := category + "\x00" + reason
+	if agg.FailureReasons[key] == nil {
+		agg.FailureReasons[key] = &FailureReasonStat{Category: category, Reason: reason}
+	}
+	return agg.FailureReasons[key]
+}
+
+func ensureFailureToolReasonStat(agg *ProjectAggregate, tool, category, reason string) *FailureToolReasonStat {
+	if agg.FailureToolReasons == nil {
+		agg.FailureToolReasons = make(map[string]*FailureToolReasonStat)
+	}
+	if tool == "" {
+		tool = "unknown"
+	}
+	category, reason = normalizeFailureCategoryReason(category, reason)
+	key := tool + "\x00" + category + "\x00" + reason
+	if agg.FailureToolReasons[key] == nil {
+		agg.FailureToolReasons[key] = &FailureToolReasonStat{Tool: tool, Category: category, Reason: reason}
+	}
+	return agg.FailureToolReasons[key]
+}
+
+func ensureFailureModelReasonStat(agg *ProjectAggregate, model, category, reason string) *FailureModelReasonStat {
+	if agg.FailureModelReasons == nil {
+		agg.FailureModelReasons = make(map[string]*FailureModelReasonStat)
+	}
+	if model == "" {
+		model = "unknown"
+	}
+	category, reason = normalizeFailureCategoryReason(category, reason)
+	key := model + "\x00" + category + "\x00" + reason
+	if agg.FailureModelReasons[key] == nil {
+		agg.FailureModelReasons[key] = &FailureModelReasonStat{Model: model, Category: category, Reason: reason}
+	}
+	return agg.FailureModelReasons[key]
+}
+
+func normalizeFailureCategoryReason(category, reason string) (string, string) {
+	if category == "" {
+		category = "unknown"
+	}
+	if reason == "" {
+		reason = "unknown"
+	}
+	return category, reason
+}
+
+func classifyToolResult(tool string, content AssistantContent) toolFailureClassification {
 	if content.IsError {
-		return "explicit_error", true
+		return newFailureClassification("explicit_error", failureCategoryForTool(tool), "explicit_error")
 	}
 
 	text := toolResultText(content.Content)
 	if text == "" {
-		return "", false
+		return toolFailureClassification{}
 	}
 	lower := strings.ToLower(text)
+	if category, reason, ok := classifyDetailedFailure(tool, lower); ok {
+		return newFailureClassification("", category, reason)
+	}
 	switch {
 	case strings.Contains(lower, `"success":false`) || strings.Contains(lower, `"success": false`):
-		return "api_failure", true
+		return newFailureClassification("api_failure", "api", "success_false")
 	case strings.Contains(lower, "timed out") || strings.Contains(lower, "timeout") || strings.Contains(lower, "超时"):
-		return "timeout", true
+		return newFailureClassification("timeout", "timeout", "timeout")
 	case strings.Contains(lower, "permission denied") || strings.Contains(lower, "权限"):
-		return "permission", true
+		return newFailureClassification("permission", "permission", "permission_denied")
 	case strings.Contains(lower, "no such file") || strings.Contains(lower, "不存在"):
-		return "not_found", true
+		return newFailureClassification("not_found", "file", "not_found")
 	case strings.Contains(lower, "exit code") || strings.Contains(lower, "command failed"):
-		return "command_failed", true
+		return newFailureClassification("command_failed", "bash", "command_failed")
 	case toolFailureExpr.MatchString(text):
-		return "error_text", true
+		return newFailureClassification("error_text", failureCategoryForTool(tool), "error_text")
 	default:
-		return "", false
+		return toolFailureClassification{}
 	}
+}
+
+func newFailureClassification(kind, category, reason string) toolFailureClassification {
+	if category == "" {
+		category = "unknown"
+	}
+	if reason == "" {
+		reason = kind
+	}
+	if kind == "" {
+		kind = kindFromCategoryReason(category, reason)
+	}
+	return toolFailureClassification{
+		Kind:     kind,
+		Category: category,
+		Reason:   reason,
+		Failed:   true,
+	}
+}
+
+func classifyDetailedFailure(tool string, lower string) (string, string, bool) {
+	if category, reason, ok := classifyCommonFailure(lower); ok {
+		return category, reason, true
+	}
+
+	switch {
+	case tool == "Bash":
+		return classifyBashFailure(lower)
+	case tool == "Edit" || tool == "MultiEdit" || tool == "Write" || tool == "Read":
+		return classifyFileToolFailure(lower)
+	case strings.HasPrefix(tool, "mcp__"):
+		return classifyMCPFailure(lower)
+	case strings.Contains(strings.ToLower(tool), "web"):
+		return classifyWebFailure(lower)
+	default:
+		return "", "", false
+	}
+}
+
+func classifyCommonFailure(lower string) (string, string, bool) {
+	switch {
+	case strings.Contains(lower, "permission denied") || strings.Contains(lower, "operation not permitted") || strings.Contains(lower, "权限"):
+		return "permission", "permission_denied", true
+	case strings.Contains(lower, "timed out") || strings.Contains(lower, "timeout") || strings.Contains(lower, "deadline exceeded") || strings.Contains(lower, "超时"):
+		return "timeout", "timeout", true
+	case strings.Contains(lower, "rate limit") || strings.Contains(lower, "too many requests") || strings.Contains(lower, "429"):
+		return "rate_limit", "rate_limit_429", true
+	case strings.Contains(lower, "unauthorized") || strings.Contains(lower, "forbidden") || strings.Contains(lower, "invalid api key") || strings.Contains(lower, "authentication"):
+		return "auth", "auth_error", true
+	case strings.Contains(lower, "model not found") || strings.Contains(lower, "unknown model"):
+		return "model", "model_not_found", true
+	default:
+		return "", "", false
+	}
+}
+
+func classifyBashFailure(lower string) (string, string, bool) {
+	if matches := exitCodeExpr.FindStringSubmatch(lower); len(matches) == 3 {
+		return "bash", "exit_code_" + matches[2], true
+	}
+	switch {
+	case strings.Contains(lower, "command not found"):
+		return "bash", "command_not_found", true
+	case strings.Contains(lower, "no such file or directory"):
+		return "bash", "not_found", true
+	case strings.Contains(lower, "test failed") || strings.Contains(lower, "tests failed") || strings.Contains(lower, "failing tests") || strings.Contains(lower, "failed tests"):
+		return "bash", "test_failure", true
+	case strings.Contains(lower, "killed") || strings.Contains(lower, "signal: killed"):
+		return "bash", "killed", true
+	case strings.Contains(lower, "command failed"):
+		return "bash", "command_failed", true
+	default:
+		return "", "", false
+	}
+}
+
+func classifyFileToolFailure(lower string) (string, string, bool) {
+	switch {
+	case strings.Contains(lower, "old_string") || strings.Contains(lower, "old string") || strings.Contains(lower, "string to replace") || strings.Contains(lower, "no match") || strings.Contains(lower, "not found in file"):
+		return "edit", "old_string_mismatch", true
+	case strings.Contains(lower, "no such file") || strings.Contains(lower, "file not found") || strings.Contains(lower, "cannot find") || strings.Contains(lower, "不存在"):
+		return "file", "not_found", true
+	case strings.Contains(lower, "is a directory") || strings.Contains(lower, "not a file"):
+		return "file", "not_regular_file", true
+	case strings.Contains(lower, "binary file") || strings.Contains(lower, "invalid utf") || strings.Contains(lower, "encoding"):
+		return "file", "encoding_or_binary", true
+	default:
+		return "", "", false
+	}
+}
+
+func classifyMCPFailure(lower string) (string, string, bool) {
+	if category, reason, ok := classifyWebFailure(lower); ok {
+		return category, reason, true
+	}
+	switch {
+	case strings.Contains(lower, "schema") || strings.Contains(lower, "invalid params") || strings.Contains(lower, "validation"):
+		return "mcp", "schema_error", true
+	case strings.Contains(lower, "connection refused") || strings.Contains(lower, "connection reset") || strings.Contains(lower, "econnreset") || strings.Contains(lower, "enotfound"):
+		return "mcp", "network_error", true
+	case strings.Contains(lower, "tool not found") || strings.Contains(lower, "method not found"):
+		return "mcp", "tool_not_found", true
+	default:
+		return "", "", false
+	}
+}
+
+func classifyWebFailure(lower string) (string, string, bool) {
+	switch {
+	case strings.Contains(lower, "dns") || strings.Contains(lower, "no such host") || strings.Contains(lower, "enotfound"):
+		return "web", "dns_error", true
+	case strings.Contains(lower, "tls") || strings.Contains(lower, "certificate") || strings.Contains(lower, "x509"):
+		return "web", "tls_error", true
+	case strings.Contains(lower, "network") || strings.Contains(lower, "connection refused") || strings.Contains(lower, "connection reset") || strings.Contains(lower, "econnreset"):
+		return "web", "network_error", true
+	}
+	if matches := httpStatusExpr.FindStringSubmatch(lower); len(matches) == 2 {
+		return "web", "http_" + matches[1], true
+	}
+	return "", "", false
+}
+
+func failureCategoryForTool(tool string) string {
+	switch {
+	case tool == "Bash":
+		return "bash"
+	case tool == "Edit" || tool == "MultiEdit":
+		return "edit"
+	case tool == "Read" || tool == "Write":
+		return "file"
+	case strings.HasPrefix(tool, "mcp__"):
+		return "mcp"
+	case strings.Contains(strings.ToLower(tool), "web"):
+		return "web"
+	default:
+		return "tool"
+	}
+}
+
+func kindFromCategoryReason(category, reason string) string {
+	switch reason {
+	case "not_found":
+		return "not_found"
+	case "permission_denied":
+		return "permission"
+	case "timeout":
+		return "timeout"
+	case "command_failed":
+		return "command_failed"
+	case "success_false":
+		return "api_failure"
+	case "error_text":
+		return "error_text"
+	case "explicit_error":
+		return "explicit_error"
+	}
+	if reason == "" {
+		return category
+	}
+	if category == "" || strings.HasPrefix(reason, category+"_") {
+		return reason
+	}
+	return category + "_" + reason
 }
 
 func toolResultPreview(raw json.RawMessage) string {

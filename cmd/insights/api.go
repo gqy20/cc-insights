@@ -39,6 +39,7 @@ type DashboardData struct {
 	AgentAnalysis   *AgentAnalysisData   `json:"agent_analysis,omitempty"`
 	CommandAnalysis *CommandAnalysisData `json:"command_analysis,omitempty"`
 	CostAnalysis    *CostAnalysisData    `json:"cost_analysis,omitempty"`
+	FailureAnalysis *FailureAnalysisData `json:"failure_analysis,omitempty"`
 }
 
 // TimeRangeInfo 时间范围信息
@@ -290,6 +291,7 @@ func buildDataFromCache(tf TimeFilter, preset string) (*DashboardData, error) {
 	agentAnalysis := cloneAgentAnalysis(cached.AgentAnalysis)
 	commandAnalysis := cloneCommandAnalysis(cached.CommandAnalysis)
 	costAnalysis := cloneCostAnalysis(cached.CostAnalysis)
+	failureAnalysis := cloneFailureAnalysis(cached.FailureAnalysis)
 
 	// 构建时间范围信息
 	rangeInfo := TimeRangeInfo{Preset: preset}
@@ -321,6 +323,7 @@ func buildDataFromCache(tf TimeFilter, preset string) (*DashboardData, error) {
 		AgentAnalysis:   agentAnalysis,
 		CommandAnalysis: commandAnalysis,
 		CostAnalysis:    costAnalysis,
+		FailureAnalysis: failureAnalysis,
 	}, nil
 }
 
@@ -413,6 +416,7 @@ func buildDataFromParsing(tf TimeFilter, preset string) (*DashboardData, error) 
 		AgentAnalysis:   aggregate.AgentAnalysis,
 		CommandAnalysis: aggregate.CommandAnalysis,
 		CostAnalysis:    aggregate.CostAnalysis,
+		FailureAnalysis: aggregate.FailureAnalysis,
 	}, nil
 }
 

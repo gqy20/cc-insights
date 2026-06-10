@@ -170,6 +170,9 @@ function renderCharts(data) {
     // 工具失败与模型关联
     container.appendChild(createChartDiv('toolModelFailureChart', '1200px', '560px'));
 
+    // 失败原因细分
+    container.appendChild(createChartDiv('failureReasonChart', '1200px', '620px'));
+
     // 运行事件与 Hook 状态
     container.appendChild(createChartDiv('eventHookChart', '1200px', '560px'));
 
@@ -192,6 +195,7 @@ function renderCharts(data) {
     initModelChart(data.model_usage);
     initWorkHoursChart(data.work_hours_stats);
     initToolModelFailureChart(data.tool_analysis);
+    initFailureReasonChart(data.failure_analysis);
     initEventHookChart(data.event_analysis);
     initAgentChart(data.agent_analysis);
     initCommandFileChart(data.command_analysis);
