@@ -18,6 +18,11 @@ import (
 //go:embed static/*
 var staticFS embed.FS
 
+// 版本信息（通过 -ldflags 注入）
+var version = "dev"
+var commit = "unknown"
+var buildDate = ""
+
 func main() {
 	flag.Parse()
 
