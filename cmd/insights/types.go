@@ -1,0 +1,407 @@
+package main
+
+import (
+	"encoding/json"
+	"sync"
+	"time"
+)
+
+// HistoryRecord history.jsonl 记录
+type HistoryRecord struct {
+	Display        string            `json:"display"`
+	PastedContents map[string]string `json:"pastedContents"`
+	Timestamp      int64             `json:"timestamp"`
+	Project        string            `json:"project"`
+}
+
+// DailyActivity 每日活动统计
+type DailyActivity struct {
+	Date          string `json:"date"`
+	MessageCount  int    `json:"messageCount"`
+	SessionCount  int    `json:"sessionCount"`
+	ToolCallCount int    `json:"toolCallCount"`
+}
+
+// StatsCache stats-cache.json 结构
+type StatsCache struct {
+	DailyActivity    []DailyActivity          `json:"dailyActivity"`
+	DailyModelTokens []map[string]interface{} `json:"dailyModelTokens"`
+	ModelUsage       map[string]struct {
+		InputTokens  int `json:"inputTokens"`
+		OutputTokens int `json:"outputTokens"`
+	} `json:"modelUsage"`
+	HourCounts map[string]int `json:"hourCounts"`
+}
+
+// SessionStats 会话统计数据
+type SessionStats struct {
+	TotalSessions   int            `json:"total_sessions"`
+	PeakDate        string         `json:"peak_date"`
+	PeakCount       int            `json:"peak_count"`
+	ValleyDate      string         `json:"valley_date"`
+	ValleyCount     int            `json:"valley_count"`
+	DailySessionMap map[string]int `json:"daily_session_map"`
+}
+
+// CommandStats 命令统计
+type CommandStats struct {
+	Command string `json:"command"`
+	Count   int    `json:"count"`
+}
+
+// ProjectStats 项目统计
+type ProjectStats struct {
+	Project string
+	Count   int
+}
+
+// ProjectStatsData 项目统计数据（扩展版）
+type ProjectStatsData struct {
+	Projects      []ProjectStatItem `json:"projects"`
+	TotalMessages int               `json:"total_messages"`
+	TotalSessions int               `json:"total_sessions"`
+}
+
+// ProjectStatItem 单个项目统计
+type ProjectStatItem struct {
+	Project      string `json:"project"`
+	SessionCount int    `json:"session_count"`
+	MessageCount int    `json:"message_count"`
+}
+
+// WeekdayStats 星期统计
+type WeekdayStats struct {
+	WeekdayData []WeekdayItem `json:"weekday_data"`
+}
+
+// WeekdayItem 单个星期数据
+type WeekdayItem struct {
+	Weekday      int    `json:"weekday"`      // 0=周一, 6=周日
+	WeekdayName  string `json:"weekday_name"` // "周一"..."周日"
+	MessageCount int    `json:"message_count"`
+}
+
+// ModelUsageItem 单个模型使用统计
+type ModelUsageItem struct {
+	Model  string `json:"model"`
+	Count  int    `json:"count"`
+	Tokens int    `json:"tokens"`
+}
+
+// ToolAnalysisData 工具调用分析结果
+type ToolAnalysisData struct {
+	TotalCalls     int                 `json:"total_calls"`
+	TotalFailures  int                 `json:"total_failures"`
+	MissingResults int                 `json:"missing_results"`
+	Tools          []ToolStatItem      `json:"tools"`
+	ByModel        []ToolModelStatItem `json:"by_model"`
+	FailureKinds   []ToolFailureKind   `json:"failure_kinds"`
+	FailureSamples []ToolFailureSample `json:"failure_samples"`
+}
+
+// EventAnalysisData Claude Code 运行事件分析结果
+type EventAnalysisData struct {
+	TotalEvents       int                  `json:"total_events"`
+	ByType            []EventTypeStat      `json:"by_type"`
+	Hooks             []HookStatItem       `json:"hooks"`
+	Skills            []SkillStatItem      `json:"skills"`
+	PermissionModes   []PermissionModeStat `json:"permission_modes"`
+	QueuedCommands    int                  `json:"queued_commands"`
+	PlanModeCount     int                  `json:"plan_mode_count"`
+	PlanModeExitCount int                  `json:"plan_mode_exit_count"`
+	OpenedFiles       []FileAccessStat     `json:"opened_files"`
+	Budget            *BudgetSummary       `json:"budget,omitempty"`
+	Samples           []EventSample        `json:"samples"`
+}
+
+// EventTypeStat 顶层/附件事件类型统计
+type EventTypeStat struct {
+	Type  string `json:"type"`
+	Count int    `json:"count"`
+}
+
+// HookStatItem hook 执行状态统计
+type HookStatItem struct {
+	HookName       string  `json:"hook_name"`
+	HookEvent      string  `json:"hook_event"`
+	SuccessCount   int     `json:"success_count"`
+	CancelledCount int     `json:"cancelled_count"`
+	ErrorCount     int     `json:"error_count"`
+	TotalCount     int     `json:"total_count"`
+	FailureRate    float64 `json:"failure_rate"`
+	AvgDurationMs  float64 `json:"avg_duration_ms"`
+	LastError      string  `json:"last_error,omitempty"`
+	LastCommand    string  `json:"last_command,omitempty"`
+}
+
+// SkillStatItem skill 调用统计
+type SkillStatItem struct {
+	Name  string `json:"name"`
+	Path  string `json:"path,omitempty"`
+	Count int    `json:"count"`
+}
+
+// PermissionModeStat 权限模式统计
+type PermissionModeStat struct {
+	Mode  string `json:"mode"`
+	Count int    `json:"count"`
+}
+
+// FileAccessStat 文件访问统计
+type FileAccessStat struct {
+	Path  string `json:"path"`
+	Count int    `json:"count"`
+}
+
+// BudgetSummary 预算事件摘要
+type BudgetSummary struct {
+	LatestUsed      float64 `json:"latest_used"`
+	LatestTotal     float64 `json:"latest_total"`
+	LatestRemaining float64 `json:"latest_remaining"`
+	MaxUsed         float64 `json:"max_used"`
+	EventCount      int     `json:"event_count"`
+}
+
+// EventSample 运行事件样例
+type EventSample struct {
+	Type           string `json:"type"`
+	Project        string `json:"project"`
+	SessionID      string `json:"session_id"`
+	Timestamp      string `json:"timestamp"`
+	ContentPreview string `json:"content_preview"`
+}
+
+// AgentAnalysisData agent/subagent 分析结果
+type AgentAnalysisData struct {
+	MainToolCalls      int             `json:"main_tool_calls"`
+	SidechainToolCalls int             `json:"sidechain_tool_calls"`
+	Agents             []AgentStatItem `json:"agents"`
+}
+
+// AgentStatItem 单个 agent 统计
+type AgentStatItem struct {
+	AgentID            string  `json:"agent_id"`
+	AgentName          string  `json:"agent_name,omitempty"`
+	IsSidechain        bool    `json:"is_sidechain"`
+	SessionCount       int     `json:"session_count"`
+	MessageCount       int     `json:"message_count"`
+	ToolCallCount      int     `json:"tool_call_count"`
+	ToolFailureCount   int     `json:"tool_failure_count"`
+	MissingResultCount int     `json:"missing_result_count"`
+	FailureRate        float64 `json:"failure_rate"`
+}
+
+// CommandAnalysisData Bash 与文件操作分析结果
+type CommandAnalysisData struct {
+	BashCommands   []BashCommandStat   `json:"bash_commands"`
+	RiskyCommands  []BashCommandStat   `json:"risky_commands"`
+	FileOperations []FileOperationStat `json:"file_operations"`
+}
+
+// BashCommandStat Bash 命令统计
+type BashCommandStat struct {
+	CommandName        string  `json:"command_name"`
+	CallCount          int     `json:"call_count"`
+	SuccessCount       int     `json:"success_count"`
+	FailureCount       int     `json:"failure_count"`
+	MissingResultCount int     `json:"missing_result_count"`
+	FailureRate        float64 `json:"failure_rate"`
+	RiskLevel          string  `json:"risk_level,omitempty"`
+	RiskReason         string  `json:"risk_reason,omitempty"`
+	SampleCommand      string  `json:"sample_command,omitempty"`
+}
+
+// FileOperationStat 文件工具操作统计
+type FileOperationStat struct {
+	Operation          string  `json:"operation"`
+	Path               string  `json:"path"`
+	CallCount          int     `json:"call_count"`
+	SuccessCount       int     `json:"success_count"`
+	FailureCount       int     `json:"failure_count"`
+	MissingResultCount int     `json:"missing_result_count"`
+	FailureRate        float64 `json:"failure_rate"`
+}
+
+// ToolStatItem 单个工具调用统计
+type ToolStatItem struct {
+	Tool               string  `json:"tool"`
+	CallCount          int     `json:"call_count"`
+	SuccessCount       int     `json:"success_count"`
+	FailureCount       int     `json:"failure_count"`
+	MissingResultCount int     `json:"missing_result_count"`
+	FailureRate        float64 `json:"failure_rate"`
+}
+
+// ToolModelStatItem 单个模型下的工具调用统计
+type ToolModelStatItem struct {
+	Model              string  `json:"model"`
+	Tool               string  `json:"tool"`
+	CallCount          int     `json:"call_count"`
+	SuccessCount       int     `json:"success_count"`
+	FailureCount       int     `json:"failure_count"`
+	MissingResultCount int     `json:"missing_result_count"`
+	FailureRate        float64 `json:"failure_rate"`
+}
+
+// ToolFailureKind 工具失败类型聚合
+type ToolFailureKind struct {
+	Kind  string `json:"kind"`
+	Count int    `json:"count"`
+}
+
+// ToolFailureSample 工具失败样例（只保存短摘要，不保存完整对话）
+type ToolFailureSample struct {
+	Tool           string `json:"tool"`
+	Model          string `json:"model,omitempty"`
+	Kind           string `json:"kind"`
+	Project        string `json:"project"`
+	SessionID      string `json:"session_id"`
+	Timestamp      string `json:"timestamp"`
+	ContentPreview string `json:"content_preview"`
+}
+
+// WorkHoursStats 工作时段统计
+type WorkHoursStats struct {
+	HourlyData     []HourlyItem `json:"hourly_data"` // 每小时数据
+	WorkHoursCount int          `json:"work_hours"`  // 工作时段(9-18点)总次数
+	OffHoursCount  int          `json:"off_hours"`   // 非工作时段总次数
+	WorkHoursRatio float64      `json:"work_ratio"`  // 工作时段占比
+	PeakHour       int          `json:"peak_hour"`   // 峰值小时
+	PeakHourCount  int          `json:"peak_count"`  // 峰值小时次数
+}
+
+// HourlyItem 单小时数据
+type HourlyItem struct {
+	Hour       int    `json:"hour"`         // 小时(0-23)
+	HourLabel  string `json:"hour_label"`   // 标签 "09:00"
+	Count      int    `json:"count"`        // 次数
+	IsWorkHour bool   `json:"is_work_hour"` // 是否工作时段
+}
+
+// ProjectAggregate 一次遍历获取的所有统计数据
+type ProjectAggregate struct {
+	ProjectStats       map[string]*ProjectStatItem   `json:"-"`          // 项目统计（map用于快速查找）
+	Projects           []ProjectStatItem             `json:"projects"`   // 项目列表（排序后）
+	WeekdayData        [7]WeekdayItem                `json:"-"`          // 星期数据
+	WeekdayStats       *WeekdayStats                 `json:"weekday"`    // 星期统计（输出格式）
+	DailyActivity      map[string]int                `json:"-"`          // 每日消息数（map）
+	DailyActivityList  []DailyActivity               `json:"daily"`      // 每日活动（输出格式）
+	DailySessions      map[string]map[string]bool    `json:"-"`          // 每日会话集 date→sessionID→true（用于提取SessionStats，避免重复解析）
+	HourlyCounts       [24]int                       `json:"-"`          // 小时统计
+	HourlyData         []HourlyItem                  `json:"-"`          // 小时数据
+	ModelUsage         map[string]*ModelUsageItem    `json:"-"`          // 模型使用（map）
+	ModelUsageList     []ModelUsageItem              `json:"models"`     // 模型使用（输出格式）
+	ToolStats          map[string]*ToolStatItem      `json:"-"`          // 工具调用统计
+	ToolModelStats     map[string]*ToolModelStatItem `json:"-"`          // 模型+工具调用统计
+	ToolFailureKinds   map[string]int                `json:"-"`          // 工具失败类型
+	ToolAnalysis       *ToolAnalysisData             `json:"tools"`      // 工具分析（输出格式）
+	EventTypes         map[string]int                `json:"-"`          // 运行事件类型
+	HookStats          map[string]*HookStatItem      `json:"-"`          // hook 统计
+	SkillStats         map[string]*SkillStatItem     `json:"-"`          // skill 统计
+	PermissionModes    map[string]int                `json:"-"`          // 权限模式统计
+	OpenedFiles        map[string]*FileAccessStat    `json:"-"`          // IDE 打开文件统计
+	BudgetSummary      *BudgetSummary                `json:"-"`          // 预算事件摘要
+	EventSamples       []EventSample                 `json:"-"`          // 事件样例
+	EventAnalysis      *EventAnalysisData            `json:"events"`     // 事件分析（输出格式）
+	AgentStats         map[string]*AgentStatItem     `json:"-"`          // agent 统计
+	AgentSessions      map[string]map[string]bool    `json:"-"`          // agent 会话去重
+	AgentAnalysis      *AgentAnalysisData            `json:"agents"`     // agent 分析（输出格式）
+	BashCommandStats   map[string]*BashCommandStat   `json:"-"`          // Bash 命令统计
+	FileOperationStats map[string]*FileOperationStat `json:"-"`          // 文件操作统计
+	CommandAnalysis    *CommandAnalysisData          `json:"commands"`   // 命令/文件分析（输出格式）
+	WorkHoursStats     *WorkHoursStats               `json:"work_hours"` // 工作时段统计
+	mu                 sync.RWMutex                  `json:"-"`          // 保护并发写入
+}
+
+// ProjectRecord projects/*.jsonl 记录
+type ProjectRecord struct {
+	ParentUUID     string          `json:"parentUuid"`
+	IsSidechain    bool            `json:"isSidechain"`
+	UserType       string          `json:"userType"`
+	Cwd            string          `json:"cwd"`
+	SessionID      string          `json:"sessionId"`
+	Version        string          `json:"version"`
+	GitBranch      string          `json:"gitBranch"`
+	AgentID        string          `json:"agentId"`
+	Type           string          `json:"type"`    // "user" | "assistant"
+	Message        json.RawMessage `json:"message"` // 可以是 user 或 assistant 消息
+	Attachment     json.RawMessage `json:"attachment"`
+	Content        json.RawMessage `json:"content"`
+	Name           string          `json:"name"`
+	PermissionMode string          `json:"permissionMode"`
+	Timestamp      string          `json:"timestamp"`
+}
+
+// AssistantMessage assistant 消息详情
+type AssistantMessage struct {
+	ID      string             `json:"id"`
+	Type    string             `json:"type"`
+	Role    string             `json:"role"`
+	Model   string             `json:"model"`
+	Content []AssistantContent `json:"content"`
+	Usage   struct {
+		InputTokens          int `json:"input_tokens"`
+		OutputTokens         int `json:"output_tokens"`
+		CacheReadInputTokens int `json:"cache_read_input_tokens"`
+	} `json:"usage"`
+}
+
+// AssistantContent 支持多种内容类型（text, thinking）
+type AssistantContent struct {
+	Type      string          `json:"type"`               // "text" | "thinking" | "tool_use" | "tool_result"
+	Text      string          `json:"text"`               // text 类型内容
+	Thinking  string          `json:"thinking,omitempty"` // thinking 类型内容
+	ID        string          `json:"id,omitempty"`       // tool_use ID
+	Name      string          `json:"name,omitempty"`     // tool_use name
+	Input     json.RawMessage `json:"input,omitempty"`    // tool_use input
+	ToolUseID string          `json:"tool_use_id"`        // tool_result 关联 ID
+	Content   json.RawMessage `json:"content,omitempty"`  // tool_result content
+	IsError   bool            `json:"is_error,omitempty"` // tool_result 显式失败
+}
+
+// SessionIndexEntry sessions-index.json 单个条目
+type SessionIndexEntry struct {
+	SessionID    string `json:"sessionId"`
+	FullPath     string `json:"fullPath"`
+	FileMtime    int64  `json:"fileMtime"`
+	FirstPrompt  string `json:"firstPrompt"`
+	Summary      string `json:"summary"`
+	MessageCount int    `json:"messageCount"`
+	Created      string `json:"created"`
+	Modified     string `json:"modified"`
+	ProjectPath  string `json:"projectPath"`
+	IsSidechain  bool   `json:"isSidechain"`
+}
+
+// SessionIndexResult sessions-index.json 解析结果
+type SessionIndexResult struct {
+	Version int                 `json:"version"`
+	Entries []SessionIndexEntry `json:"entries"`
+}
+
+// MCPToolStats MCP工具统计
+type MCPToolStats struct {
+	Tool   string `json:"tool"`
+	Server string `json:"server"`
+	Count  int    `json:"count"`
+}
+
+// DebugFileInfo debug 文件信息
+type DebugFileInfo struct {
+	Path    string
+	ModTime time.Time
+}
+
+type pendingToolCall struct {
+	ID          string
+	Tool        string
+	Model       string
+	Project     string
+	SessionID   string
+	AgentID     string
+	IsSidechain bool
+	Timestamp   time.Time
+	Input       json.RawMessage
+	CommandName string
+	FileOpKey   string
+}

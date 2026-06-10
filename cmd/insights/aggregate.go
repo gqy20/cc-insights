@@ -1,0 +1,379 @@
+package main
+
+import (
+	"sort"
+	"sync"
+)
+
+func newProjectAggregate() *ProjectAggregate {
+	aggregate := &ProjectAggregate{
+		ProjectStats:       make(map[string]*ProjectStatItem),
+		DailyActivity:      make(map[string]int),
+		DailySessions:      make(map[string]map[string]bool),
+		ModelUsage:         make(map[string]*ModelUsageItem),
+		ToolStats:          make(map[string]*ToolStatItem),
+		ToolModelStats:     make(map[string]*ToolModelStatItem),
+		ToolFailureKinds:   make(map[string]int),
+		EventTypes:         make(map[string]int),
+		HookStats:          make(map[string]*HookStatItem),
+		SkillStats:         make(map[string]*SkillStatItem),
+		PermissionModes:    make(map[string]int),
+		OpenedFiles:        make(map[string]*FileAccessStat),
+		AgentStats:         make(map[string]*AgentStatItem),
+		AgentSessions:      make(map[string]map[string]bool),
+		BashCommandStats:   make(map[string]*BashCommandStat),
+		FileOperationStats: make(map[string]*FileOperationStat),
+		HourlyCounts:       [24]int{},
+		mu:                 sync.RWMutex{},
+	}
+
+	// 初始化星期数据
+	weekdayNames := []string{"周一", "周二", "周三", "周四", "周五", "周六", "周日"}
+	for i := 0; i < 7; i++ {
+		aggregate.WeekdayData[i] = WeekdayItem{
+			Weekday:      i,
+			WeekdayName:  weekdayNames[i],
+			MessageCount: 0,
+		}
+	}
+	return aggregate
+}
+
+func mergeProjectAggregate(dst, src *ProjectAggregate) {
+	for project, stat := range src.ProjectStats {
+		if dst.ProjectStats[project] == nil {
+			dst.ProjectStats[project] = &ProjectStatItem{Project: project}
+		}
+		dst.ProjectStats[project].MessageCount += stat.MessageCount
+		dst.ProjectStats[project].SessionCount += stat.SessionCount
+	}
+	for i := range src.WeekdayData {
+		dst.WeekdayData[i].MessageCount += src.WeekdayData[i].MessageCount
+	}
+	for date, count := range src.DailyActivity {
+		dst.DailyActivity[date] += count
+	}
+	for date, sessions := range src.DailySessions {
+		if dst.DailySessions[date] == nil {
+			dst.DailySessions[date] = make(map[string]bool)
+		}
+		for sessionID := range sessions {
+			dst.DailySessions[date][sessionID] = true
+		}
+	}
+	for hour, count := range src.HourlyCounts {
+		dst.HourlyCounts[hour] += count
+	}
+	for model, stat := range src.ModelUsage {
+		if dst.ModelUsage[model] == nil {
+			dst.ModelUsage[model] = &ModelUsageItem{Model: model}
+		}
+		dst.ModelUsage[model].Count += stat.Count
+		dst.ModelUsage[model].Tokens += stat.Tokens
+	}
+	for tool, stat := range src.ToolStats {
+		dstStat := ensureToolStat(dst, tool)
+		dstStat.CallCount += stat.CallCount
+		dstStat.SuccessCount += stat.SuccessCount
+		dstStat.FailureCount += stat.FailureCount
+		dstStat.MissingResultCount += stat.MissingResultCount
+	}
+	for _, stat := range src.ToolModelStats {
+		dstStat := ensureToolModelStat(dst, stat.Tool, stat.Model)
+		dstStat.CallCount += stat.CallCount
+		dstStat.SuccessCount += stat.SuccessCount
+		dstStat.FailureCount += stat.FailureCount
+		dstStat.MissingResultCount += stat.MissingResultCount
+	}
+	for kind, count := range src.ToolFailureKinds {
+		dst.ToolFailureKinds[kind] += count
+	}
+	if src.ToolAnalysis != nil {
+		if dst.ToolAnalysis == nil {
+			dst.ToolAnalysis = &ToolAnalysisData{}
+		}
+		remaining := 30 - len(dst.ToolAnalysis.FailureSamples)
+		if remaining > 0 {
+			samples := src.ToolAnalysis.FailureSamples
+			if len(samples) > remaining {
+				samples = samples[:remaining]
+			}
+			dst.ToolAnalysis.FailureSamples = append(dst.ToolAnalysis.FailureSamples, samples...)
+		}
+	}
+	for eventType, count := range src.EventTypes {
+		dst.EventTypes[eventType] += count
+	}
+	for key, stat := range src.HookStats {
+		if dst.HookStats[key] == nil {
+			statCopy := *stat
+			dst.HookStats[key] = &statCopy
+			continue
+		}
+		dstStat := dst.HookStats[key]
+		oldTotal := dstStat.TotalCount
+		dstStat.SuccessCount += stat.SuccessCount
+		dstStat.CancelledCount += stat.CancelledCount
+		dstStat.ErrorCount += stat.ErrorCount
+		dstStat.TotalCount += stat.TotalCount
+		if dstStat.TotalCount > 0 {
+			dstStat.AvgDurationMs = (dstStat.AvgDurationMs*float64(oldTotal) + stat.AvgDurationMs*float64(stat.TotalCount)) / float64(dstStat.TotalCount)
+		}
+		if stat.LastError != "" {
+			dstStat.LastError = stat.LastError
+		}
+		if stat.LastCommand != "" {
+			dstStat.LastCommand = stat.LastCommand
+		}
+	}
+	for name, stat := range src.SkillStats {
+		if dst.SkillStats[name] == nil {
+			dst.SkillStats[name] = &SkillStatItem{Name: stat.Name, Path: stat.Path}
+		}
+		dst.SkillStats[name].Count += stat.Count
+		if dst.SkillStats[name].Path == "" {
+			dst.SkillStats[name].Path = stat.Path
+		}
+	}
+	for mode, count := range src.PermissionModes {
+		dst.PermissionModes[mode] += count
+	}
+	for path, stat := range src.OpenedFiles {
+		if dst.OpenedFiles[path] == nil {
+			dst.OpenedFiles[path] = &FileAccessStat{Path: path}
+		}
+		dst.OpenedFiles[path].Count += stat.Count
+	}
+	if src.BudgetSummary != nil {
+		if dst.BudgetSummary == nil {
+			budgetCopy := *src.BudgetSummary
+			dst.BudgetSummary = &budgetCopy
+		} else {
+			dst.BudgetSummary.LatestUsed = src.BudgetSummary.LatestUsed
+			dst.BudgetSummary.LatestTotal = src.BudgetSummary.LatestTotal
+			dst.BudgetSummary.LatestRemaining = src.BudgetSummary.LatestRemaining
+			dst.BudgetSummary.EventCount += src.BudgetSummary.EventCount
+			if src.BudgetSummary.MaxUsed > dst.BudgetSummary.MaxUsed {
+				dst.BudgetSummary.MaxUsed = src.BudgetSummary.MaxUsed
+			}
+		}
+	}
+	remainingEvents := 40 - len(dst.EventSamples)
+	if remainingEvents > 0 {
+		samples := src.EventSamples
+		if len(samples) > remainingEvents {
+			samples = samples[:remainingEvents]
+		}
+		dst.EventSamples = append(dst.EventSamples, samples...)
+	}
+	for agentID, stat := range src.AgentStats {
+		dstStat := ensureAgentStat(dst, agentID, stat.IsSidechain)
+		if dstStat.AgentName == "" {
+			dstStat.AgentName = stat.AgentName
+		}
+		dstStat.MessageCount += stat.MessageCount
+		dstStat.ToolCallCount += stat.ToolCallCount
+		dstStat.ToolFailureCount += stat.ToolFailureCount
+		dstStat.MissingResultCount += stat.MissingResultCount
+	}
+	for agentID, sessions := range src.AgentSessions {
+		if dst.AgentSessions[agentID] == nil {
+			dst.AgentSessions[agentID] = make(map[string]bool)
+		}
+		dstStat := ensureAgentStat(dst, agentID, src.AgentStats[agentID].IsSidechain)
+		for sessionID := range sessions {
+			if !dst.AgentSessions[agentID][sessionID] {
+				dstStat.SessionCount++
+			}
+			dst.AgentSessions[agentID][sessionID] = true
+		}
+	}
+	for commandName, stat := range src.BashCommandStats {
+		dstStat := ensureBashCommandStat(dst, commandName)
+		dstStat.CallCount += stat.CallCount
+		dstStat.SuccessCount += stat.SuccessCount
+		dstStat.FailureCount += stat.FailureCount
+		dstStat.MissingResultCount += stat.MissingResultCount
+		if dstStat.RiskLevel == "" || riskRank(stat.RiskLevel) > riskRank(dstStat.RiskLevel) {
+			dstStat.RiskLevel = stat.RiskLevel
+			dstStat.RiskReason = stat.RiskReason
+		}
+		if dstStat.SampleCommand == "" {
+			dstStat.SampleCommand = stat.SampleCommand
+		}
+	}
+	for key, stat := range src.FileOperationStats {
+		if dst.FileOperationStats[key] == nil {
+			dst.FileOperationStats[key] = &FileOperationStat{Operation: stat.Operation, Path: stat.Path}
+		}
+		dstStat := dst.FileOperationStats[key]
+		dstStat.CallCount += stat.CallCount
+		dstStat.SuccessCount += stat.SuccessCount
+		dstStat.FailureCount += stat.FailureCount
+		dstStat.MissingResultCount += stat.MissingResultCount
+	}
+}
+
+func aggregateToProjectFileAggregate(src *ProjectAggregate) ProjectFileAggregate {
+	out := ProjectFileAggregate{
+		ProjectStats:       make(map[string]ProjectStatItem, len(src.ProjectStats)),
+		WeekdayData:        src.WeekdayData,
+		DailyActivity:      copyIntMap(src.DailyActivity),
+		DailySessions:      boolSetMapToSlices(src.DailySessions),
+		HourlyCounts:       src.HourlyCounts,
+		ModelUsage:         make(map[string]ModelUsageItem, len(src.ModelUsage)),
+		ToolStats:          make(map[string]ToolStatItem, len(src.ToolStats)),
+		ToolModelStats:     make(map[string]ToolModelStatItem, len(src.ToolModelStats)),
+		ToolFailureKinds:   copyIntMap(src.ToolFailureKinds),
+		EventTypes:         copyIntMap(src.EventTypes),
+		HookStats:          make(map[string]HookStatItem, len(src.HookStats)),
+		SkillStats:         make(map[string]SkillStatItem, len(src.SkillStats)),
+		PermissionModes:    copyIntMap(src.PermissionModes),
+		OpenedFiles:        make(map[string]FileAccessStat, len(src.OpenedFiles)),
+		AgentStats:         make(map[string]AgentStatItem, len(src.AgentStats)),
+		AgentSessions:      boolSetMapToSlices(src.AgentSessions),
+		BashCommandStats:   make(map[string]BashCommandStat, len(src.BashCommandStats)),
+		FileOperationStats: make(map[string]FileOperationStat, len(src.FileOperationStats)),
+	}
+	for key, stat := range src.ProjectStats {
+		out.ProjectStats[key] = *stat
+	}
+	for key, stat := range src.ModelUsage {
+		out.ModelUsage[key] = *stat
+	}
+	for key, stat := range src.ToolStats {
+		out.ToolStats[key] = *stat
+	}
+	for key, stat := range src.ToolModelStats {
+		out.ToolModelStats[key] = *stat
+	}
+	if src.ToolAnalysis != nil {
+		out.ToolSamples = append([]ToolFailureSample(nil), src.ToolAnalysis.FailureSamples...)
+	}
+	for key, stat := range src.HookStats {
+		out.HookStats[key] = *stat
+	}
+	for key, stat := range src.SkillStats {
+		out.SkillStats[key] = *stat
+	}
+	for key, stat := range src.OpenedFiles {
+		out.OpenedFiles[key] = *stat
+	}
+	if src.BudgetSummary != nil {
+		budgetCopy := *src.BudgetSummary
+		out.BudgetSummary = &budgetCopy
+	}
+	out.EventSamples = append([]EventSample(nil), src.EventSamples...)
+	for key, stat := range src.AgentStats {
+		out.AgentStats[key] = *stat
+	}
+	for key, stat := range src.BashCommandStats {
+		out.BashCommandStats[key] = *stat
+	}
+	for key, stat := range src.FileOperationStats {
+		out.FileOperationStats[key] = *stat
+	}
+	return out
+}
+
+func projectFileAggregateToAggregate(src ProjectFileAggregate) *ProjectAggregate {
+	out := newProjectAggregate()
+	for key, stat := range src.ProjectStats {
+		statCopy := stat
+		out.ProjectStats[key] = &statCopy
+	}
+	out.WeekdayData = src.WeekdayData
+	out.DailyActivity = copyIntMap(src.DailyActivity)
+	out.DailySessions = slicesMapToBoolSets(src.DailySessions)
+	out.HourlyCounts = src.HourlyCounts
+	for key, stat := range src.ModelUsage {
+		statCopy := stat
+		out.ModelUsage[key] = &statCopy
+	}
+	for key, stat := range src.ToolStats {
+		statCopy := stat
+		out.ToolStats[key] = &statCopy
+	}
+	for key, stat := range src.ToolModelStats {
+		statCopy := stat
+		out.ToolModelStats[key] = &statCopy
+	}
+	out.ToolFailureKinds = copyIntMap(src.ToolFailureKinds)
+	if len(src.ToolSamples) > 0 {
+		out.ToolAnalysis = &ToolAnalysisData{FailureSamples: append([]ToolFailureSample(nil), src.ToolSamples...)}
+	}
+	out.EventTypes = copyIntMap(src.EventTypes)
+	for key, stat := range src.HookStats {
+		statCopy := stat
+		out.HookStats[key] = &statCopy
+	}
+	for key, stat := range src.SkillStats {
+		statCopy := stat
+		out.SkillStats[key] = &statCopy
+	}
+	out.PermissionModes = copyIntMap(src.PermissionModes)
+	for key, stat := range src.OpenedFiles {
+		statCopy := stat
+		out.OpenedFiles[key] = &statCopy
+	}
+	if src.BudgetSummary != nil {
+		budgetCopy := *src.BudgetSummary
+		out.BudgetSummary = &budgetCopy
+	}
+	out.EventSamples = append([]EventSample(nil), src.EventSamples...)
+	for key, stat := range src.AgentStats {
+		statCopy := stat
+		out.AgentStats[key] = &statCopy
+	}
+	out.AgentSessions = slicesMapToBoolSets(src.AgentSessions)
+	for key, stat := range src.BashCommandStats {
+		statCopy := stat
+		out.BashCommandStats[key] = &statCopy
+	}
+	for key, stat := range src.FileOperationStats {
+		statCopy := stat
+		out.FileOperationStats[key] = &statCopy
+	}
+	return out
+}
+
+func copyIntMap(src map[string]int) map[string]int {
+	if len(src) == 0 {
+		return nil
+	}
+	out := make(map[string]int, len(src))
+	for key, value := range src {
+		out[key] = value
+	}
+	return out
+}
+
+func boolSetMapToSlices(src map[string]map[string]bool) map[string][]string {
+	if len(src) == 0 {
+		return nil
+	}
+	out := make(map[string][]string, len(src))
+	for key, values := range src {
+		items := make([]string, 0, len(values))
+		for value := range values {
+			items = append(items, value)
+		}
+		sort.Strings(items)
+		out[key] = items
+	}
+	return out
+}
+
+func slicesMapToBoolSets(src map[string][]string) map[string]map[string]bool {
+	if len(src) == 0 {
+		return make(map[string]map[string]bool)
+	}
+	out := make(map[string]map[string]bool, len(src))
+	for key, values := range src {
+		out[key] = make(map[string]bool, len(values))
+		for _, value := range values {
+			out[key][value] = true
+		}
+	}
+	return out
+}
