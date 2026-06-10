@@ -162,6 +162,16 @@ type BudgetSummary struct {
 	EventCount      int     `json:"event_count"`
 }
 
+// BudgetTimelineItem 单个预算事件
+type BudgetTimelineItem struct {
+	Timestamp string  `json:"timestamp"`
+	Project   string  `json:"project"`
+	SessionID string  `json:"session_id"`
+	Used      float64 `json:"used"`
+	Total     float64 `json:"total"`
+	Remaining float64 `json:"remaining"`
+}
+
 // EventSample 运行事件样例
 type EventSample struct {
 	Type           string `json:"type"`
@@ -260,6 +270,72 @@ type ToolFailureSample struct {
 	ContentPreview string `json:"content_preview"`
 }
 
+// TokenUsageBreakdown token 类型拆分
+type TokenUsageBreakdown struct {
+	InputTokens              int `json:"input_tokens"`
+	OutputTokens             int `json:"output_tokens"`
+	CacheReadInputTokens     int `json:"cache_read_input_tokens"`
+	CacheCreationInputTokens int `json:"cache_creation_input_tokens"`
+	ServerToolUseRequests    int `json:"server_tool_use_requests"`
+	TotalTokens              int `json:"total_tokens"`
+	BillableInputTokens      int `json:"billable_input_tokens"`
+	RequestCount             int `json:"request_count"`
+}
+
+// CostModelStat 按模型统计 token
+type CostModelStat struct {
+	Model                 string  `json:"model"`
+	RequestCount          int     `json:"request_count"`
+	InputTokens           int     `json:"input_tokens"`
+	OutputTokens          int     `json:"output_tokens"`
+	CacheReadTokens       int     `json:"cache_read_input_tokens"`
+	CacheCreationTokens   int     `json:"cache_creation_input_tokens"`
+	ServerToolUseRequests int     `json:"server_tool_use_requests"`
+	TotalTokens           int     `json:"total_tokens"`
+	AvgOutputTokens       float64 `json:"avg_output_tokens"`
+	CacheReadRatio        float64 `json:"cache_read_ratio"`
+}
+
+// CostProjectStat 按项目统计 token
+type CostProjectStat struct {
+	Project      string `json:"project"`
+	RequestCount int    `json:"request_count"`
+	TotalTokens  int    `json:"total_tokens"`
+	InputTokens  int    `json:"input_tokens"`
+	OutputTokens int    `json:"output_tokens"`
+}
+
+// CostSessionStat 按会话统计 token
+type CostSessionStat struct {
+	SessionID    string `json:"session_id"`
+	Project      string `json:"project"`
+	Model        string `json:"model,omitempty"`
+	RequestCount int    `json:"request_count"`
+	TotalTokens  int    `json:"total_tokens"`
+	InputTokens  int    `json:"input_tokens"`
+	OutputTokens int    `json:"output_tokens"`
+}
+
+// CostAgentStat 按 agent/subagent 统计 token
+type CostAgentStat struct {
+	AgentID      string `json:"agent_id"`
+	IsSidechain  bool   `json:"is_sidechain"`
+	RequestCount int    `json:"request_count"`
+	TotalTokens  int    `json:"total_tokens"`
+	InputTokens  int    `json:"input_tokens"`
+	OutputTokens int    `json:"output_tokens"`
+}
+
+// CostAnalysisData token/成本分析结果
+type CostAnalysisData struct {
+	Totals         TokenUsageBreakdown  `json:"totals"`
+	ByModel        []CostModelStat      `json:"by_model"`
+	ByProject      []CostProjectStat    `json:"by_project"`
+	BySession      []CostSessionStat    `json:"by_session"`
+	ByAgent        []CostAgentStat      `json:"by_agent"`
+	BudgetTimeline []BudgetTimelineItem `json:"budget_timeline"`
+}
+
 // WorkHoursStats 工作时段统计
 type WorkHoursStats struct {
 	HourlyData     []HourlyItem `json:"hourly_data"` // 每小时数据
@@ -291,6 +367,12 @@ type ProjectAggregate struct {
 	HourlyData         []HourlyItem                  `json:"-"`          // 小时数据
 	ModelUsage         map[string]*ModelUsageItem    `json:"-"`          // 模型使用（map）
 	ModelUsageList     []ModelUsageItem              `json:"models"`     // 模型使用（输出格式）
+	CostModelStats     map[string]*CostModelStat     `json:"-"`          // 模型 token 统计
+	CostProjectStats   map[string]*CostProjectStat   `json:"-"`          // 项目 token 统计
+	CostSessionStats   map[string]*CostSessionStat   `json:"-"`          // 会话 token 统计
+	CostAgentStats     map[string]*CostAgentStat     `json:"-"`          // agent token 统计
+	BudgetTimeline     []BudgetTimelineItem          `json:"-"`          // 预算事件时间线
+	CostAnalysis       *CostAnalysisData             `json:"costs"`      // 成本/token 分析（输出格式）
 	ToolStats          map[string]*ToolStatItem      `json:"-"`          // 工具调用统计
 	ToolModelStats     map[string]*ToolModelStatItem `json:"-"`          // 模型+工具调用统计
 	ToolFailureKinds   map[string]int                `json:"-"`          // 工具失败类型
@@ -340,9 +422,14 @@ type AssistantMessage struct {
 	Model   string             `json:"model"`
 	Content []AssistantContent `json:"content"`
 	Usage   struct {
-		InputTokens          int `json:"input_tokens"`
-		OutputTokens         int `json:"output_tokens"`
-		CacheReadInputTokens int `json:"cache_read_input_tokens"`
+		InputTokens              int `json:"input_tokens"`
+		OutputTokens             int `json:"output_tokens"`
+		CacheReadInputTokens     int `json:"cache_read_input_tokens"`
+		CacheCreationInputTokens int `json:"cache_creation_input_tokens"`
+		ServerToolUse            struct {
+			WebSearchRequests int `json:"web_search_requests"`
+			WebFetchRequests  int `json:"web_fetch_requests"`
+		} `json:"server_tool_use"`
 	} `json:"usage"`
 }
 

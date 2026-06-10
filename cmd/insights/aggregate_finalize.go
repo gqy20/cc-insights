@@ -62,6 +62,7 @@ func (agg *ProjectAggregate) finalize() {
 	agg.finalizeEventAnalysis()
 	agg.finalizeAgentAnalysis()
 	agg.finalizeCommandAnalysis()
+	agg.finalizeCostAnalysis()
 
 	// 8. 生成工作时段统计
 	var workHoursCount, offHoursCount int

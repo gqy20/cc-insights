@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-const CacheVersion = "2.1"
+const CacheVersion = "2.2"
 
 // CacheFile 缓存文件结构
 type CacheFile struct {
@@ -34,6 +34,7 @@ type CacheFile struct {
 	EventAnalysis   *EventAnalysisData
 	AgentAnalysis   *AgentAnalysisData
 	CommandAnalysis *CommandAnalysisData
+	CostAnalysis    *CostAnalysisData
 	ProjectFiles    map[string]*ProjectFileCache `json:"project_file_caches,omitempty"`
 }
 
@@ -53,6 +54,11 @@ type ProjectFileAggregate struct {
 	DailySessions      map[string][]string          `json:"daily_sessions,omitempty"`
 	HourlyCounts       [24]int                      `json:"hourly_counts"`
 	ModelUsage         map[string]ModelUsageItem    `json:"model_usage,omitempty"`
+	CostModelStats     map[string]CostModelStat     `json:"cost_model_stats,omitempty"`
+	CostProjectStats   map[string]CostProjectStat   `json:"cost_project_stats,omitempty"`
+	CostSessionStats   map[string]CostSessionStat   `json:"cost_session_stats,omitempty"`
+	CostAgentStats     map[string]CostAgentStat     `json:"cost_agent_stats,omitempty"`
+	BudgetTimeline     []BudgetTimelineItem         `json:"budget_timeline,omitempty"`
 	ToolStats          map[string]ToolStatItem      `json:"tool_stats,omitempty"`
 	ToolModelStats     map[string]ToolModelStatItem `json:"tool_model_stats,omitempty"`
 	ToolFailureKinds   map[string]int               `json:"tool_failure_kinds,omitempty"`
@@ -122,7 +128,7 @@ func (cf *CacheFile) Save(path string) error {
 		return fmt.Errorf("创建缓存目录失败: %w", err)
 	}
 
-	// 序列化为紧凑 JSON。缓存偏向机器读写，避免 pretty print 放大 2.1 文件级聚合缓存体积。
+	// 序列化为紧凑 JSON。缓存偏向机器读写，避免 pretty print 放大文件级聚合缓存体积。
 	data, err := json.Marshal(cf)
 	if err != nil {
 		return fmt.Errorf("序列化缓存失败: %w", err)
@@ -270,8 +276,22 @@ func (cf *CacheFile) QueryByTimeRange(start, end time.Time) *CacheFile {
 	result.EventAnalysis = cloneEventAnalysis(cf.EventAnalysis)
 	result.AgentAnalysis = cloneAgentAnalysis(cf.AgentAnalysis)
 	result.CommandAnalysis = cloneCommandAnalysis(cf.CommandAnalysis)
+	result.CostAnalysis = cloneCostAnalysis(cf.CostAnalysis)
 
 	return result
+}
+
+func cloneCostAnalysis(source *CostAnalysisData) *CostAnalysisData {
+	if source == nil {
+		return nil
+	}
+	copyValue := *source
+	copyValue.ByModel = append([]CostModelStat(nil), source.ByModel...)
+	copyValue.ByProject = append([]CostProjectStat(nil), source.ByProject...)
+	copyValue.BySession = append([]CostSessionStat(nil), source.BySession...)
+	copyValue.ByAgent = append([]CostAgentStat(nil), source.ByAgent...)
+	copyValue.BudgetTimeline = append([]BudgetTimelineItem(nil), source.BudgetTimeline...)
+	return &copyValue
 }
 
 func cloneEventAnalysis(source *EventAnalysisData) *EventAnalysisData {

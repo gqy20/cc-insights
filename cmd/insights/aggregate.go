@@ -24,6 +24,10 @@ func newProjectAggregate() *ProjectAggregate {
 		BashCommandStats:   make(map[string]*BashCommandStat),
 		FileOperationStats: make(map[string]*FileOperationStat),
 		HourlyCounts:       [24]int{},
+		CostModelStats:     make(map[string]*CostModelStat),
+		CostProjectStats:   make(map[string]*CostProjectStat),
+		CostSessionStats:   make(map[string]*CostSessionStat),
+		CostAgentStats:     make(map[string]*CostAgentStat),
 		mu:                 sync.RWMutex{},
 	}
 
@@ -70,6 +74,25 @@ func mergeProjectAggregate(dst, src *ProjectAggregate) {
 		}
 		dst.ModelUsage[model].Count += stat.Count
 		dst.ModelUsage[model].Tokens += stat.Tokens
+	}
+	for model, stat := range src.CostModelStats {
+		dstStat := ensureCostModelStat(dst, model)
+		mergeCostModelStat(dstStat, stat)
+	}
+	for project, stat := range src.CostProjectStats {
+		dstStat := ensureCostProjectStat(dst, project)
+		mergeCostProjectStat(dstStat, stat)
+	}
+	for sessionID, stat := range src.CostSessionStats {
+		dstStat := ensureCostSessionStat(dst, sessionID, stat.Project)
+		if dstStat.Model == "" {
+			dstStat.Model = stat.Model
+		}
+		mergeCostSessionStat(dstStat, stat)
+	}
+	for agentID, stat := range src.CostAgentStats {
+		dstStat := ensureCostAgentStat(dst, agentID, stat.IsSidechain)
+		mergeCostAgentStat(dstStat, stat)
 	}
 	for tool, stat := range src.ToolStats {
 		dstStat := ensureToolStat(dst, tool)
@@ -158,6 +181,14 @@ func mergeProjectAggregate(dst, src *ProjectAggregate) {
 			}
 		}
 	}
+	remainingBudgetEvents := 200 - len(dst.BudgetTimeline)
+	if remainingBudgetEvents > 0 {
+		timeline := src.BudgetTimeline
+		if len(timeline) > remainingBudgetEvents {
+			timeline = timeline[:remainingBudgetEvents]
+		}
+		dst.BudgetTimeline = append(dst.BudgetTimeline, timeline...)
+	}
 	remainingEvents := 40 - len(dst.EventSamples)
 	if remainingEvents > 0 {
 		samples := src.EventSamples
@@ -222,6 +253,11 @@ func aggregateToProjectFileAggregate(src *ProjectAggregate) ProjectFileAggregate
 		DailySessions:      boolSetMapToSlices(src.DailySessions),
 		HourlyCounts:       src.HourlyCounts,
 		ModelUsage:         make(map[string]ModelUsageItem, len(src.ModelUsage)),
+		CostModelStats:     make(map[string]CostModelStat, len(src.CostModelStats)),
+		CostProjectStats:   make(map[string]CostProjectStat, len(src.CostProjectStats)),
+		CostSessionStats:   make(map[string]CostSessionStat, len(src.CostSessionStats)),
+		CostAgentStats:     make(map[string]CostAgentStat, len(src.CostAgentStats)),
+		BudgetTimeline:     append([]BudgetTimelineItem(nil), src.BudgetTimeline...),
 		ToolStats:          make(map[string]ToolStatItem, len(src.ToolStats)),
 		ToolModelStats:     make(map[string]ToolModelStatItem, len(src.ToolModelStats)),
 		ToolFailureKinds:   copyIntMap(src.ToolFailureKinds),
@@ -240,6 +276,18 @@ func aggregateToProjectFileAggregate(src *ProjectAggregate) ProjectFileAggregate
 	}
 	for key, stat := range src.ModelUsage {
 		out.ModelUsage[key] = *stat
+	}
+	for key, stat := range src.CostModelStats {
+		out.CostModelStats[key] = *stat
+	}
+	for key, stat := range src.CostProjectStats {
+		out.CostProjectStats[key] = *stat
+	}
+	for key, stat := range src.CostSessionStats {
+		out.CostSessionStats[key] = *stat
+	}
+	for key, stat := range src.CostAgentStats {
+		out.CostAgentStats[key] = *stat
 	}
 	for key, stat := range src.ToolStats {
 		out.ToolStats[key] = *stat
@@ -290,6 +338,23 @@ func projectFileAggregateToAggregate(src ProjectFileAggregate) *ProjectAggregate
 		statCopy := stat
 		out.ModelUsage[key] = &statCopy
 	}
+	for key, stat := range src.CostModelStats {
+		statCopy := stat
+		out.CostModelStats[key] = &statCopy
+	}
+	for key, stat := range src.CostProjectStats {
+		statCopy := stat
+		out.CostProjectStats[key] = &statCopy
+	}
+	for key, stat := range src.CostSessionStats {
+		statCopy := stat
+		out.CostSessionStats[key] = &statCopy
+	}
+	for key, stat := range src.CostAgentStats {
+		statCopy := stat
+		out.CostAgentStats[key] = &statCopy
+	}
+	out.BudgetTimeline = append([]BudgetTimelineItem(nil), src.BudgetTimeline...)
 	for key, stat := range src.ToolStats {
 		statCopy := stat
 		out.ToolStats[key] = &statCopy

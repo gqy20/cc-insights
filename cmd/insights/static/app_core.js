@@ -179,6 +179,9 @@ function renderCharts(data) {
     // Bash 与文件操作失败
     container.appendChild(createChartDiv('commandFileChart', '1200px', '620px'));
 
+    // Token 与成本分析
+    container.appendChild(createChartDiv('costAnalysisChart', '1200px', '620px'));
+
     // 初始化 go-echarts 图表
     initDailyTrendChart(data.daily_trend);
     initCommandsChart(data.commands);
@@ -192,6 +195,7 @@ function renderCharts(data) {
     initEventHookChart(data.event_analysis);
     initAgentChart(data.agent_analysis);
     initCommandFileChart(data.command_analysis);
+    initCostAnalysisChart(data.cost_analysis);
 
     container.style.display = 'block';
 }

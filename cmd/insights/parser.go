@@ -141,7 +141,7 @@ func recordRuntimeEventLocked(agg *ProjectAggregate, record ProjectRecord, times
 			case "opened_file_in_ide":
 				recordOpenedFileLocked(agg, attachment.Filename)
 			case "budget_usd":
-				recordBudgetLocked(agg, attachment.Used, attachment.Total, attachment.Remaining)
+				recordBudgetLocked(agg, attachment.Used, attachment.Total, attachment.Remaining, timestamp, projectName, record.SessionID)
 			case "queued_command":
 				// Counted through event type below.
 			}
@@ -252,7 +252,7 @@ func recordOpenedFileLocked(agg *ProjectAggregate, path string) {
 	agg.OpenedFiles[path].Count++
 }
 
-func recordBudgetLocked(agg *ProjectAggregate, used, total, remaining float64) {
+func recordBudgetLocked(agg *ProjectAggregate, used, total, remaining float64, timestamp time.Time, projectName string, sessionID string) {
 	if agg.BudgetSummary == nil {
 		agg.BudgetSummary = &BudgetSummary{}
 	}
@@ -263,6 +263,14 @@ func recordBudgetLocked(agg *ProjectAggregate, used, total, remaining float64) {
 	if used > agg.BudgetSummary.MaxUsed {
 		agg.BudgetSummary.MaxUsed = used
 	}
+	agg.BudgetTimeline = append(agg.BudgetTimeline, BudgetTimelineItem{
+		Timestamp: timestamp.Format(time.RFC3339),
+		Project:   projectName,
+		SessionID: sessionID,
+		Used:      used,
+		Total:     total,
+		Remaining: remaining,
+	})
 }
 
 func addEventSampleLocked(agg *ProjectAggregate, eventType, project, sessionID string, timestamp time.Time, raw string) {

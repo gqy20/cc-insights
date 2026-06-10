@@ -384,3 +384,121 @@ function initCommandFileChart(commandAnalysis) {
         `高风险命令类型 <strong>${formatNumber(riskyCount)}</strong> 个。` +
         `文件操作失败最多的是 <strong>${escapeHtml(topFile ? `${topFile.operation} ${topFile.path}` : '-')}</strong>。`;
 }
+
+function initCostAnalysisChart(costAnalysis) {
+    const insight = document.getElementById('costAnalysisChart-insight');
+    if (!costAnalysis || !costAnalysis.totals || !costAnalysis.by_model || costAnalysis.by_model.length === 0) {
+        insight.innerHTML = '<strong>数据洞察:</strong> 暂无 Token 与成本数据';
+        return;
+    }
+
+    const chart = echarts.init(document.getElementById('costAnalysisChart'), 'wonderland');
+    const models = (costAnalysis.by_model || []).slice(0, 10);
+    const projects = (costAnalysis.by_project || []).slice(0, 10);
+    const sessions = (costAnalysis.by_session || []).slice(0, 10);
+    const modelLabels = models.map(item => shortModelName(item.model));
+    const projectLabels = projects.map(item => shortPath(item.project));
+    const sessionLabels = sessions.map(item => shortAgentID(item.session_id));
+
+    chart.setOption({
+        title: {
+            text: 'Token 与成本分析',
+            subtext: '按模型、项目、会话统计 Token 消耗',
+            left: 'center'
+        },
+        tooltip: {
+            trigger: 'axis',
+            axisPointer: { type: 'shadow' }
+        },
+        legend: {
+            data: ['输入', '输出', '缓存读取', '缓存写入', '总 Token'],
+            top: 55
+        },
+        grid: [
+            { top: 95, left: 70, right: 70, height: 130, containLabel: true },
+            { top: 300, left: 70, right: 70, height: 110, containLabel: true },
+            { top: 485, left: 70, right: 70, height: 90, containLabel: true }
+        ],
+        xAxis: [
+            { type: 'category', gridIndex: 0, data: modelLabels, axisLabel: { interval: 0, rotate: 25 } },
+            { type: 'category', gridIndex: 1, data: projectLabels, axisLabel: { interval: 0, rotate: 25 } },
+            { type: 'category', gridIndex: 2, data: sessionLabels, axisLabel: { interval: 0, rotate: 25 } }
+        ],
+        yAxis: [
+            { type: 'value', gridIndex: 0, name: '模型 Token' },
+            { type: 'value', gridIndex: 1, name: '项目 Token' },
+            { type: 'value', gridIndex: 2, name: '会话 Token' }
+        ],
+        series: [
+            {
+                name: '输入',
+                type: 'bar',
+                stack: 'model',
+                xAxisIndex: 0,
+                yAxisIndex: 0,
+                data: models.map(item => item.input_tokens),
+                itemStyle: { color: '#5470c6' }
+            },
+            {
+                name: '输出',
+                type: 'bar',
+                stack: 'model',
+                xAxisIndex: 0,
+                yAxisIndex: 0,
+                data: models.map(item => item.output_tokens),
+                itemStyle: { color: '#91cc75' }
+            },
+            {
+                name: '缓存读取',
+                type: 'bar',
+                stack: 'model',
+                xAxisIndex: 0,
+                yAxisIndex: 0,
+                data: models.map(item => item.cache_read_input_tokens),
+                itemStyle: { color: '#73c0de' }
+            },
+            {
+                name: '缓存写入',
+                type: 'bar',
+                stack: 'model',
+                xAxisIndex: 0,
+                yAxisIndex: 0,
+                data: models.map(item => item.cache_creation_input_tokens),
+                itemStyle: { color: '#fac858' }
+            },
+            {
+                name: '总 Token',
+                type: 'bar',
+                xAxisIndex: 1,
+                yAxisIndex: 1,
+                data: projects.map(item => item.total_tokens),
+                itemStyle: { color: '#3ba272' }
+            },
+            {
+                name: '总 Token',
+                type: 'bar',
+                xAxisIndex: 2,
+                yAxisIndex: 2,
+                data: sessions.map(item => item.total_tokens),
+                itemStyle: { color: '#fc8452' }
+            }
+        ]
+    });
+
+    const totals = costAnalysis.totals;
+    const topModel = models[0];
+    const topProject = projects[0];
+    const topSession = sessions[0];
+    const cacheInputTotal = (totals.input_tokens || 0) + (totals.cache_read_input_tokens || 0) + (totals.cache_creation_input_tokens || 0);
+    const cacheReadRatio = cacheInputTotal > 0
+        ? ((totals.cache_read_input_tokens || 0) / cacheInputTotal * 100).toFixed(1)
+        : '0.0';
+
+    insight.innerHTML =
+        `<strong>数据洞察:</strong> 共 <strong>${formatNumber(totals.request_count)}</strong> 次模型请求，` +
+        `总 Token <strong>${formatNumber(totals.total_tokens)}</strong>，输出 Token <strong>${formatNumber(totals.output_tokens)}</strong>。` +
+        `缓存读取占输入侧 <strong>${cacheReadRatio}%</strong>。` +
+        `最高模型 <strong>${escapeHtml(topModel ? topModel.model : '-')}</strong>，` +
+        `最高项目 <strong>${escapeHtml(topProject ? topProject.project : '-')}</strong>，` +
+        `最高会话 <strong>${escapeHtml(topSession ? topSession.session_id : '-')}</strong>。`;
+}

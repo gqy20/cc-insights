@@ -197,6 +197,7 @@ func parseProjectFileAggregate(filePath string, tf TimeFilter, agg *ProjectAggre
 			}
 			agg.ModelUsage[msg.Model].Count++
 			agg.ModelUsage[msg.Model].Tokens += msg.Usage.InputTokens + msg.Usage.OutputTokens
+			recordCostUsageLocked(agg, msg, record, projectName)
 		}
 
 		// 6. 工具调用统计

@@ -23,6 +23,37 @@
 | `debug/` | 旧版 MCP debug 扫描 | 保留兼容，缓存构建已不依赖 |
 | `subagents/agent-*.jsonl` | subagent 工具调用与失败分析 | 已递归接入 |
 
+### 已发现但尚未充分利用的数据源
+
+基于当前 `~/.claude` 盘点，除已接入的核心数据外，还有多类可用于增强分析的本地数据。实现时应坚持“默认聚合、不展示正文”的原则，避免把 prompt、文件快照、粘贴内容、工具完整输出直接暴露到 API 或 Dashboard。
+
+| 数据源 | 当前观察 | 可分析价值 | 建议优先级 |
+| --- | --- | --- | --- |
+| `projects/**/*.jsonl` 新事件类型 | 样本中除 `assistant/user/attachment` 外，还有 `system`、`queue-operation`、`last-prompt`、`file-history-snapshot`、`permission-mode`、`mode`、`custom-title`、`ai-title`、`agent-name` | session 生命周期、标题、首尾 prompt、队列状态、停止原因、运行耗时、文件快照索引 | P0 |
+| `projects/**/*.jsonl` 新 attachment 类型 | `task_reminder`、`queued_command`、`hook_success`、`budget_usd`、`skill_listing`、`file`、`structured_output`、`edited_text_file`、`compact_file_reference`、`plan_mode`、`plan_file_reference`、`command_permissions`、`goal_status` 等 | 任务/计划/skill/预算/权限/编辑行为分析 | P0-P1 |
+| `stats-cache.json` | 含 `firstSessionDate`、`lastComputedDate`、`longestSession`、`totalMessages`、`totalSessions`、`totalSpeculationTimeSavedMs`、`dailyActivity`、`modelUsage` | 快速概览、最长 session、缓存健康检查、与实时解析结果一致性校验 | P0 |
+| `file-history/` | 当前约 3232 个版本快照文件，文件名形如 `<hash>@vN`，内容是真实文件快照 | 热点编辑文件、版本次数、编辑密度、快照膨胀、与 `file-history-snapshot` 关联 | P0-P1 |
+| `sessions/*.json` | 少量运行态 session 状态，含 `sessionId`、`cwd`、`status`、`startedAt`、`updatedAt`、`pid`、`entrypoint`、`version` | 活跃/空闲 session、运行态状态、daemon/session 对齐 | P1 |
+| `tasks/*/*.json` | 当前约 1312 个任务 JSON，字段含 `subject`、`description`、`status`、`blocks`、`blockedBy` | 任务状态分布、阻塞关系图、任务完成率、任务与 session 关联 | P1 |
+| `plans/*.md` | 当前约 28 个计划文件 | plan mode 产物统计、计划文件生命周期、计划与执行结果对齐 | P1 |
+| `jobs/*/state.json` | 后台 job 状态，含 `state`、`detail`、`intent`、`sessionId`、`resumeSessionId`、`cwd`、`createdAt`、`updatedAt`、`backend` | 后台作业生命周期、失败/卡住 job、resume 关系 | P2 |
+| `jobs/*/timeline.jsonl` | 每行含 `at`、`state`、`detail`、`text` | job 状态迁移、耗时、异常节点 | P2 |
+| `daemon.status.json` / `daemon.log` | daemon worker/状态/日志 | daemon 稳定性、worker 数、后台故障 | P2 |
+| `git_status_cache_*.txt` / `project_stats_cache_*.txt` | 项目级 Git/status cache 文件 | 项目脏状态、分支状态、与高失败 session 关联 | P2 |
+| `paste-cache/` | 粘贴文本缓存，当前有少量 txt | 仅适合数量/大小统计，不建议内容分析 | P3 |
+| `telemetry/1p_failed_events*.json` | 失败遥测缓存 | 可能用于故障补充，但隐私和格式风险较高 | P3 |
+| `shell-snapshots/` | shell 环境快照脚本 | 环境变化诊断，默认不纳入主缓存 | P3 |
+
+当前机器粗略规模：
+
+- `projects/**/*.jsonl`: 约 `3414` 个文件
+- `file-history/`: 约 `3232` 个快照文件
+- `tasks/*/*.json`: 约 `1312` 个任务文件
+- `plans/*.md`: 约 `28` 个计划文件
+- `sessions/*.json`: `6` 个运行态 session 文件
+- `debug/`: 当前未观察到普通 debug 文件，不能假定总是存在
+- `~/.claude` 总文件数：约 `15729`
+
 ### 工具分析
 
 已实现：
@@ -114,7 +145,7 @@
 
 已实现：
 
-- cache version `2.1`
+- cache version `2.2`
 - project JSONL 文件级聚合缓存
 - 每个文件记录：
   - path
@@ -124,6 +155,7 @@
 - 未变化文件复用 aggregate
 - cache 使用紧凑 JSON
 - cache rebuild 只检查 `projects/`
+- `cost_analysis` token/预算分析随文件级 aggregate 缓存
 
 真实数据验证：
 
@@ -140,35 +172,27 @@
 
 现状：
 
-- 目前模型 token 只粗略统计 `input_tokens + output_tokens`
-- `budget_usd` 只做 latest/max 摘要
+- 已实现 `cost_analysis` 初版
+- 已拆分 `input_tokens`、`output_tokens`、`cache_read_input_tokens`、`cache_creation_input_tokens`
+- 已统计 `server_tool_use` 请求数并归入 server tool use 计数
+- 已按 model/project/session/agent 聚合 token
+- 已输出高 token session/project/agent/model Top 列表
+- 已输出 `budget_usd` 时间线
 
-待实现：
+待完善：
 
-- 拆分 token 类型：
-  - `input_tokens`
-  - `output_tokens`
-  - `cache_read_input_tokens`
-  - `cache_creation_input_tokens`
-  - `server_tool_use`
-- 按维度统计 token：
-  - model
-  - session
-  - project
-  - tool 前后
-  - agent/subagent
-- 高成本 session Top N
-- 高成本 project Top N
-- 不同模型平均输出长度
+- 工具调用前后 token 消耗
 - cache 命中与成本节省估算
-- `budget_usd` 时间线
+- 基于真实模型单价估算 USD 成本
+- Dashboard 增加成本 Top 图表
 
 建议输出：
 
 - `cost_analysis.by_model`
 - `cost_analysis.by_project`
 - `cost_analysis.by_session`
-- `cost_analysis.cache_tokens`
+- `cost_analysis.by_agent`
+- `cost_analysis.totals`
 - `cost_analysis.budget_timeline`
 
 价值：
@@ -231,6 +255,13 @@
 
 - 已统计 top-level event 类型
 - 还没有形成 session 级生命周期画像
+- `projects/**/*.jsonl` 中已经存在可利用的生命周期事件：
+  - `system`：包含 `subtype`、`stopReason`、`durationMs`、`messageCount`、`hookCount`、`hookErrors`、`preventedContinuation`
+  - `last-prompt`：包含 `lastPrompt`、`leafUuid`、`sessionId`
+  - `custom-title` / `ai-title`：包含 session 标题
+  - `queue-operation`：包含 `operation`、`content`、`timestamp`
+  - `permission-mode` / `mode`：包含权限或模式变化
+  - `agent-name`：包含 agent 命名信息
 
 待实现：
 
@@ -247,9 +278,16 @@
   - project
   - permission mode changes
   - plan mode usage
+- system stop reason / prevented continuation
+- queue operation timeline
+- hook count / hook error count
+- title 来源：
+  - ai-title
+  - custom-title
 - Session 成功/失败/中断分类
 - 高失败会话 Top N
 - 长耗时会话 Top N
+- 与 `stats-cache.longestSession` 做一致性校验
 
 建议输出：
 
@@ -257,6 +295,8 @@
 - `session_analysis.top_failures`
 - `session_analysis.long_running`
 - `session_analysis.outcomes`
+- `session_analysis.queue_operations`
+- `session_analysis.titles`
 
 价值：
 
@@ -268,6 +308,9 @@
 现状：
 
 - 已有 Read/Edit/Write/MultiEdit 的路径级统计
+- `projects/**/*.jsonl` 中存在 `file-history-snapshot` 事件，字段为 `messageId`、`snapshot`、`isSnapshotUpdate`
+- attachment 中存在 `edited_text_file`、`file`、`compact_file_reference`、`plan_file_reference`
+- `file-history/` 保存真实文件快照，可与 `file-history-snapshot` 做关联，但不应直接展示内容
 
 待实现：
 
@@ -278,12 +321,16 @@
   - `opened_file_in_ide`
 - 每个 session 修改文件数
 - 每个 project 修改文件数
+- 每个文件快照版本数
+- 每个 session 快照数量
+- 快照文件总体积与 Top N
 - 文件编辑失败原因
 - 文件修改规模：
   - lines added
   - lines removed
   - edit attempts
   - retry count
+- 同一文件反复编辑/回滚/重试模式
 - 高频失败文件 Top N
 
 建议输出：
@@ -292,11 +339,14 @@
 - `file_analysis.edited_files`
 - `file_analysis.failed_edits`
 - `file_analysis.by_session`
+- `file_analysis.snapshots`
+- `file_analysis.hot_files`
 
 价值：
 
 - 找出最容易出问题的文件和编辑模式
 - 支持代码质量与工具使用诊断
+- 发现大文件快照导致的本地存储膨胀
 
 ## P1: 中优先级
 
@@ -394,14 +444,52 @@
 - `command_analysis.exit_codes`
 - `command_analysis.retry_patterns`
 
+### 9. Task / Plan 分析
+
+现状：
+
+- `tasks/*/*.json` 中存在结构化任务数据，字段包括 `subject`、`description`、`status`、`blocks`、`blockedBy`
+- `plans/*.md` 中存在 plan mode 产物
+- attachment 中存在 `task_reminder`、`todo_reminder`、`plan_mode`、`plan_mode_exit`、`plan_mode_reentry`、`plan_file_reference`
+
+待实现：
+
+- task 状态分布：
+  - pending
+  - in_progress
+  - completed
+  - blocked
+- task 阻塞关系图
+- 每个 session / project 的 task 数
+- plan mode 进入/退出/重入次数
+- plan 文件创建与引用次数
+- plan 与后续工具链、失败率、完成状态的关系
+
+建议输出：
+
+- `task_analysis.statuses`
+- `task_analysis.block_graph`
+- `task_analysis.by_project`
+- `plan_analysis.files`
+- `plan_analysis.mode_events`
+- `plan_analysis.outcomes`
+
+价值：
+
+- 判断复杂任务是否被拆解清楚
+- 发现长期 blocked task 与高失败 session
+- 评估 plan mode 是否提升完成率
+
 ## P2: 低优先级
 
-### 9. Debug 深层日志分析
+### 10. Debug 深层日志分析
 
 现状：
 
 - `debug/` 不参与缓存构建
 - MCP 工具统计已从 `projects` 派生
+- 当前机器上 `debug/` 未观察到普通 debug 文件，不能假定该目录总是存在或有数据
+- 项目 JSONL 中的 tool/event/attachment 已经覆盖许多原先依赖 debug 文本扫描的场景
 
 待实现：
 
@@ -409,13 +497,44 @@
 - 原始请求/响应耗时
 - SDK/连接错误
 - debug 与 tool_result 关联
+- debug 数据可用性检测与降级提示
 
 使用场景：
 
 - 需要排查 MCP server 或网络层问题时再启用
 - 不建议默认纳入主缓存热路径
 
-### 10. 诊断页 / 建议页
+### 11. 后台作业 / Daemon 分析
+
+现状：
+
+- `sessions/*.json` 中存在运行态 session 状态，含 `sessionId`、`cwd`、`status`、`startedAt`、`updatedAt`、`pid`、`entrypoint`、`version`
+- `jobs/*/state.json` 中存在后台 job 状态，含 `state`、`detail`、`intent`、`sessionId`、`resumeSessionId`、`cwd`、`createdAt`、`updatedAt`、`backend`
+- `jobs/*/timeline.jsonl` 每行含 `at`、`state`、`detail`、`text`
+- `daemon.status.json` 包含 supervisor 与 workers 状态
+
+待实现：
+
+- 活跃/空闲 session 统计
+- job 状态分布与耗时
+- job resume 链路
+- job timeline 状态迁移
+- daemon worker 数与异常状态
+- 后台 job 与 project/session 的关联
+
+建议输出：
+
+- `runtime_analysis.sessions`
+- `runtime_analysis.jobs`
+- `runtime_analysis.job_timelines`
+- `runtime_analysis.daemon`
+
+使用场景：
+
+- 排查后台任务卡住、重复 resume、daemon 状态异常
+- 不建议作为主 dashboard 首屏，适合诊断页或高级页
+
+### 12. 诊断页 / 建议页
 
 现状：
 
@@ -431,6 +550,9 @@
 - Stop hook 错误详情
 - 高成本 session
 - 权限模式变化异常
+- 长期 blocked task
+- 卡住或失败的后台 job
+- file-history 快照异常膨胀
 - 自动生成优化建议
 
 建议输出：
@@ -477,7 +599,19 @@
 2. 细分 Edit 失败原因
 3. 接入 file-history/edited_text_file
 
-### Milestone 4: Skill / Agent 效率分析
+### Milestone 4: Task / Plan 结构分析
+
+目标：
+
+- 判断任务拆解、阻塞关系和 plan mode 是否真正帮助完成复杂任务
+
+任务：
+
+1. 实现 `task_analysis`
+2. 实现 `plan_analysis`
+3. 接入 `tasks/`、`plans/` 与 plan/task attachment 事件
+
+### Milestone 5: Skill / Agent 效率分析
 
 目标：
 
@@ -489,7 +623,19 @@
 2. 实现 `agent_flow_analysis`
 3. 输出 tool chain 与失败链路
 
-### Milestone 5: 高级诊断与建议
+### Milestone 6: Runtime / Job 诊断
+
+目标：
+
+- 排查后台 job、daemon、运行态 session 的异常状态
+
+任务：
+
+1. 实现 `runtime_analysis`
+2. 接入 `sessions/*.json`、`jobs/*/state.json`、`jobs/*/timeline.jsonl`
+3. 在诊断页展示卡住或失败的后台 job
+
+### Milestone 7: 高级诊断与建议
 
 目标：
 
@@ -500,6 +646,7 @@
 1. 实现 diagnostics API
 2. Dashboard 增加问题列表
 3. 输出优化建议和优先级
+4. 增加 `debug/`、`telemetry/`、`paste-cache/` 等可选数据源的可用性检测与隐私提示
 
 ## 性能路线
 
