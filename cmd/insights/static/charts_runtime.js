@@ -604,3 +604,126 @@ function initCostAnalysisChart(costAnalysis) {
         `最高项目 <strong>${escapeHtml(topProject ? topProject.project : '-')}</strong>，` +
         `最高会话 <strong>${escapeHtml(topSession ? topSession.session_id : '-')}</strong>。`;
 }
+
+function initSessionAnalysisChart(sessionAnalysis) {
+    const insight = document.getElementById('sessionAnalysisChart-insight');
+    if (!sessionAnalysis || !sessionAnalysis.sessions || sessionAnalysis.sessions.length === 0) {
+        insight.innerHTML = '<strong>数据洞察:</strong> 暂无 Session 生命周期数据';
+        return;
+    }
+
+    const chart = echarts.init(document.getElementById('sessionAnalysisChart'), 'wonderland');
+    const failures = (sessionAnalysis.top_failures || []).slice(0, 10);
+    const longRunning = (sessionAnalysis.long_running || []).slice(0, 10);
+    const outcomes = sessionAnalysis.outcomes || [];
+    const failureLabels = failures.map(item => shortSessionTitle(item));
+    const durationLabels = longRunning.map(item => shortSessionTitle(item));
+    const outcomeLabels = outcomes.map(item => item.outcome);
+
+    chart.setOption({
+        title: {
+            text: 'Session 生命周期复盘',
+            subtext: '高失败、高耗时与结果状态',
+            left: 'center'
+        },
+        tooltip: {
+            trigger: 'axis',
+            axisPointer: { type: 'shadow' },
+            formatter: function(params) {
+                const first = params[0];
+                if (first.axisIndex === 0) {
+                    const item = failures[first.dataIndex];
+                    return sessionTooltip(item);
+                }
+                if (first.axisIndex === 1) {
+                    const item = longRunning[first.dataIndex];
+                    return sessionTooltip(item);
+                }
+                const item = outcomes[first.dataIndex];
+                return `${escapeHtml(item.outcome)}<br/>数量: ${formatNumber(item.count)}`;
+            }
+        },
+        legend: {
+            data: ['工具失败', 'Missing', '耗时分钟', 'Outcome'],
+            top: 55
+        },
+        grid: [
+            { top: 95, left: 70, right: 70, height: 145, containLabel: true },
+            { top: 315, left: 70, right: 70, height: 120, containLabel: true },
+            { top: 500, left: 70, right: 70, height: 75, containLabel: true }
+        ],
+        xAxis: [
+            { type: 'category', gridIndex: 0, data: failureLabels, axisLabel: { interval: 0, rotate: 25 } },
+            { type: 'category', gridIndex: 1, data: durationLabels, axisLabel: { interval: 0, rotate: 25 } },
+            { type: 'category', gridIndex: 2, data: outcomeLabels, axisLabel: { interval: 0 } }
+        ],
+        yAxis: [
+            { type: 'value', gridIndex: 0, name: '失败次数' },
+            { type: 'value', gridIndex: 1, name: '分钟' },
+            { type: 'value', gridIndex: 2, name: 'Session' }
+        ],
+        series: [
+            {
+                name: '工具失败',
+                type: 'bar',
+                stack: 'fail',
+                xAxisIndex: 0,
+                yAxisIndex: 0,
+                data: failures.map(item => item.tool_failure_count),
+                itemStyle: { color: '#e74c3c' }
+            },
+            {
+                name: 'Missing',
+                type: 'bar',
+                stack: 'fail',
+                xAxisIndex: 0,
+                yAxisIndex: 0,
+                data: failures.map(item => item.missing_result_count),
+                itemStyle: { color: '#f39c12' }
+            },
+            {
+                name: '耗时分钟',
+                type: 'bar',
+                xAxisIndex: 1,
+                yAxisIndex: 1,
+                data: longRunning.map(item => Number(((item.duration_ms || 0) / 60000).toFixed(1))),
+                itemStyle: { color: '#5470c6' }
+            },
+            {
+                name: 'Outcome',
+                type: 'bar',
+                xAxisIndex: 2,
+                yAxisIndex: 2,
+                data: outcomes.map(item => item.count),
+                itemStyle: { color: '#3ba272' }
+            }
+        ]
+    });
+
+    const worst = failures[0];
+    const longest = longRunning[0];
+    insight.innerHTML =
+        `<strong>数据洞察:</strong> 当前输出 <strong>${formatNumber(sessionAnalysis.sessions.length)}</strong> 个 Session 摘要。` +
+        `失败最多的是 <strong>${escapeHtml(worst ? (worst.title || worst.session_id) : '-')}</strong>，` +
+        `工具失败 <strong>${formatNumber(worst ? worst.tool_failure_count : 0)}</strong> 次。` +
+        `耗时最长的是 <strong>${escapeHtml(longest ? (longest.title || longest.session_id) : '-')}</strong>，` +
+        `约 <strong>${formatNumber(longest ? Math.round((longest.duration_ms || 0) / 60000) : 0)}</strong> 分钟。`;
+}
+
+function shortSessionTitle(item) {
+    if (!item) return 'unknown';
+    const value = item.title || item.session_id || 'unknown';
+    return value.length > 28 ? value.slice(0, 28) + '...' : value;
+}
+
+function sessionTooltip(item) {
+    if (!item) return '';
+    return `${escapeHtml(item.title || item.session_id)}<br/>` +
+        `项目: ${escapeHtml(shortPath(item.project))}<br/>` +
+        `结果: ${escapeHtml(item.outcome || 'unknown')}<br/>` +
+        `工具调用: ${formatNumber(item.tool_call_count)}<br/>` +
+        `失败: ${formatNumber(item.tool_failure_count)}<br/>` +
+        `Missing: ${formatNumber(item.missing_result_count)}<br/>` +
+        `Token: ${formatNumber(item.total_tokens)}<br/>` +
+        `耗时: ${formatNumber(Math.round((item.duration_ms || 0) / 60000))} 分钟`;
+}

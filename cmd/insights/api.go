@@ -40,6 +40,7 @@ type DashboardData struct {
 	CommandAnalysis *CommandAnalysisData `json:"command_analysis,omitempty"`
 	CostAnalysis    *CostAnalysisData    `json:"cost_analysis,omitempty"`
 	FailureAnalysis *FailureAnalysisData `json:"failure_analysis,omitempty"`
+	SessionAnalysis *SessionAnalysisData `json:"session_analysis,omitempty"`
 }
 
 // TimeRangeInfo 时间范围信息
@@ -292,6 +293,7 @@ func buildDataFromCache(tf TimeFilter, preset string) (*DashboardData, error) {
 	commandAnalysis := cloneCommandAnalysis(cached.CommandAnalysis)
 	costAnalysis := cloneCostAnalysis(cached.CostAnalysis)
 	failureAnalysis := cloneFailureAnalysis(cached.FailureAnalysis)
+	sessionAnalysis := cloneSessionAnalysis(cached.SessionAnalysis)
 
 	// 构建时间范围信息
 	rangeInfo := TimeRangeInfo{Preset: preset}
@@ -324,6 +326,7 @@ func buildDataFromCache(tf TimeFilter, preset string) (*DashboardData, error) {
 		CommandAnalysis: commandAnalysis,
 		CostAnalysis:    costAnalysis,
 		FailureAnalysis: failureAnalysis,
+		SessionAnalysis: sessionAnalysis,
 	}, nil
 }
 
@@ -417,6 +420,7 @@ func buildDataFromParsing(tf TimeFilter, preset string) (*DashboardData, error) 
 		CommandAnalysis: aggregate.CommandAnalysis,
 		CostAnalysis:    aggregate.CostAnalysis,
 		FailureAnalysis: aggregate.FailureAnalysis,
+		SessionAnalysis: aggregate.SessionAnalysis,
 	}, nil
 }
 
@@ -508,6 +512,8 @@ func emptyProjectAggregate() *ProjectAggregate {
 		FailureReasons:      make(map[string]*FailureReasonStat),
 		FailureToolReasons:  make(map[string]*FailureToolReasonStat),
 		FailureModelReasons: make(map[string]*FailureModelReasonStat),
+		SessionStatsMap:     make(map[string]*SessionAnalysisItem),
+		SessionQueueOps:     make(map[string]int),
 		EventTypes:          make(map[string]int),
 		HookStats:           make(map[string]*HookStatItem),
 		SkillStats:          make(map[string]*SkillStatItem),

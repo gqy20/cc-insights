@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-const CacheVersion = "2.4"
+const CacheVersion = "2.5"
 
 // CacheFile 缓存文件结构
 type CacheFile struct {
@@ -30,6 +30,7 @@ type CacheFile struct {
 	ToolStats       map[string]*ToolStatItem
 	ToolAnalysis    *ToolAnalysisData
 	FailureAnalysis *FailureAnalysisData
+	SessionAnalysis *SessionAnalysisData
 	EventAnalysis   *EventAnalysisData
 	AgentAnalysis   *AgentAnalysisData
 	CommandAnalysis *CommandAnalysisData
@@ -64,6 +65,8 @@ type ProjectFileAggregate struct {
 	FailureToolReasons  map[string]FailureToolReasonStat  `json:"failure_tool_reasons,omitempty"`
 	FailureModelReasons map[string]FailureModelReasonStat `json:"failure_model_reasons,omitempty"`
 	FailureSamples      []ToolFailureSample               `json:"failure_samples,omitempty"`
+	SessionStats        map[string]SessionAnalysisItem    `json:"session_stats,omitempty"`
+	SessionQueueOps     map[string]int                    `json:"session_queue_ops,omitempty"`
 	EventTypes          map[string]int                    `json:"event_types,omitempty"`
 	HookStats           map[string]HookStatItem           `json:"hook_stats,omitempty"`
 	SkillStats          map[string]SkillStatItem          `json:"skill_stats,omitempty"`
@@ -272,8 +275,23 @@ func (cf *CacheFile) QueryByTimeRange(start, end time.Time) *CacheFile {
 	result.CommandAnalysis = cloneCommandAnalysis(cf.CommandAnalysis)
 	result.CostAnalysis = cloneCostAnalysis(cf.CostAnalysis)
 	result.FailureAnalysis = cloneFailureAnalysis(cf.FailureAnalysis)
+	result.SessionAnalysis = cloneSessionAnalysis(cf.SessionAnalysis)
 
 	return result
+}
+
+func cloneSessionAnalysis(source *SessionAnalysisData) *SessionAnalysisData {
+	if source == nil {
+		return nil
+	}
+	copyValue := *source
+	copyValue.Sessions = append([]SessionAnalysisItem(nil), source.Sessions...)
+	copyValue.TopFailures = append([]SessionAnalysisItem(nil), source.TopFailures...)
+	copyValue.LongRunning = append([]SessionAnalysisItem(nil), source.LongRunning...)
+	copyValue.Outcomes = append([]SessionOutcomeStat(nil), source.Outcomes...)
+	copyValue.QueueOperations = append([]QueueOperationStat(nil), source.QueueOperations...)
+	copyValue.Titles = append([]SessionTitleStat(nil), source.Titles...)
+	return &copyValue
 }
 
 func cloneFailureAnalysis(source *FailureAnalysisData) *FailureAnalysisData {

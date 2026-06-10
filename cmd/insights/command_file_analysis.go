@@ -154,6 +154,17 @@ func rawStringField(raw json.RawMessage, field string) string {
 	return s
 }
 
+func rawJSONText(raw json.RawMessage) string {
+	if len(bytes.TrimSpace(raw)) == 0 {
+		return ""
+	}
+	var s string
+	if err := json.Unmarshal(raw, &s); err == nil {
+		return s
+	}
+	return ""
+}
+
 func previewString(value string, limit int) string {
 	value = strings.Join(strings.Fields(value), " ")
 	if len(value) > limit {

@@ -40,6 +40,7 @@ func recordCostUsageLocked(agg *ProjectAggregate, msg AssistantMessage, record P
 			sessionStat.Model = "mixed"
 		}
 	}
+	addSessionCostUsageLocked(agg, record, projectName, msg.Usage.InputTokens, msg.Usage.OutputTokens, totalTokens)
 
 	agentStat := ensureCostAgentStat(agg, record.AgentID, record.IsSidechain)
 	agentStat.RequestCount++

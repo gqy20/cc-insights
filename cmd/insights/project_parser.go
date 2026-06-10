@@ -219,6 +219,7 @@ func parseProjectFileAggregate(filePath string, tf TimeFilter, agg *ProjectAggre
 			call := pendingTools[content.ID]
 			addToolCallLocked(agg, content.Name, msg.Model)
 			addAgentToolCallLocked(agg, call)
+			addSessionToolCallLocked(agg, call)
 			recordStructuredToolInputLocked(agg, &call)
 			pendingTools[content.ID] = call
 		}

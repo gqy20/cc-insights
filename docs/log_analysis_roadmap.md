@@ -145,7 +145,7 @@
 
 已实现：
 
-- cache version `2.3`
+- cache version `2.5`
 - project JSONL 文件级聚合缓存
 - 每个文件记录：
   - path
@@ -157,6 +157,7 @@
 - cache rebuild 只检查 `projects/`
 - `cost_analysis` token/预算分析随文件级 aggregate 缓存
 - `failure_analysis` 失败原因细分随文件级 aggregate 缓存
+- `session_analysis` 会话生命周期摘要随文件级 aggregate 缓存
 
 真实数据验证：
 
@@ -263,7 +264,8 @@
 现状：
 
 - 已统计 top-level event 类型
-- 还没有形成 session 级生命周期画像
+- 已实现 `session_analysis` 初版
+- 已形成 session 级生命周期画像
 - `projects/**/*.jsonl` 中已经存在可利用的生命周期事件：
   - `system`：包含 `subtype`、`stopReason`、`durationMs`、`messageCount`、`hookCount`、`hookErrors`、`preventedContinuation`
   - `last-prompt`：包含 `lastPrompt`、`leafUuid`、`sessionId`
@@ -272,14 +274,14 @@
   - `permission-mode` / `mode`：包含权限或模式变化
   - `agent-name`：包含 agent 命名信息
 
-待实现：
+已覆盖：
 
 - 每个 session 的：
-  - started/result
+  - result
   - first prompt / last prompt
   - ai-title/custom-title
   - started time / ended time / duration
-  - result status
+  - outcome
   - message count
   - tool count
   - failure count
@@ -288,7 +290,7 @@
   - permission mode changes
   - plan mode usage
 - system stop reason / prevented continuation
-- queue operation timeline
+- queue operation 聚合
 - hook count / hook error count
 - title 来源：
   - ai-title
@@ -296,6 +298,13 @@
 - Session 成功/失败/中断分类
 - 高失败会话 Top N
 - 长耗时会话 Top N
+
+待完善：
+
+- started/result 事件的更多变体字段
+- queue operation timeline 细节
+- 高成本 session 与 `cost_analysis.by_session` 深度交叉
+- 失败样例可跳转 session/file 定位
 - 与 `stats-cache.longestSession` 做一致性校验
 
 建议输出：
@@ -681,15 +690,15 @@
 
 ## 当前推荐下一步
 
-优先做 Milestone 2：
+优先做 Milestone 3：
 
-1. `session_analysis`
-2. 接入 started/result/title/last-prompt
-3. 输出高失败、高成本、长耗时 session
+1. `file_analysis`
+2. 细分 Edit 失败原因
+3. 接入 file-history/edited_text_file
 
 原因：
 
 - 与核心问题最相关
-- Milestone 1 已有初版能力
-- 下一步需要把底层工具/成本/失败事件整理成 session 级复盘
-- 能回答“哪次任务出了问题、为什么、耗时和成本如何”
+- Milestone 1/2 已有初版能力
+- 下一步需要把失败和成本定位到具体文件与编辑模式
+- 能回答“哪些文件最容易反复编辑、失败或导致上下文膨胀”

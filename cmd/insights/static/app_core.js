@@ -185,6 +185,9 @@ function renderCharts(data) {
     // Token 与成本分析
     container.appendChild(createChartDiv('costAnalysisChart', '1200px', '620px'));
 
+    // Session 生命周期复盘
+    container.appendChild(createChartDiv('sessionAnalysisChart', '1200px', '620px'));
+
     // 初始化 go-echarts 图表
     initDailyTrendChart(data.daily_trend);
     initCommandsChart(data.commands);
@@ -200,6 +203,7 @@ function renderCharts(data) {
     initAgentChart(data.agent_analysis);
     initCommandFileChart(data.command_analysis);
     initCostAnalysisChart(data.cost_analysis);
+    initSessionAnalysisChart(data.session_analysis);
 
     container.style.display = 'block';
 }

@@ -79,6 +79,7 @@ func (cb *CacheBuilder) BuildFullCache() error {
 		ToolStats:       make(map[string]*ToolStatItem),
 		ToolAnalysis:    aggregate.ToolAnalysis,
 		FailureAnalysis: aggregate.FailureAnalysis,
+		SessionAnalysis: aggregate.SessionAnalysis,
 		EventAnalysis:   aggregate.EventAnalysis,
 		AgentAnalysis:   aggregate.AgentAnalysis,
 		CommandAnalysis: aggregate.CommandAnalysis,

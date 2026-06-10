@@ -16,6 +16,8 @@ func newProjectAggregate() *ProjectAggregate {
 		FailureReasons:      make(map[string]*FailureReasonStat),
 		FailureToolReasons:  make(map[string]*FailureToolReasonStat),
 		FailureModelReasons: make(map[string]*FailureModelReasonStat),
+		SessionStatsMap:     make(map[string]*SessionAnalysisItem),
+		SessionQueueOps:     make(map[string]int),
 		EventTypes:          make(map[string]int),
 		HookStats:           make(map[string]*HookStatItem),
 		SkillStats:          make(map[string]*SkillStatItem),
@@ -132,6 +134,13 @@ func mergeProjectAggregate(dst, src *ProjectAggregate) {
 			samples = samples[:remainingFailures]
 		}
 		dst.FailureSamples = append(dst.FailureSamples, samples...)
+	}
+	for sessionID, stat := range src.SessionStatsMap {
+		dstStat := ensureSessionStat(dst, sessionID, stat.Project)
+		mergeSessionStat(dstStat, stat)
+	}
+	for operation, count := range src.SessionQueueOps {
+		dst.SessionQueueOps[operation] += count
 	}
 	for eventType, count := range src.EventTypes {
 		dst.EventTypes[eventType] += count
@@ -273,6 +282,8 @@ func aggregateToProjectFileAggregate(src *ProjectAggregate) ProjectFileAggregate
 		FailureToolReasons:  make(map[string]FailureToolReasonStat, len(src.FailureToolReasons)),
 		FailureModelReasons: make(map[string]FailureModelReasonStat, len(src.FailureModelReasons)),
 		FailureSamples:      append([]ToolFailureSample(nil), src.FailureSamples...),
+		SessionStats:        make(map[string]SessionAnalysisItem, len(src.SessionStatsMap)),
+		SessionQueueOps:     copyIntMap(src.SessionQueueOps),
 		EventTypes:          copyIntMap(src.EventTypes),
 		HookStats:           make(map[string]HookStatItem, len(src.HookStats)),
 		SkillStats:          make(map[string]SkillStatItem, len(src.SkillStats)),
@@ -315,6 +326,9 @@ func aggregateToProjectFileAggregate(src *ProjectAggregate) ProjectFileAggregate
 	}
 	for key, stat := range src.FailureModelReasons {
 		out.FailureModelReasons[key] = *stat
+	}
+	for key, stat := range src.SessionStatsMap {
+		out.SessionStats[key] = *stat
 	}
 	for key, stat := range src.HookStats {
 		out.HookStats[key] = *stat
@@ -394,6 +408,11 @@ func projectFileAggregateToAggregate(src ProjectFileAggregate) *ProjectAggregate
 		out.FailureModelReasons[key] = &statCopy
 	}
 	out.FailureSamples = append([]ToolFailureSample(nil), src.FailureSamples...)
+	for key, stat := range src.SessionStats {
+		statCopy := stat
+		out.SessionStatsMap[key] = &statCopy
+	}
+	out.SessionQueueOps = copyIntMap(src.SessionQueueOps)
 	out.EventTypes = copyIntMap(src.EventTypes)
 	for key, stat := range src.HookStats {
 		statCopy := stat

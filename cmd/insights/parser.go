@@ -62,6 +62,7 @@ func parseToolResults(record ProjectRecord, timestamp time.Time, projectName str
 		if !ok {
 			addToolCallLocked(agg, call.Tool, call.Model)
 			addAgentToolCallLocked(agg, call)
+			addSessionToolCallLocked(agg, call)
 		}
 		addToolResultLocked(agg, call, classification, preview, timestamp)
 
@@ -83,6 +84,7 @@ func addToolResultLocked(agg *ProjectAggregate, call pendingToolCall, classifica
 		stat.FailureCount++
 		modelStat.FailureCount++
 		addAgentToolResultLocked(agg, call, true, false)
+		addSessionToolResultLocked(agg, call, true, false)
 		addCommandOrFileResultLocked(agg, call, true, false)
 		recordFailureAnalysisLocked(agg, call, classification)
 		if len(agg.FailureSamples) < 30 {
@@ -103,6 +105,7 @@ func addToolResultLocked(agg *ProjectAggregate, call pendingToolCall, classifica
 	stat.SuccessCount++
 	modelStat.SuccessCount++
 	addAgentToolResultLocked(agg, call, false, false)
+	addSessionToolResultLocked(agg, call, false, false)
 	addCommandOrFileResultLocked(agg, call, false, false)
 }
 
@@ -112,10 +115,13 @@ func addMissingToolResultLocked(agg *ProjectAggregate, call pendingToolCall) {
 	modelStat := ensureToolModelStat(agg, call.Tool, call.Model)
 	modelStat.MissingResultCount++
 	addAgentToolResultLocked(agg, call, false, true)
+	addSessionToolResultLocked(agg, call, false, true)
 	addCommandOrFileResultLocked(agg, call, false, true)
 }
 
 func recordRuntimeEventLocked(agg *ProjectAggregate, record ProjectRecord, timestamp time.Time, projectName string) {
+	recordSessionRecordLocked(agg, record, timestamp, projectName)
+
 	eventType := record.Type
 	if eventType == "" {
 		eventType = "unknown"
