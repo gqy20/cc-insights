@@ -77,7 +77,6 @@ func (cb *CacheBuilder) BuildFullCache() error {
 		ModelUsage:      make(map[string]*ModelUsageItem),
 		MCPToolStats:    make(map[string]int),
 		ToolStats:       make(map[string]*ToolStatItem),
-		ToolFailures:    make(map[string]int),
 		ToolAnalysis:    aggregate.ToolAnalysis,
 		FailureAnalysis: aggregate.FailureAnalysis,
 		EventAnalysis:   aggregate.EventAnalysis,
@@ -136,11 +135,6 @@ func (cb *CacheBuilder) BuildFullCache() error {
 			cache.MCPToolStats[server+"::"+name] = tool.CallCount
 		}
 	}
-	for _, kind := range aggregate.ToolAnalysis.FailureKinds {
-		cache.ToolFailures[kind.Kind] = kind.Count
-	}
-	cache.ToolSamples = append(cache.ToolSamples, aggregate.ToolAnalysis.FailureSamples...)
-
 	// 4. 保存缓存
 	if err := cache.Save(cb.CachePath); err != nil {
 		return fmt.Errorf("保存缓存失败: %w", err)

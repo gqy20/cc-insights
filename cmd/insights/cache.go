@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-const CacheVersion = "2.3"
+const CacheVersion = "2.4"
 
 // CacheFile 缓存文件结构
 type CacheFile struct {
@@ -28,8 +28,6 @@ type CacheFile struct {
 	WeekdayStats    [7]*WeekdayItem
 	MCPToolStats    map[string]int
 	ToolStats       map[string]*ToolStatItem
-	ToolFailures    map[string]int
-	ToolSamples     []ToolFailureSample
 	ToolAnalysis    *ToolAnalysisData
 	FailureAnalysis *FailureAnalysisData
 	EventAnalysis   *EventAnalysisData
@@ -62,11 +60,10 @@ type ProjectFileAggregate struct {
 	BudgetTimeline      []BudgetTimelineItem              `json:"budget_timeline,omitempty"`
 	ToolStats           map[string]ToolStatItem           `json:"tool_stats,omitempty"`
 	ToolModelStats      map[string]ToolModelStatItem      `json:"tool_model_stats,omitempty"`
-	ToolFailureKinds    map[string]int                    `json:"tool_failure_kinds,omitempty"`
-	ToolSamples         []ToolFailureSample               `json:"tool_samples,omitempty"`
 	FailureReasons      map[string]FailureReasonStat      `json:"failure_reasons,omitempty"`
 	FailureToolReasons  map[string]FailureToolReasonStat  `json:"failure_tool_reasons,omitempty"`
 	FailureModelReasons map[string]FailureModelReasonStat `json:"failure_model_reasons,omitempty"`
+	FailureSamples      []ToolFailureSample               `json:"failure_samples,omitempty"`
 	EventTypes          map[string]int                    `json:"event_types,omitempty"`
 	HookStats           map[string]HookStatItem           `json:"hook_stats,omitempty"`
 	SkillStats          map[string]SkillStatItem          `json:"skill_stats,omitempty"`
@@ -189,7 +186,6 @@ func (cf *CacheFile) QueryByTimeRange(start, end time.Time) *CacheFile {
 		ModelUsage:   make(map[string]*ModelUsageItem),
 		MCPToolStats: make(map[string]int),
 		ToolStats:    make(map[string]*ToolStatItem),
-		ToolFailures: make(map[string]int),
 	}
 
 	queryRange := TimeRange{Start: start, End: end}
@@ -265,16 +261,10 @@ func (cf *CacheFile) QueryByTimeRange(start, end time.Time) *CacheFile {
 			result.ToolStats[tool] = &statsCopy
 		}
 	}
-	for kind, count := range cf.ToolFailures {
-		result.ToolFailures[kind] = count
-	}
-	result.ToolSamples = append(result.ToolSamples, cf.ToolSamples...)
 	if cf.ToolAnalysis != nil {
 		analysisCopy := *cf.ToolAnalysis
 		analysisCopy.Tools = append([]ToolStatItem(nil), cf.ToolAnalysis.Tools...)
 		analysisCopy.ByModel = append([]ToolModelStatItem(nil), cf.ToolAnalysis.ByModel...)
-		analysisCopy.FailureKinds = append([]ToolFailureKind(nil), cf.ToolAnalysis.FailureKinds...)
-		analysisCopy.FailureSamples = append([]ToolFailureSample(nil), cf.ToolAnalysis.FailureSamples...)
 		result.ToolAnalysis = &analysisCopy
 	}
 	result.EventAnalysis = cloneEventAnalysis(cf.EventAnalysis)

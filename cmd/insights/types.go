@@ -95,8 +95,6 @@ type ToolAnalysisData struct {
 	MissingResults int                 `json:"missing_results"`
 	Tools          []ToolStatItem      `json:"tools"`
 	ByModel        []ToolModelStatItem `json:"by_model"`
-	FailureKinds   []ToolFailureKind   `json:"failure_kinds"`
-	FailureSamples []ToolFailureSample `json:"failure_samples"`
 }
 
 // EventAnalysisData Claude Code 运行事件分析结果
@@ -253,12 +251,6 @@ type ToolModelStatItem struct {
 	FailureRate        float64 `json:"failure_rate"`
 }
 
-// ToolFailureKind 工具失败类型聚合
-type ToolFailureKind struct {
-	Kind  string `json:"kind"`
-	Count int    `json:"count"`
-}
-
 // ToolFailureSample 工具失败样例（只保存短摘要，不保存完整对话）
 type ToolFailureSample struct {
 	Tool           string `json:"tool"`
@@ -411,11 +403,11 @@ type ProjectAggregate struct {
 	CostAnalysis        *CostAnalysisData                  `json:"costs"`      // 成本/token 分析（输出格式）
 	ToolStats           map[string]*ToolStatItem           `json:"-"`          // 工具调用统计
 	ToolModelStats      map[string]*ToolModelStatItem      `json:"-"`          // 模型+工具调用统计
-	ToolFailureKinds    map[string]int                     `json:"-"`          // 工具失败类型
 	ToolAnalysis        *ToolAnalysisData                  `json:"tools"`      // 工具分析（输出格式）
 	FailureReasons      map[string]*FailureReasonStat      `json:"-"`          // 失败原因统计
 	FailureToolReasons  map[string]*FailureToolReasonStat  `json:"-"`          // 工具+失败原因统计
 	FailureModelReasons map[string]*FailureModelReasonStat `json:"-"`          // 模型+失败原因统计
+	FailureSamples      []ToolFailureSample                `json:"-"`          // 失败样例
 	FailureAnalysis     *FailureAnalysisData               `json:"failures"`   // 失败原因细分（输出格式）
 	EventTypes          map[string]int                     `json:"-"`          // 运行事件类型
 	HookStats           map[string]*HookStatItem           `json:"-"`          // hook 统计

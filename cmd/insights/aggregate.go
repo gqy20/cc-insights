@@ -13,7 +13,6 @@ func newProjectAggregate() *ProjectAggregate {
 		ModelUsage:          make(map[string]*ModelUsageItem),
 		ToolStats:           make(map[string]*ToolStatItem),
 		ToolModelStats:      make(map[string]*ToolModelStatItem),
-		ToolFailureKinds:    make(map[string]int),
 		FailureReasons:      make(map[string]*FailureReasonStat),
 		FailureToolReasons:  make(map[string]*FailureToolReasonStat),
 		FailureModelReasons: make(map[string]*FailureModelReasonStat),
@@ -111,9 +110,6 @@ func mergeProjectAggregate(dst, src *ProjectAggregate) {
 		dstStat.FailureCount += stat.FailureCount
 		dstStat.MissingResultCount += stat.MissingResultCount
 	}
-	for kind, count := range src.ToolFailureKinds {
-		dst.ToolFailureKinds[kind] += count
-	}
 	for key, stat := range src.FailureReasons {
 		dstStat := ensureFailureReasonStat(dst, stat.Category, stat.Reason)
 		dstStat.Count += stat.Count
@@ -129,18 +125,13 @@ func mergeProjectAggregate(dst, src *ProjectAggregate) {
 		dstStat := ensureFailureModelReasonStat(dst, stat.Model, stat.Category, stat.Reason)
 		dstStat.Count += stat.Count
 	}
-	if src.ToolAnalysis != nil {
-		if dst.ToolAnalysis == nil {
-			dst.ToolAnalysis = &ToolAnalysisData{}
+	remainingFailures := 30 - len(dst.FailureSamples)
+	if remainingFailures > 0 {
+		samples := src.FailureSamples
+		if len(samples) > remainingFailures {
+			samples = samples[:remainingFailures]
 		}
-		remaining := 30 - len(dst.ToolAnalysis.FailureSamples)
-		if remaining > 0 {
-			samples := src.ToolAnalysis.FailureSamples
-			if len(samples) > remaining {
-				samples = samples[:remaining]
-			}
-			dst.ToolAnalysis.FailureSamples = append(dst.ToolAnalysis.FailureSamples, samples...)
-		}
+		dst.FailureSamples = append(dst.FailureSamples, samples...)
 	}
 	for eventType, count := range src.EventTypes {
 		dst.EventTypes[eventType] += count
@@ -278,10 +269,10 @@ func aggregateToProjectFileAggregate(src *ProjectAggregate) ProjectFileAggregate
 		BudgetTimeline:      append([]BudgetTimelineItem(nil), src.BudgetTimeline...),
 		ToolStats:           make(map[string]ToolStatItem, len(src.ToolStats)),
 		ToolModelStats:      make(map[string]ToolModelStatItem, len(src.ToolModelStats)),
-		ToolFailureKinds:    copyIntMap(src.ToolFailureKinds),
 		FailureReasons:      make(map[string]FailureReasonStat, len(src.FailureReasons)),
 		FailureToolReasons:  make(map[string]FailureToolReasonStat, len(src.FailureToolReasons)),
 		FailureModelReasons: make(map[string]FailureModelReasonStat, len(src.FailureModelReasons)),
+		FailureSamples:      append([]ToolFailureSample(nil), src.FailureSamples...),
 		EventTypes:          copyIntMap(src.EventTypes),
 		HookStats:           make(map[string]HookStatItem, len(src.HookStats)),
 		SkillStats:          make(map[string]SkillStatItem, len(src.SkillStats)),
@@ -324,9 +315,6 @@ func aggregateToProjectFileAggregate(src *ProjectAggregate) ProjectFileAggregate
 	}
 	for key, stat := range src.FailureModelReasons {
 		out.FailureModelReasons[key] = *stat
-	}
-	if src.ToolAnalysis != nil {
-		out.ToolSamples = append([]ToolFailureSample(nil), src.ToolAnalysis.FailureSamples...)
 	}
 	for key, stat := range src.HookStats {
 		out.HookStats[key] = *stat
@@ -393,7 +381,6 @@ func projectFileAggregateToAggregate(src ProjectFileAggregate) *ProjectAggregate
 		statCopy := stat
 		out.ToolModelStats[key] = &statCopy
 	}
-	out.ToolFailureKinds = copyIntMap(src.ToolFailureKinds)
 	for key, stat := range src.FailureReasons {
 		statCopy := stat
 		out.FailureReasons[key] = &statCopy
@@ -406,9 +393,7 @@ func projectFileAggregateToAggregate(src ProjectFileAggregate) *ProjectAggregate
 		statCopy := stat
 		out.FailureModelReasons[key] = &statCopy
 	}
-	if len(src.ToolSamples) > 0 {
-		out.ToolAnalysis = &ToolAnalysisData{FailureSamples: append([]ToolFailureSample(nil), src.ToolSamples...)}
-	}
+	out.FailureSamples = append([]ToolFailureSample(nil), src.FailureSamples...)
 	out.EventTypes = copyIntMap(src.EventTypes)
 	for key, stat := range src.HookStats {
 		statCopy := stat

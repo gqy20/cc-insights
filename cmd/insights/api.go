@@ -421,42 +421,13 @@ func buildDataFromParsing(tf TimeFilter, preset string) (*DashboardData, error) 
 }
 
 func buildToolAnalysisFromCache(cache *CacheFile) *ToolAnalysisData {
-	if cache.ToolAnalysis != nil {
-		analysisCopy := *cache.ToolAnalysis
-		analysisCopy.Tools = append([]ToolStatItem(nil), cache.ToolAnalysis.Tools...)
-		analysisCopy.ByModel = append([]ToolModelStatItem(nil), cache.ToolAnalysis.ByModel...)
-		analysisCopy.FailureKinds = append([]ToolFailureKind(nil), cache.ToolAnalysis.FailureKinds...)
-		analysisCopy.FailureSamples = append([]ToolFailureSample(nil), cache.ToolAnalysis.FailureSamples...)
-		return &analysisCopy
+	if cache.ToolAnalysis == nil {
+		return nil
 	}
-
-	analysis := &ToolAnalysisData{
-		Tools:          make([]ToolStatItem, 0, len(cache.ToolStats)),
-		FailureKinds:   make([]ToolFailureKind, 0, len(cache.ToolFailures)),
-		FailureSamples: append([]ToolFailureSample(nil), cache.ToolSamples...),
-	}
-
-	for _, stat := range cache.ToolStats {
-		if stat == nil {
-			continue
-		}
-		statCopy := *stat
-		if statCopy.CallCount > 0 {
-			statCopy.FailureRate = float64(statCopy.FailureCount) / float64(statCopy.CallCount) * 100
-		}
-		analysis.TotalCalls += statCopy.CallCount
-		analysis.TotalFailures += statCopy.FailureCount
-		analysis.MissingResults += statCopy.MissingResultCount
-		analysis.Tools = append(analysis.Tools, statCopy)
-	}
-	sortToolStats(analysis.Tools)
-
-	for kind, count := range cache.ToolFailures {
-		analysis.FailureKinds = append(analysis.FailureKinds, ToolFailureKind{Kind: kind, Count: count})
-	}
-	sortFailureKinds(analysis.FailureKinds)
-
-	return analysis
+	analysisCopy := *cache.ToolAnalysis
+	analysisCopy.Tools = append([]ToolStatItem(nil), cache.ToolAnalysis.Tools...)
+	analysisCopy.ByModel = append([]ToolModelStatItem(nil), cache.ToolAnalysis.ByModel...)
+	return &analysisCopy
 }
 
 // sortDatesAndCounts 按日期排序日期和计数数组
@@ -509,18 +480,6 @@ func sortToolStats(tools []ToolStatItem) {
 	}
 }
 
-func sortFailureKinds(kinds []ToolFailureKind) {
-	n := len(kinds)
-	for i := 0; i < n-1; i++ {
-		for j := 0; j < n-i-1; j++ {
-			if kinds[j].Count < kinds[j+1].Count ||
-				(kinds[j].Count == kinds[j+1].Count && kinds[j].Kind > kinds[j+1].Kind) {
-				kinds[j], kinds[j+1] = kinds[j+1], kinds[j]
-			}
-		}
-	}
-}
-
 // sendJSON 发送 JSON 响应
 func sendJSON(w http.ResponseWriter, v interface{}) error {
 	return json.NewEncoder(w).Encode(v)
@@ -540,23 +499,25 @@ func sendError(w http.ResponseWriter, message string) {
 // emptyProjectAggregate 返回安全的空 ProjectAggregate
 func emptyProjectAggregate() *ProjectAggregate {
 	agg := &ProjectAggregate{
-		ProjectStats:       make(map[string]*ProjectStatItem),
-		DailyActivity:      make(map[string]int),
-		DailySessions:      make(map[string]map[string]bool),
-		ModelUsage:         make(map[string]*ModelUsageItem),
-		ToolStats:          make(map[string]*ToolStatItem),
-		ToolModelStats:     make(map[string]*ToolModelStatItem),
-		ToolFailureKinds:   make(map[string]int),
-		EventTypes:         make(map[string]int),
-		HookStats:          make(map[string]*HookStatItem),
-		SkillStats:         make(map[string]*SkillStatItem),
-		PermissionModes:    make(map[string]int),
-		OpenedFiles:        make(map[string]*FileAccessStat),
-		AgentStats:         make(map[string]*AgentStatItem),
-		AgentSessions:      make(map[string]map[string]bool),
-		BashCommandStats:   make(map[string]*BashCommandStat),
-		FileOperationStats: make(map[string]*FileOperationStat),
-		HourlyCounts:       [24]int{},
+		ProjectStats:        make(map[string]*ProjectStatItem),
+		DailyActivity:       make(map[string]int),
+		DailySessions:       make(map[string]map[string]bool),
+		ModelUsage:          make(map[string]*ModelUsageItem),
+		ToolStats:           make(map[string]*ToolStatItem),
+		ToolModelStats:      make(map[string]*ToolModelStatItem),
+		FailureReasons:      make(map[string]*FailureReasonStat),
+		FailureToolReasons:  make(map[string]*FailureToolReasonStat),
+		FailureModelReasons: make(map[string]*FailureModelReasonStat),
+		EventTypes:          make(map[string]int),
+		HookStats:           make(map[string]*HookStatItem),
+		SkillStats:          make(map[string]*SkillStatItem),
+		PermissionModes:     make(map[string]int),
+		OpenedFiles:         make(map[string]*FileAccessStat),
+		AgentStats:          make(map[string]*AgentStatItem),
+		AgentSessions:       make(map[string]map[string]bool),
+		BashCommandStats:    make(map[string]*BashCommandStat),
+		FileOperationStats:  make(map[string]*FileOperationStat),
+		HourlyCounts:        [24]int{},
 	}
 	weekdayNames := []string{"周一", "周二", "周三", "周四", "周五", "周六", "周日"}
 	for i := 0; i < 7; i++ {

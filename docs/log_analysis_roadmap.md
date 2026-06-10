@@ -60,8 +60,6 @@
 
 - 工具调用总数、成功数、失败数、missing result
 - 工具失败率
-- 失败类型聚合
-- 失败样例
 - 模型与工具的成功/失败/missing result 关联
 - MCP 工具统计从 `mcp__server__tool` 派生
 
@@ -69,8 +67,10 @@
 
 - `tool_analysis.tools`
 - `tool_analysis.by_model`
-- `tool_analysis.failure_kinds`
-- `tool_analysis.failure_samples`
+- `failure_analysis.by_reason`
+- `failure_analysis.by_tool_reason`
+- `failure_analysis.by_model_reason`
+- `failure_analysis.samples`
 
 ### 运行事件分析
 
@@ -206,7 +206,7 @@
 现状：
 
 - 已实现 `failure_analysis` 初版
-- 兼容保留 `tool_analysis.failure_kinds`
+- 已清理旧的 `tool_analysis.failure_kinds` / `tool_analysis.failure_samples` 兼容字段
 - 已新增细分字段：
   - `category`
   - `reason`

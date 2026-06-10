@@ -84,10 +84,9 @@ func addToolResultLocked(agg *ProjectAggregate, call pendingToolCall, classifica
 		modelStat.FailureCount++
 		addAgentToolResultLocked(agg, call, true, false)
 		addCommandOrFileResultLocked(agg, call, true, false)
-		agg.ToolFailureKinds[classification.Kind]++
 		recordFailureAnalysisLocked(agg, call, classification)
-		if len(agg.ToolAnalysisFailureSamples()) < 30 {
-			agg.ToolAnalysisAddFailureSample(ToolFailureSample{
+		if len(agg.FailureSamples) < 30 {
+			agg.FailureSamples = append(agg.FailureSamples, ToolFailureSample{
 				Tool:           call.Tool,
 				Model:          call.Model,
 				Kind:           classification.Kind,
@@ -635,18 +634,4 @@ func toolResultText(raw json.RawMessage) string {
 		return s
 	}
 	return string(raw)
-}
-
-func (agg *ProjectAggregate) ToolAnalysisFailureSamples() []ToolFailureSample {
-	if agg.ToolAnalysis == nil {
-		return nil
-	}
-	return agg.ToolAnalysis.FailureSamples
-}
-
-func (agg *ProjectAggregate) ToolAnalysisAddFailureSample(sample ToolFailureSample) {
-	if agg.ToolAnalysis == nil {
-		agg.ToolAnalysis = &ToolAnalysisData{}
-	}
-	agg.ToolAnalysis.FailureSamples = append(agg.ToolAnalysis.FailureSamples, sample)
 }

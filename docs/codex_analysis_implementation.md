@@ -480,7 +480,7 @@ reason,type
 
 - `task_started`: turn/session 活跃事件
 - `task_complete`: 成功完成 turn，可用于完成率/时延分析
-- `turn_aborted`: 失败/中断事件，`reason` 计入 `ToolFailureKinds` 或新增 turn outcome 分析
+- `turn_aborted`: 失败/中断事件，`reason` 计入 `failure_analysis` 或新增 turn outcome 分析
 
 ## 推荐数据源优先级
 

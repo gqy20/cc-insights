@@ -100,13 +100,8 @@ func (agg *ProjectAggregate) finalize() {
 
 func (agg *ProjectAggregate) finalizeToolAnalysis() {
 	analysis := &ToolAnalysisData{
-		Tools:          make([]ToolStatItem, 0, len(agg.ToolStats)),
-		ByModel:        make([]ToolModelStatItem, 0, len(agg.ToolModelStats)),
-		FailureKinds:   make([]ToolFailureKind, 0, len(agg.ToolFailureKinds)),
-		FailureSamples: nil,
-	}
-	if agg.ToolAnalysis != nil {
-		analysis.FailureSamples = agg.ToolAnalysis.FailureSamples
+		Tools:   make([]ToolStatItem, 0, len(agg.ToolStats)),
+		ByModel: make([]ToolModelStatItem, 0, len(agg.ToolModelStats)),
 	}
 
 	for _, stat := range agg.ToolStats {
@@ -146,16 +141,6 @@ func (agg *ProjectAggregate) finalizeToolAnalysis() {
 		return analysis.ByModel[i].FailureCount > analysis.ByModel[j].FailureCount
 	})
 
-	for kind, count := range agg.ToolFailureKinds {
-		analysis.FailureKinds = append(analysis.FailureKinds, ToolFailureKind{Kind: kind, Count: count})
-	}
-	sort.Slice(analysis.FailureKinds, func(i, j int) bool {
-		if analysis.FailureKinds[i].Count == analysis.FailureKinds[j].Count {
-			return analysis.FailureKinds[i].Kind < analysis.FailureKinds[j].Kind
-		}
-		return analysis.FailureKinds[i].Count > analysis.FailureKinds[j].Count
-	})
-
 	agg.ToolAnalysis = analysis
 }
 
@@ -165,9 +150,7 @@ func (agg *ProjectAggregate) finalizeFailureAnalysis() {
 		ByToolReason:  make([]FailureToolReasonStat, 0, len(agg.FailureToolReasons)),
 		ByModelReason: make([]FailureModelReasonStat, 0, len(agg.FailureModelReasons)),
 	}
-	if agg.ToolAnalysis != nil {
-		analysis.Samples = append([]ToolFailureSample(nil), agg.ToolAnalysis.FailureSamples...)
-	}
+	analysis.Samples = append([]ToolFailureSample(nil), agg.FailureSamples...)
 
 	for _, stat := range agg.FailureReasons {
 		statCopy := *stat

@@ -73,14 +73,17 @@ func TestParseProjectsConcurrentOnce_ToolAnalysis(t *testing.T) {
 		t.Errorf("Edit MissingResultCount=%d, want 1", stats["Edit"].MissingResultCount)
 	}
 
-	if len(agg.ToolAnalysis.FailureKinds) == 0 || agg.ToolAnalysis.FailureKinds[0].Kind != "not_found" {
-		t.Fatalf("FailureKinds=%+v, want first kind not_found", agg.ToolAnalysis.FailureKinds)
+	if agg.FailureAnalysis == nil {
+		t.Fatal("FailureAnalysis should not be nil")
 	}
-	if len(agg.ToolAnalysis.FailureSamples) != 1 {
-		t.Fatalf("FailureSamples length=%d, want 1", len(agg.ToolAnalysis.FailureSamples))
+	if len(agg.FailureAnalysis.ByReason) == 0 || agg.FailureAnalysis.ByReason[0].Reason != "not_found" {
+		t.Fatalf("FailureAnalysis.ByReason=%+v, want first reason not_found", agg.FailureAnalysis.ByReason)
 	}
-	if agg.ToolAnalysis.FailureSamples[0].Model != "glm-5v-turbo" {
-		t.Fatalf("Failure sample model=%q, want glm-5v-turbo", agg.ToolAnalysis.FailureSamples[0].Model)
+	if len(agg.FailureAnalysis.Samples) != 1 {
+		t.Fatalf("FailureAnalysis samples length=%d, want 1", len(agg.FailureAnalysis.Samples))
+	}
+	if agg.FailureAnalysis.Samples[0].Model != "glm-5v-turbo" {
+		t.Fatalf("Failure sample model=%q, want glm-5v-turbo", agg.FailureAnalysis.Samples[0].Model)
 	}
 
 	byModel := make(map[string]ToolModelStatItem)
