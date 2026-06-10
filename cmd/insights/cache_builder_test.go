@@ -212,12 +212,15 @@ func TestCacheBuilderNeedsRebuild(t *testing.T) {
 			if err := os.MkdirAll(dataDir, 0755); err != nil {
 				t.Fatalf("Setup: Create data dir failed: %v", err)
 			}
-			historyPath := filepath.Join(dataDir, "history.jsonl")
-			if err := os.WriteFile(historyPath, []byte("test"), 0644); err != nil {
-				t.Fatalf("Setup: Write history failed: %v", err)
+			projectPath := filepath.Join(dataDir, "projects", "test-project", "session.jsonl")
+			if err := os.MkdirAll(filepath.Dir(projectPath), 0755); err != nil {
+				t.Fatalf("Setup: Create projects dir failed: %v", err)
+			}
+			if err := os.WriteFile(projectPath, []byte("test"), 0644); err != nil {
+				t.Fatalf("Setup: Write projects jsonl failed: %v", err)
 			}
 			// 设置文件修改时间
-			if err := os.Chtimes(historyPath, tt.dataLastModified, tt.dataLastModified); err != nil {
+			if err := os.Chtimes(projectPath, tt.dataLastModified, tt.dataLastModified); err != nil {
 				t.Fatalf("Setup: Set file time failed: %v", err)
 			}
 

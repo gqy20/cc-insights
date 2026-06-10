@@ -339,40 +339,12 @@ func (cb *CacheBuilder) NeedsRebuild() bool {
 // GetLastDataModified 获取数据目录中所有文件的最后修改时间
 func (cb *CacheBuilder) GetLastDataModified() (time.Time, error) {
 	var lastMod time.Time
-	var visitedDirs []string
 
-	// 需要检查的文件列表
-	files := []string{
-		"history.jsonl",
-		"stats-cache.json",
-	}
-
-	// 遍历文件
-	for _, file := range files {
-		path := filepath.Join(cb.DataDir, file)
-		info, err := os.Stat(path)
-		if err != nil {
-			if os.IsNotExist(err) {
-				continue // 文件不存在，跳过
-			}
+	projectsDir := filepath.Join(cb.DataDir, "projects")
+	if err := cb.scanDirectory(projectsDir, &lastMod); err != nil {
+		// 目录不存在不是错误
+		if !os.IsNotExist(err) {
 			return time.Time{}, err
-		}
-
-		if info.ModTime().After(lastMod) {
-			lastMod = info.ModTime()
-		}
-	}
-
-	// 递归检查所有子目录
-	dirs := []string{"debug", "projects"}
-	for _, dirName := range dirs {
-		dirPath := filepath.Join(cb.DataDir, dirName)
-		visitedDirs = append(visitedDirs, dirPath)
-		if err := cb.scanDirectory(dirPath, &lastMod, &visitedDirs); err != nil {
-			// 目录不存在不是错误
-			if !os.IsNotExist(err) {
-				return time.Time{}, err
-			}
 		}
 	}
 
@@ -380,7 +352,7 @@ func (cb *CacheBuilder) GetLastDataModified() (time.Time, error) {
 }
 
 // scanDirectory 递归扫描目录获取最后修改时间
-func (cb *CacheBuilder) scanDirectory(dirPath string, lastMod *time.Time, visitedDirs *[]string) error {
+func (cb *CacheBuilder) scanDirectory(dirPath string, lastMod *time.Time) error {
 	entries, err := os.ReadDir(dirPath)
 	if err != nil {
 		return err
@@ -391,8 +363,7 @@ func (cb *CacheBuilder) scanDirectory(dirPath string, lastMod *time.Time, visite
 
 		if entry.IsDir() {
 			// 递归扫描子目录
-			*visitedDirs = append(*visitedDirs, fullPath)
-			if err := cb.scanDirectory(fullPath, lastMod, visitedDirs); err != nil {
+			if err := cb.scanDirectory(fullPath, lastMod); err != nil {
 				return err
 			}
 		} else {

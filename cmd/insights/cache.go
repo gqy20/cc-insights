@@ -122,8 +122,8 @@ func (cf *CacheFile) Save(path string) error {
 		return fmt.Errorf("创建缓存目录失败: %w", err)
 	}
 
-	// 序列化为JSON
-	data, err := json.MarshalIndent(cf, "", "  ")
+	// 序列化为紧凑 JSON。缓存偏向机器读写，避免 pretty print 放大 2.1 文件级聚合缓存体积。
+	data, err := json.Marshal(cf)
 	if err != nil {
 		return fmt.Errorf("序列化缓存失败: %w", err)
 	}
