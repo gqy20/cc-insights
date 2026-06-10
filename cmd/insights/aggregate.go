@@ -321,6 +321,98 @@ func mergeProjectAggregate(dst, src *ProjectAggregate) {
 		de.EditCount += ed.EditCount
 		de.TotalLines += ed.TotalLines
 		de.TotalChars += ed.TotalChars
+	}
+
+	// task_plan_analysis (M4): merge PlanModeAgg
+	if src.PlanModeAgg != nil {
+		if dst.PlanModeAgg == nil {
+			dst.PlanModeAgg = &PlanModeAgg{
+				ExitReasons:   make(map[string]int),
+				PlanFilePaths: make(map[string]*PlanFileAgg),
+				SessionSet:    make(map[string]bool),
+			}
+		}
+		dst.PlanModeAgg.EntryCount += src.PlanModeAgg.EntryCount
+		dst.PlanModeAgg.ExitCount += src.PlanModeAgg.ExitCount
+		dst.PlanModeAgg.ReentryCount += src.PlanModeAgg.ReentryCount
+		for reason, count := range src.PlanModeAgg.ExitReasons {
+			dst.PlanModeAgg.ExitReasons[reason] += count
+		}
+		for fp, pf := range src.PlanModeAgg.PlanFilePaths {
+			if existing := dst.PlanModeAgg.PlanFilePaths[fp]; existing != nil {
+				existing.RefCount += pf.RefCount
+				if existing.PlanContent == "" && pf.PlanContent != "" {
+					existing.PlanContent = pf.PlanContent
+					existing.Preview = pf.Preview
+					existing.CharCount = pf.CharCount
+					existing.LineCount = pf.LineCount
+					existing.HasCode = pf.HasCode
+				}
+				for sid := range pf.RefSessions {
+					existing.RefSessions[sid] = true
+				}
+			} else {
+				pfCopy := *pf
+				if pfCopy.RefSessions != nil {
+					refSessions := make(map[string]bool)
+					for sid := range pf.RefSessions {
+						refSessions[sid] = true
+					}
+					pfCopy.RefSessions = refSessions
+				} else {
+					pfCopy.RefSessions = make(map[string]bool)
+				}
+				dst.PlanModeAgg.PlanFilePaths[fp] = &pfCopy
+			}
+		}
+		for sid := range src.PlanModeAgg.SessionSet {
+			dst.PlanModeAgg.SessionSet[sid] = true
+		}
+	}
+
+	// task_plan_analysis (M4): merge GoalStatusAgg
+	if src.GoalStatusAgg != nil {
+		if dst.GoalStatusAgg == nil {
+			dst.GoalStatusAgg = &GoalStatusAgg{}
+		}
+		remaining := 50 - len(dst.GoalStatusAgg.Items)
+		if remaining > 0 && len(src.GoalStatusAgg.Items) > 0 {
+			items := src.GoalStatusAgg.Items
+			if len(items) > remaining {
+				items = items[:remaining]
+			}
+			dst.GoalStatusAgg.Items = append(dst.GoalStatusAgg.Items, items...)
+		}
+	}
+
+	// task_plan_analysis (M4): merge ReminderAgg
+	if src.ReminderAgg != nil {
+		if dst.ReminderAgg == nil {
+			dst.ReminderAgg = &ReminderAgg{
+				TaskSessionCounts:   make(map[string]int),
+				TodoSessionCounts:   make(map[string]int),
+				TaskSessionProjects: make(map[string]string),
+				TodoSessionProjects: make(map[string]string),
+			}
+		}
+		dst.ReminderAgg.TaskReminderCount += src.ReminderAgg.TaskReminderCount
+		dst.ReminderAgg.TodoReminderCount += src.ReminderAgg.TodoReminderCount
+		for sid, cnt := range src.ReminderAgg.TaskSessionCounts {
+			dst.ReminderAgg.TaskSessionCounts[sid] += cnt
+		}
+		for sid, cnt := range src.ReminderAgg.TodoSessionCounts {
+			dst.ReminderAgg.TodoSessionCounts[sid] += cnt
+		}
+		for sid, proj := range src.ReminderAgg.TaskSessionProjects {
+			if _, exists := dst.ReminderAgg.TaskSessionProjects[sid]; !exists {
+				dst.ReminderAgg.TaskSessionProjects[sid] = proj
+			}
+		}
+		for sid, proj := range src.ReminderAgg.TodoSessionProjects {
+			if _, exists := dst.ReminderAgg.TodoSessionProjects[sid]; !exists {
+				dst.ReminderAgg.TodoSessionProjects[sid] = proj
+			}
+		}
 	}}
 
 func aggregateToProjectFileAggregate(src *ProjectAggregate) ProjectFileAggregate {
@@ -357,6 +449,9 @@ func aggregateToProjectFileAggregate(src *ProjectAggregate) ProjectFileAggregate
 		FileEditFailures:   make(map[string]FileEditFailureAgg, len(src.FileEditFailures)),
 		FileSnapshotStats:  make(map[string]FileSnapshotAgg, len(src.FileSnapshotStats)),
 		FileEditedStats:    make(map[string]FileEditedAgg, len(src.FileEditedStats)),
+		PlanModeAgg:        serializePlanModeAgg(src.PlanModeAgg),
+		GoalStatusAgg:      serializeGoalStatusAgg(src.GoalStatusAgg),
+		ReminderAgg:        serializeReminderAgg(src.ReminderAgg),
 	}
 	for key, stat := range src.ProjectStats {
 		out.ProjectStats[key] = *stat
@@ -547,6 +642,10 @@ func projectFileAggregateToAggregate(src ProjectFileAggregate) *ProjectAggregate
 		edCopy := ed
 		out.FileEditedStats[key] = &edCopy
 	}
+	// task_plan_analysis (M4): restore agg structs
+	out.PlanModeAgg = deserializePlanModeAgg(src.PlanModeAgg)
+	out.GoalStatusAgg = deserializeGoalStatusAgg(src.GoalStatusAgg)
+	out.ReminderAgg = deserializeReminderAgg(src.ReminderAgg)
 	return out
 }
 
@@ -589,4 +688,116 @@ func slicesMapToBoolSets(src map[string][]string) map[string]map[string]bool {
 		}
 	}
 	return out
+}
+
+// === task_plan_analysis (M4): 序列化/反序列化辅助函数 ===
+
+// serializePlanModeAgg 将 PlanModeAgg 转为可序列化格式（丢弃 RefSessions map）
+func serializePlanModeAgg(agg *PlanModeAgg) *SerializedPlanModeAgg {
+	if agg == nil {
+		return nil
+	}
+	out := &SerializedPlanModeAgg{
+		EntryCount:    agg.EntryCount,
+		ExitCount:     agg.ExitCount,
+		ReentryCount:  agg.ReentryCount,
+		ExitReasons:   make(map[string]int),
+		PlanFilePaths: make(map[string]*SerializedPlanFileAgg),
+	}
+	for r, c := range agg.ExitReasons {
+		out.ExitReasons[r] = c
+	}
+	for fp, pf := range agg.PlanFilePaths {
+		out.PlanFilePaths[fp] = &SerializedPlanFileAgg{
+			FilePath:  pf.FilePath,
+			FileName:  pf.FileName,
+			Preview:   pf.Preview,
+			CharCount: pf.CharCount,
+			LineCount: pf.LineCount,
+			HasCode:   pf.HasCode,
+			RefCount:  pf.RefCount,
+		}
+	}
+	return out
+}
+
+// deserializePlanModeAgg 从可序列化格式恢复 PlanModeAgg（重建空 RefSessions）
+func deserializePlanModeAgg(s *SerializedPlanModeAgg) *PlanModeAgg {
+	if s == nil {
+		return nil
+	}
+	out := &PlanModeAgg{
+		EntryCount:    s.EntryCount,
+		ExitCount:     s.ExitCount,
+		ReentryCount:  s.ReentryCount,
+		ExitReasons:   make(map[string]int),
+		PlanFilePaths: make(map[string]*PlanFileAgg),
+		SessionSet:    make(map[string]bool),
+	}
+	for r, c := range s.ExitReasons {
+		out.ExitReasons[r] = c
+	}
+	for fp, spf := range s.PlanFilePaths {
+		out.PlanFilePaths[fp] = &PlanFileAgg{
+			FilePath:    spf.FilePath,
+			FileName:    spf.FileName,
+			Preview:     spf.Preview,
+			CharCount:   spf.CharCount,
+			LineCount:   spf.LineCount,
+			HasCode:     spf.HasCode,
+			RefCount:    spf.RefCount,
+			RefSessions: make(map[string]bool),
+		}
+	}
+	return out
+}
+
+// serializeGoalStatusAgg 深拷贝 GoalStatusAgg
+func serializeGoalStatusAgg(agg *GoalStatusAgg) *GoalStatusAgg {
+	if agg == nil {
+		return nil
+	}
+	copyVal := *agg
+	copyVal.Items = append([]GoalStatusItem(nil), agg.Items...)
+	return &copyVal
+}
+
+// deserializeGoalStatusAgg 深拷贝 GoalStatusAgg
+func deserializeGoalStatusAgg(agg *GoalStatusAgg) *GoalStatusAgg {
+	return serializeGoalStatusAgg(agg)
+}
+
+// serializeReminderAgg 深拷贝 ReminderAgg（所有 map 都深拷贝）
+func serializeReminderAgg(agg *ReminderAgg) *ReminderAgg {
+	if agg == nil {
+		return nil
+	}
+	copyVal := *agg
+	if agg.TaskSessionCounts != nil {
+		copyVal.TaskSessionCounts = make(map[string]int, len(agg.TaskSessionCounts))
+		for k, v := range agg.TaskSessionCounts {
+			copyVal.TaskSessionCounts[k] = v
+		}
+	}
+	if agg.TodoSessionCounts != nil {
+		copyVal.TodoSessionCounts = make(map[string]int, len(agg.TodoSessionCounts))
+		for k, v := range agg.TodoSessionCounts {
+			copyVal.TodoSessionCounts[k] = v
+		}
+	}
+	if agg.TaskSessionProjects != nil {
+		copyVal.TaskSessionProjects = make(map[string]string, len(agg.TaskSessionProjects))
+		for k, v := range agg.TaskSessionProjects {
+			copyVal.TaskSessionProjects[k] = v
+		}
+	}
+	if agg.TodoSessionProjects != nil && &copyVal.TodoSessionProjects != &agg.TodoSessionProjects {
+		// already copied above if non-nil
+	}
+	return &copyVal
+}
+
+// deserializeReminderAgg 深拷贝 ReminderAgg
+func deserializeReminderAgg(agg *ReminderAgg) *ReminderAgg {
+	return serializeReminderAgg(agg)
 }

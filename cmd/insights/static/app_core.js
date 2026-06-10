@@ -191,6 +191,9 @@ function renderCharts(data) {
     // 文件与编辑质量分析
     container.appendChild(createChartDiv('fileAnalysisChart', '1200px', '700px'));
 
+    // Task / Plan 结构分析（M4）
+    container.appendChild(createChartDiv('taskPlanChart', '1200px', '750px'));
+
     // 初始化 go-echarts 图表
     initDailyTrendChart(data.daily_trend);
     initCommandsChart(data.commands);
@@ -208,6 +211,7 @@ function renderCharts(data) {
     initCostAnalysisChart(data.cost_analysis);
     initSessionAnalysisChart(data.session_analysis);
     initFileAnalysisChart(data.file_analysis);
+    initTaskPlanChart(data.task_plan_analysis);
 
     container.style.display = 'block';
 }

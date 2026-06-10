@@ -811,3 +811,124 @@ function initFileAnalysisChart(fileAnalysis) {
         (topFail ? '最易失败的文件是 <strong>' + escapeHtml(topFail.path) + '</strong> (' + topFail.total_failures + ' 次失败，主要因 <strong>' + primaryReason + '</strong>)。' : '') +
         (topSnap ? '快照热点文件 <strong>' + escapeHtml(topSnap.path) + '</strong> 出现在 <strong>' + topSnap.session_count + '</strong> 个会话中，最高版本 v' + topSnap.max_version + '。' : '');
 }
+
+// --- task_plan_analysis (M4): Task / Plan 结构分析 ---
+
+function initTaskPlanChart(tpa) {
+    const insight = document.getElementById('taskPlanChart-insight');
+    if (!tpa) {
+        insight.innerHTML = '<strong>数据洞察:</strong> 暂无 Task / Plan 分析数据';
+        return;
+    }
+
+    const chart = echarts.init(document.getElementById('taskPlanChart'), 'wonderland');
+    const lc = tpa.plan_lifecycle || {};
+    const planFiles = (tpa.plan_files || []).slice(0, 10);
+    const tasks = tpa.tasks || {};
+    const reminder = tpa.reminder_summary || {};
+
+    // Grid 1: Plan Lifecycle (左上)
+    const lifecycleLabels = ['进入', '退出', '重入'];
+    const lifecycleData = [lc.entry_count || 0, lc.exit_count || 0, lc.reentry_count || 0];
+
+    // Grid 2: Plan Files Top (右上)
+    const fileLabels = planFiles.map(f => shortPath(f.file_path || f.file_name));
+    const fileRefCounts = planFiles.map(f => f.ref_count);
+
+    // Grid 3: Task Status Distribution (左下)
+    const statusDist = tasks.status_distribution || [];
+    const statusLabels = statusDist.map(s => s.status);
+    const completedData = statusDist.find(s => s.status === 'completed') || { count: 0 };
+    const pendingData = statusDist.find(s => s.status === 'pending') || { count: 0 };
+    const inProgressData = statusDist.find(s => s.status === 'in_progress') || { count: 0 };
+
+    // Grid 4: Reminder Frequency (右下)
+    const taskSessions = (reminder.top_task_sessions || []).slice(0, 8);
+    const todoSessions = (reminder.top_todo_sessions || []).slice(0, 8);
+    const reminderLabels = [...new Set([
+        ...taskSessions.map(s => shortAgentID(s.session_id)),
+        ...todoSessions.map(s => shortAgentID(s.session_id))
+    ])].slice(0, 8);
+
+    // Grid 5: Per-session Task Counts (底部全宽)
+    const sessionTasks = (tasks.session_task_counts || []).slice(0, 10);
+    const sessionTaskLabels = sessionTasks.map(s => shortAgentID(s.session_id));
+
+    chart.setOption({
+        title: {
+            text: 'Task / Plan 结构分析',
+            subtext: 'Plan Mode 生命周期 · 计划文件引用 · 任务状态分布 · 提醒频率',
+            left: 'center'
+        },
+        tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+        legend: {
+            data: ['进入', '退出', '重入', '引用次数', 'Completed', 'Pending', 'InProgress', 'Task Reminder', 'Todo Reminder'],
+            top: 50,
+            textStyle: { fontSize: 10 }
+        },
+        grid: [
+            { top: 95, left: 55, right: 55, height: 140, containLabel: true },
+            { top: 95, left: 420, right: 30, height: 140, containLabel: true },
+            { top: 280, left: 55, right: 55, height: 160, containLabel: true },
+            { top: 280, left: 420, right: 30, height: 160, containLabel: true },
+            { top: 480, left: 55, right: 30, height: 180, containLabel: true }
+        ],
+        xAxis: [
+            { type: 'category', gridIndex: 0, data: lifecycleLabels },
+            { type: 'value', gridIndex: 1, name: '引用次数' },
+            { type: 'category', gridIndex: 2, data: statusLabels.length > 0 ? statusLabels : ['completed', 'pending', 'in_progress'] },
+            { type: 'category', gridIndex: 3, data: reminderLabels.length > 0 ? reminderLabels : ['-'] },
+            { type: 'value', gridIndex: 4, name: '任务数' }
+        ],
+        yAxis: [
+            { type: 'value', gridIndex: 0, name: '次数' },
+            { type: 'category', gridIndex: 1, data: fileLabels, inverse: true, axisLabel: { fontSize: 9 } },
+            { type: 'value', gridIndex: 2, name: '任务数' },
+            { type: 'value', gridIndex: 3, name: '次数' },
+            { type: 'category', gridIndex: 4, data: sessionTaskLabels, inverse: true, axisLabel: { fontSize: 9 } }
+        ],
+        series: [
+            { name: '进入', type: 'bar', xAxisIndex: 0, yAxisIndex: 0, data: [lifecycleData[0], 0, 0], itemStyle: { color: '#27ae60' }, barMaxWidth: 40 },
+            { name: '退出', type: 'bar', xAxisIndex: 0, yAxisIndex: 0, data: [0, lifecycleData[1], 0], itemStyle: { color: '#e74c3c' }, barMaxWidth: 40 },
+            { name: '重入', type: 'bar', xAxisIndex: 0, yAxisIndex: 0, data: [0, 0, lifecycleData[2]], itemStyle: { color: '#f39c12' }, barMaxWidth: 40 },
+            { name: '引用次数', type: 'bar', xAxisIndex: 1, yAxisIndex: 1, data: fileRefCounts, itemStyle: { color: '#8e44ad' }, barMaxWidth: 20 },
+            { name: 'Completed', type: 'bar', stack: 'status', xAxisIndex: 2, yAxisIndex: 2,
+              data: statusLabels.map(l => l === 'completed' ? (completedData.count || 0) : 0), itemStyle: { color: '#27ae60' } },
+            { name: 'Pending', type: 'bar', stack: 'status', xAxisIndex: 2, yAxisIndex: 2,
+              data: statusLabels.map(l => l === 'pending' ? (pendingData.count || 0) : 0), itemStyle: { color: '#f39c12' } },
+            { name: 'InProgress', type: 'bar', stack: 'status', xAxisIndex: 2, yAxisIndex: 2,
+              data: statusLabels.map(l => l === 'in_progress' ? (inProgressData.count || 0) : 0), itemStyle: { color: '#3498db' } },
+            { name: 'Task Reminder', type: 'bar', xAxisIndex: 3, yAxisIndex: 3,
+              data: reminderLabels.map(sid => {
+                  const found = taskSessions.find(s => s.session_id === sid);
+                  return found ? found.count : 0;
+              }), itemStyle: { color: '#e67e22' } },
+            { name: 'Todo Reminder', type: 'bar', xAxisIndex: 3, yAxisIndex: 3,
+              data: reminderLabels.map(sid => {
+                  const found = todoSessions.find(s => s.session_id === sid);
+                  return found ? found.count : 0;
+              }), itemStyle: { color: '#16a085' } },
+            { name: 'Completed', type: 'bar', stack: 'sessionTasks', xAxisIndex: 4, yAxisIndex: 4,
+              data: sessionTasks.map(s => s.completed_count), itemStyle: { color: '#27ae60' }, barMaxWidth: 18 },
+            { name: 'Pending', type: 'bar', stack: 'sessionTasks', xAxisIndex: 4, yAxisIndex: 4,
+              data: sessionTasks.map(s => s.pending_count), itemStyle: { color: '#f39c12' }, barMaxWidth: 18 },
+            { name: 'InProgress', type: 'bar', stack: 'sessionTasks', xAxisIndex: 4, yAxisIndex: 4,
+              data: sessionTasks.map(s => s.in_progress_count), itemStyle: { color: '#3498db' }, barMaxWidth: 18 }
+        ]
+    });
+
+    const exitRate = lc.entry_count > 0 ? ((lc.exit_count / lc.entry_count) * 100).toFixed(0) : '0';
+    const topFile = planFiles[0];
+    const goalCount = (tpa.goal_status || []).length;
+
+    insight.innerHTML =
+        '<strong>数据洞察:</strong> Plan mode 进入 <strong>' + formatNumber(lc.entry_count) + '</strong> 次，' +
+        '退出 <strong>' + formatNumber(lc.exit_count) + '</strong> 次（完成率 <strong>' + exitRate + '%</strong>），' +
+        '涉及 <strong>' + formatNumber(lc.unique_plans) + '</strong> 个唯一计划文件。' +
+        (topFile ? '最常引用的计划是 <strong>' + escapeHtml(shortPath(topFile.file_path || topFile.file_name)) + '</strong>（' + topFile.ref_count + ' 次）。' : '') +
+        '任务总数 <strong>' + formatNumber(tasks.total_tasks || 0) + '</strong> 个，' +
+        '完成率 <strong>' + (tasks.completion_rate || 0).toFixed(1) + '%</strong>，' +
+        '平均每 Session <strong>' + (tasks.avg_tasks_per_session || 0).toFixed(1) + '</strong> 个任务。' +
+        '提醒总次数 <strong>' + formatNumber((reminder.task_reminder_count || 0) + (reminder.todo_reminder_count || 0)) + '</strong> 次。' +
+        (goalCount > 0 ? '目标达成事件 <strong>' + goalCount + '</strong> 条。' : '');
+}

@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -230,6 +231,133 @@ func countLines(s string) int {
 
 // --- end file_analysis ---
 
+// --- task_plan_analysis (Milestone 4): Plan event recording functions ---
+
+// ensurePlanModeAgg lazy-init PlanModeAgg on ProjectAggregate
+func ensurePlanModeAgg(agg *ProjectAggregate) *PlanModeAgg {
+	if agg.PlanModeAgg == nil {
+		agg.PlanModeAgg = &PlanModeAgg{
+			ExitReasons:   make(map[string]int),
+			PlanFilePaths: make(map[string]*PlanFileAgg),
+			SessionSet:    make(map[string]bool),
+		}
+	}
+	return agg.PlanModeAgg
+}
+
+// recordPlanModeLocked records a plan_mode entry event
+func recordPlanModeLocked(agg *ProjectAggregate, planFilePath string, planExists bool, sessionID, cwd string) {
+	p := ensurePlanModeAgg(agg)
+	p.EntryCount++
+	if sessionID != "" && !p.SessionSet[sessionID] {
+		p.SessionSet[sessionID] = true
+	}
+	// Track referenced plan file path for uniqueness counting
+	if planFilePath != "" {
+		if p.PlanFilePaths[planFilePath] == nil {
+			p.PlanFilePaths[planFilePath] = &PlanFileAgg{
+				FilePath:    planFilePath,
+				FileName:    filepath.Base(planFilePath),
+				RefSessions: make(map[string]bool),
+			}
+		}
+	}
+}
+
+// recordPlanModeExitLocked records a plan_mode_exit event
+func recordPlanModeExitLocked(agg *ProjectAggregate, exitReason, sessionID string) {
+	p := ensurePlanModeAgg(agg)
+	p.ExitCount++
+	if exitReason == "" {
+		exitReason = "unknown"
+	}
+	p.ExitReasons[exitReason]++
+}
+
+// recordPlanModeReentryLocked records a plan_mode_reentry event
+func recordPlanModeReentryLocked(agg *ProjectAggregate, sessionID string) {
+	p := ensurePlanModeAgg(agg)
+	p.ReentryCount++
+}
+
+// recordPlanFileReferenceLocked records a plan_file_reference (has full markdown content!)
+func recordPlanFileReferenceLocked(agg *ProjectAggregate, planFilePath, planContent, sessionID string) {
+	if planFilePath == "" {
+		return
+	}
+	p := ensurePlanModeAgg(agg)
+	if p.PlanFilePaths[planFilePath] == nil {
+		p.PlanFilePaths[planFilePath] = &PlanFileAgg{
+			FilePath:    planFilePath,
+			FileName:    filepath.Base(planFilePath),
+			RefSessions: make(map[string]bool),
+		}
+	}
+	pf := p.PlanFilePaths[planFilePath]
+	// Only store content once (first reference wins)
+	if pf.PlanContent == "" && planContent != "" {
+		pf.PlanContent = planContent
+		pf.CharCount = len(planContent)
+		pf.LineCount = strings.Count(planContent, "\n") + 1
+		pf.HasCode = strings.Contains(planContent, "```")
+		if len(planContent) > 200 {
+			pf.Preview = strings.TrimSpace(planContent[:200])
+		} else {
+			pf.Preview = strings.TrimSpace(planContent)
+		}
+	}
+	// Dedup ref count per session
+	if sessionID != "" && !pf.RefSessions[sessionID] {
+		pf.RefSessions[sessionID] = true
+		pf.RefCount++
+	}
+}
+
+// recordGoalStatusLocked records a goal_status event (capped at 50 to prevent unbounded growth)
+func recordGoalStatusLocked(agg *ProjectAggregate, met, sentinel bool, condition, sessionID string, timestamp time.Time) {
+	if agg.GoalStatusAgg == nil {
+		agg.GoalStatusAgg = &GoalStatusAgg{}
+	}
+	agg.GoalStatusAgg.Items = append(agg.GoalStatusAgg.Items, GoalStatusItem{
+		SessionID: sessionID,
+		Met:       met,
+		Sentinel:  sentinel,
+		Condition: condition,
+		Timestamp: timestamp.Format(time.RFC3339),
+	})
+	if len(agg.GoalStatusAgg.Items) > 50 {
+		agg.GoalStatusAgg.Items = agg.GoalStatusAgg.Items[:50]
+	}
+}
+
+// recordReminderLocked records task_reminder or todo_reminder frequency
+func recordReminderLocked(agg *ProjectAggregate, kind, sessionID, cwd string) {
+	if agg.ReminderAgg == nil {
+		agg.ReminderAgg = &ReminderAgg{
+			TaskSessionCounts:   make(map[string]int),
+			TodoSessionCounts:   make(map[string]int),
+			TaskSessionProjects: make(map[string]string),
+			TodoSessionProjects: make(map[string]string),
+		}
+	}
+	r := agg.ReminderAgg
+	if kind == "task" {
+		r.TaskReminderCount++
+		r.TaskSessionCounts[sessionID]++
+		if _, exists := r.TaskSessionProjects[sessionID]; !exists {
+			r.TaskSessionProjects[sessionID] = cwd
+		}
+	} else {
+		r.TodoReminderCount++
+		r.TodoSessionCounts[sessionID]++
+		if _, exists := r.TodoSessionProjects[sessionID]; !exists {
+			r.TodoSessionProjects[sessionID] = cwd
+		}
+	}
+}
+
+// --- end task_plan_analysis ---
+
 func recordRuntimeEventLocked(agg *ProjectAggregate, record ProjectRecord, timestamp time.Time, projectName string) {
 	recordSessionRecordLocked(agg, record, timestamp, projectName)
 
@@ -257,6 +385,17 @@ func recordRuntimeEventLocked(agg *ProjectAggregate, record ProjectRecord, times
 				Path string `json:"path"`
 			} `json:"skills"`
 				Snapshot   json.RawMessage `json:"snapshot"` // file-analysis: for file-history-snapshot
+			// task_plan_analysis (Milestone 4): plan/task attachment fields
+			PlanFilePath string `json:"planFilePath"`     // plan_mode, plan_file_reference
+			PlanExists   bool   `json:"planExists"`       // plan_mode
+			ReminderType string `json:"reminderType"`     // plan_mode
+			IsSubAgent   bool   `json:"isSubAgent"`       // plan_mode
+			PlanContent  string `json:"planContent"`      // plan_file_reference (full markdown!)
+			ExitReason   string `json:"exitReason"`       // plan_mode_exit
+			Met          bool   `json:"met"`              // goal_status
+			Sentinel     bool   `json:"sentinel"`         // goal_status
+			Condition    string `json:"condition"`        // goal_status
+			ItemCount    int    `json:"itemCount"`        // task_reminder, todo_reminder
 		}
 		if err := json.Unmarshal(record.Attachment, &attachment); err == nil && attachment.Type != "" {
 			eventType = "attachment:" + attachment.Type
@@ -276,6 +415,20 @@ func recordRuntimeEventLocked(agg *ProjectAggregate, record ProjectRecord, times
 			case "file-history-snapshot":
 				recordFileHistorySnapshotLocked(agg, record.Attachment, record.SessionID)
 			case "edited_text_file":
+			case "plan_mode":
+				recordPlanModeLocked(agg, attachment.PlanFilePath, attachment.PlanExists, record.SessionID, record.Cwd)
+			case "plan_mode_exit":
+				recordPlanModeExitLocked(agg, attachment.ExitReason, record.SessionID)
+			case "plan_mode_reentry":
+				recordPlanModeReentryLocked(agg, record.SessionID)
+			case "plan_file_reference":
+				recordPlanFileReferenceLocked(agg, attachment.PlanFilePath, attachment.PlanContent, record.SessionID)
+			case "goal_status":
+				recordGoalStatusLocked(agg, attachment.Met, attachment.Sentinel, attachment.Condition, record.SessionID, timestamp)
+			case "task_reminder":
+				recordReminderLocked(agg, "task", record.SessionID, record.Cwd)
+			case "todo_reminder":
+				recordReminderLocked(agg, "todo", record.SessionID, record.Cwd)
 				recordEditedTextFileLocked(agg, attachment.Filename, record.Attachment)
 			}
 			if len(agg.EventSamples) < 40 && (strings.HasPrefix(attachment.Type, "hook_") || attachment.Type == "invoked_skills" || attachment.Type == "queued_command") {

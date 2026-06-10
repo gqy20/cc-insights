@@ -191,6 +191,19 @@ func (cb *CacheBuilder) buildProjectAggregateIncremental(dataDir string, previou
 	}
 
 	aggregate.finalize()
+
+	// task_plan_analysis (M4): 扫描 tasks/ 目录
+	taskAnalysis, taskErr := ParseTasksConcurrent(TimeFilter{})
+	if taskErr != nil {
+		fmt.Fprintf(os.Stderr, "[警告] tasks/ 目录扫描失败: %v\n", taskErr)
+	}
+	if taskAnalysis != nil && aggregate.TaskPlanAnalysis == nil {
+		aggregate.TaskPlanAnalysis = &TaskPlanAnalysisData{}
+	}
+	if taskAnalysis != nil {
+		aggregate.TaskPlanAnalysis.Tasks = *taskAnalysis
+	}
+
 	return aggregate, projectFiles, reused, len(parsedCaches), nil
 }
 

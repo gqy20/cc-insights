@@ -66,6 +66,7 @@ func (agg *ProjectAggregate) finalize() {
 	agg.finalizeCostAnalysis()
 	agg.finalizeSessionAnalysis()
 	agg.finalizeFileAnalysis()
+	agg.finalizeTaskPlanAnalysis()
 
 	// 8. 生成工作时段统计
 	var workHoursCount, offHoursCount int
@@ -547,4 +548,101 @@ func (agg *ProjectAggregate) finalizeFileAnalysis() {
 	}
 
 	agg.FileAnalysis = analysis
+}
+
+// finalizeTaskPlanAnalysis 生成 Task / Plan 结构分析结果
+func (agg *ProjectAggregate) finalizeTaskPlanAnalysis() {
+	out := &TaskPlanAnalysisData{}
+
+	// 1. Plan Lifecycle
+	if agg.PlanModeAgg != nil {
+		pma := agg.PlanModeAgg
+		lifecycle := PlanLifecycleData{
+			EntryCount:       pma.EntryCount,
+			ExitCount:        pma.ExitCount,
+			ReentryCount:     pma.ReentryCount,
+			UniquePlans:      len(pma.PlanFilePaths),
+			SessionsWithPlan: len(pma.SessionSet),
+		}
+		for reason, count := range pma.ExitReasons {
+			lifecycle.ExitReasons = append(lifecycle.ExitReasons, PlanExitReasonItem{
+				Reason: reason,
+				Count:  count,
+			})
+		}
+		sort.Slice(lifecycle.ExitReasons, func(i, j int) bool {
+			return lifecycle.ExitReasons[i].Count > lifecycle.ExitReasons[j].Count
+		})
+		out.PlanLifecycle = lifecycle
+
+		// 2. Plan Files (top 20 by ref count)
+		for _, pf := range pma.PlanFilePaths {
+			out.PlanFiles = append(out.PlanFiles, PlanFileItem{
+				FilePath:  pf.FilePath,
+				FileName:  pf.FileName,
+				CharCount: pf.CharCount,
+				LineCount: pf.LineCount,
+				HasCode:   pf.HasCode,
+				Preview:   pf.Preview,
+				RefCount:  pf.RefCount,
+			})
+		}
+		sort.Slice(out.PlanFiles, func(i, j int) bool {
+			return out.PlanFiles[i].RefCount > out.PlanFiles[j].RefCount
+		})
+		if len(out.PlanFiles) > 20 {
+			out.PlanFiles = out.PlanFiles[:20]
+		}
+	}
+
+	// 3. Goal Status
+	if agg.GoalStatusAgg != nil && len(agg.GoalStatusAgg.Items) > 0 {
+		out.GoalStatus = append([]GoalStatusItem(nil), agg.GoalStatusAgg.Items...)
+	}
+
+	// 4. Reminder Summary
+	if agg.ReminderAgg != nil {
+		ra := agg.ReminderAgg
+		reminder := ReminderSummaryData{
+			TaskReminderCount: ra.TaskReminderCount,
+			TodoReminderCount: ra.TodoReminderCount,
+			SessionsWithTask:  len(ra.TaskSessionCounts),
+			SessionsWithTodo:  len(ra.TodoSessionCounts),
+		}
+		// Top task sessions
+		type sessionCount struct{ sid string; count int }
+		var taskList []sessionCount
+		for sid, cnt := range ra.TaskSessionCounts {
+			taskList = append(taskList, sessionCount{sid, cnt})
+		}
+		sort.Slice(taskList, func(i, j int) bool { return taskList[i].count > taskList[j].count })
+		if len(taskList) > 10 { taskList = taskList[:10] }
+		for _, sc := range taskList {
+			proj := ra.TaskSessionProjects[sc.sid]
+			reminder.TopTaskSessions = append(reminder.TopTaskSessions, ReminderSessionItem{
+				SessionID: sc.sid, Project: proj, Count: sc.count,
+			})
+		}
+		// Top todo sessions
+		var todoList []sessionCount
+		for sid, cnt := range ra.TodoSessionCounts {
+			todoList = append(todoList, sessionCount{sid, cnt})
+		}
+		sort.Slice(todoList, func(i, j int) bool { return todoList[i].count > todoList[j].count })
+		if len(todoList) > 10 { todoList = todoList[:10] }
+		for _, sc := range todoList {
+			proj := ra.TodoSessionProjects[sc.sid]
+			reminder.TopTodoSessions = append(reminder.TopTodoSessions, ReminderSessionItem{
+				SessionID: sc.sid, Project: proj, Count: sc.count,
+			})
+		}
+		out.ReminderSummary = reminder
+	}
+
+	// 5. Tasks (from independent scan)
+	if agg.TaskAgg != nil {
+		out.Tasks = *finalizeTaskAnalysis(agg.TaskAgg)
+	}
+
+	agg.TaskPlanAnalysis = out
 }

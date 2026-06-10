@@ -36,6 +36,7 @@ type CacheFile struct {
 	CommandAnalysis *CommandAnalysisData
 	CostAnalysis    *CostAnalysisData
 	FileAnalysis   *FileAnalysisData
+	TaskPlanAnalysis *TaskPlanAnalysisData        `json:"task_plan_analysis,omitempty"`
 	ProjectFiles    map[string]*ProjectFileCache `json:"project_file_caches,omitempty"`
 }
 
@@ -83,6 +84,9 @@ type ProjectFileAggregate struct {
 	FileEditFailures   map[string]FileEditFailureAgg     `json:"file_edit_failures,omitempty"`
 	FileSnapshotStats  map[string]FileSnapshotAgg        `json:"file_snapshot_stats,omitempty"`
 	FileEditedStats    map[string]FileEditedAgg          `json:"file_edited_stats,omitempty"`
+	PlanModeAgg        *SerializedPlanModeAgg            `json:"plan_mode_agg,omitempty"`
+	GoalStatusAgg      *GoalStatusAgg                    `json:"goal_status_agg,omitempty"`
+	ReminderAgg        *ReminderAgg                      `json:"reminder_agg,omitempty"`
 }
 
 // DayAggregate 每日聚合数据
@@ -282,6 +286,7 @@ func (cf *CacheFile) QueryByTimeRange(start, end time.Time) *CacheFile {
 	result.FailureAnalysis = cloneFailureAnalysis(cf.FailureAnalysis)
 	result.SessionAnalysis = cloneSessionAnalysis(cf.SessionAnalysis)
 	result.FileAnalysis = cloneFileAnalysis(cf.FileAnalysis)
+	result.TaskPlanAnalysis = cloneTaskPlanAnalysis(cf.TaskPlanAnalysis)
 
 	return result
 }
@@ -372,6 +377,24 @@ func cloneFileAnalysis(source *FileAnalysisData) *FileAnalysisData {
 	copyValue.EditFailures = append([]FileEditFailureItem(nil), source.EditFailures...)
 	copyValue.Snapshots = append([]FileSnapshotItem(nil), source.Snapshots...)
 	copyValue.EditedFiles = append([]FileEditedItem(nil), source.EditedFiles...)
+	return &copyValue
+}
+
+func cloneTaskPlanAnalysis(source *TaskPlanAnalysisData) *TaskPlanAnalysisData {
+	if source == nil {
+		return nil
+	}
+	copyValue := *source
+	copyValue.PlanFiles = append([]PlanFileItem(nil), source.PlanFiles...)
+	copyValue.GoalStatus = append([]GoalStatusItem(nil), source.GoalStatus...)
+	if source.ReminderSummary.TopTaskSessions != nil {
+		copyValue.ReminderSummary.TopTaskSessions = append([]ReminderSessionItem(nil), source.ReminderSummary.TopTaskSessions...)
+	}
+	if source.ReminderSummary.TopTodoSessions != nil {
+		copyValue.ReminderSummary.TopTodoSessions = append([]ReminderSessionItem(nil), source.ReminderSummary.TopTodoSessions...)
+	}
+	copyValue.Tasks.StatusDistribution = append([]TaskStatusItem(nil), source.Tasks.StatusDistribution...)
+	copyValue.Tasks.SessionTaskCounts = append([]SessionTaskItem(nil), source.Tasks.SessionTaskCounts...)
 	return &copyValue
 }
 

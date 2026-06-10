@@ -532,6 +532,183 @@ type FileEditedAgg struct {
 	TotalChars int64
 }
 
+// === Task / Plan 分析结构体（Milestone 4）===
+
+// TaskPlanAnalysisData Task / Plan 结构分析结果（输出格式）
+type TaskPlanAnalysisData struct {
+	PlanLifecycle   PlanLifecycleData   `json:"plan_lifecycle"`    // Plan mode 生命周期
+	PlanFiles       []PlanFileItem      `json:"plan_files"`        // 引用的计划文件
+	GoalStatus      []GoalStatusItem    `json:"goal_status"`       // 目标达成状态
+	ReminderSummary ReminderSummaryData `json:"reminder_summary"`  // task/todo 提醒频率
+	Tasks           TaskAnalysisData    `json:"tasks"`             // Task 分析（来自 tasks/ 目录）
+}
+
+// PlanLifecycleData Plan 模式生命周期统计
+type PlanLifecycleData struct {
+	EntryCount       int                  `json:"entry_count"`       // plan_mode 进入次数
+	ExitCount        int                  `json:"exit_count"`        // plan_mode_exit 次数
+	ReentryCount     int                  `json:"reentry_count"`     // plan_mode_reentry 次数
+	UniquePlans      int                  `json:"unique_plans"`      // 涉及的唯一计划文件数
+	SessionsWithPlan int                  `json:"sessions_with_plan"` // 使用过 plan mode 的 session 数
+	ExitReasons      []PlanExitReasonItem `json:"exit_reasons"`     // 退出原因分布
+}
+
+// PlanExitReasonItem Plan mode 退出原因
+type PlanExitReasonItem struct {
+	Reason string `json:"reason"`
+	Count  int    `json:"count"`
+}
+
+// PlanFileItem 单个计划文件引用记录
+type PlanFileItem struct {
+	FilePath  string `json:"file_path"`            // 完整路径
+	FileName  string `json:"file_name"`            // 文件名(basename)
+	CharCount int    `json:"char_count"`           // 内容字符数
+	LineCount int    `json:"line_count"`           // 内容行数
+	HasCode   bool   `json:"has_code"`             // 是否包含代码块
+	Preview   string `json:"preview,omitempty"`    // 内容前200字符预览
+	RefCount  int    `json:"ref_count"`            // 被引用次数(去重session)
+}
+
+// GoalStatusItem 目标状态事件
+type GoalStatusItem struct {
+	SessionID string `json:"session_id"`
+	Met       bool   `json:"met"`
+	Sentinel  bool   `json:"sentinel"`
+	Condition string `json:"condition,omitempty"`
+	Timestamp string `json:"timestamp"`
+}
+
+// ReminderSummaryData 任务提醒汇总
+type ReminderSummaryData struct {
+	TaskReminderCount  int                 `json:"task_reminder_count"`  // task_reminder 总次数
+	TodoReminderCount  int                 `json:"todo_reminder_count"`  // todo_reminder 总次数
+	SessionsWithTask   int                 `json:"sessions_with_task"`   // 有task_reminder的session数
+	SessionsWithTodo   int                 `json:"sessions_with_todo"`   // 有todo_reminder的session数
+	TopTaskSessions    []ReminderSessionItem `json:"top_task_sessions"` // task_reminder最多的Top N session
+	TopTodoSessions    []ReminderSessionItem `json:"top_todo_sessions"` // todo_reminder最多的Top N session
+}
+
+// ReminderSessionItem 单session的提醒次数
+type ReminderSessionItem struct {
+	SessionID string `json:"session_id"`
+	Project   string `json:"project,omitempty"`
+	Count     int    `json:"count"`
+}
+
+// TaskAnalysisData Task 分析结果（来自 tasks/ 目录扫描）
+type TaskAnalysisData struct {
+	TotalTasks         int                `json:"total_tasks"`
+	TotalSessions      int                `json:"total_sessions"`
+	StatusDistribution []TaskStatusItem   `json:"status_distribution"` // 状态分布
+	SessionTaskCounts  []SessionTaskItem  `json:"session_task_counts"`  // per-session任务数Top N
+	AvgTasksPerSession float64            `json:"avg_tasks_per_session"`
+	CompletionRate     float64            `json:"completion_rate"`      // 整体完成率%
+}
+
+// TaskStatusItem 任务状态分布项
+type TaskStatusItem struct {
+	Status string  `json:"status"`
+	Count  int     `json:"count"`
+	Rate   float64 `json:"rate"` // 占比%
+}
+
+// SessionTaskItem 单session任务概况
+type SessionTaskItem struct {
+	SessionID        string  `json:"session_id"`
+	TotalTasks       int     `json:"total_tasks"`
+	CompletedCount   int     `json:"completed_count"`
+	PendingCount     int     `json:"pending_count"`
+	InProgressCount  int     `json:"in_progress_count"`
+	CompletionRate   float64 `json:"completion_rate"`
+}
+
+// PlanModeAgg 中间聚合：plan_mode 事件
+type PlanModeAgg struct {
+	EntryCount   int                       // plan_mode 进入次数
+	ExitCount    int                       // plan_mode_exit 次数
+	ReentryCount int                       // plan_mode_reentry 次数
+	ExitReasons  map[string]int            // exitReason -> count
+	PlanFilePaths map[string]*PlanFileAgg  // filePath -> 详情
+	SessionSet   map[string]bool           // sessionID去重
+}
+
+// PlanFileAgg 中间聚合：单个计划文件的引用详情
+type PlanFileAgg struct {
+	FilePath    string
+	FileName    string
+	PlanContent string // 完整markdown内容(仅首次)
+	Preview     string // 前200字符
+	CharCount   int
+	LineCount   int
+	HasCode     bool
+	RefCount    int              // 跨session去重引用次数
+	RefSessions map[string]bool // sessionID去重
+}
+
+// SerializedPlanFileAgg 可序列化版本（无 RefSessions map）
+type SerializedPlanFileAgg struct {
+	FilePath  string `json:"file_path"`
+	FileName  string `json:"file_name"`
+	Preview   string `json:"preview,omitempty"`
+	CharCount int    `json:"char_count"`
+	LineCount int    `json:"line_count"`
+	HasCode   bool   `json:"has_code"`
+	RefCount  int    `json:"ref_count"`
+}
+
+// SerializedPlanModeAgg 可序列化版本（用于缓存）
+type SerializedPlanModeAgg struct {
+	EntryCount                                                      int                                 `json:"entry_count"`
+	ExitCount                                                       int                                 `json:"exit_count"`
+	ReentryCount                                                    int                                 `json:"reentry_count"`
+	ExitReasons                                                     map[string]int                      `json:"exit_reasons"`
+	PlanFilePaths                                                   map[string]*SerializedPlanFileAgg  `json:"plan_file_paths"`
+}
+
+// GoalStatusAgg 中间聚合：goal_status 事件
+type GoalStatusAgg struct {
+	Items []GoalStatusItem
+}
+
+// ReminderAgg 中间聚合：task/todo reminder 频率
+type ReminderAgg struct {
+	TaskReminderCount  int
+	TodoReminderCount  int
+	TaskSessionCounts map[string]int         // sessionID -> count
+	TodoSessionCounts map[string]int         // sessionID -> count
+	TaskSessionProjects map[string]string    // sessionID -> projectName
+	TodoSessionProjects map[string]string    // sessionID -> projectName
+}
+
+// TaskAgg 中间聚合：tasks/ 目录扫描结果
+type TaskAgg struct {
+	TotalTasks   int
+	StatusCounts map[string]int              // status -> count
+	SessionTasks map[string]*SessionTaskAgg // sessionUUID -> stats
+}
+
+// SessionTaskAgg 中间聚合：单session的任务统计
+type SessionTaskAgg struct {
+	SessionID         string
+	TotalTasks        int
+	CompletedCount    int
+	PendingCount      int
+	InProgressCount   int
+	StatusCountsLocal map[string]int // 局部状态计数（用于合并到全局）
+}
+
+// TaskRaw tasks/*.json 原始 JSON 结构
+type TaskRaw struct {
+	ID          string   `json:"id"`
+	Subject     string   `json:"subject"`
+	Description string   `json:"description"`
+	ActiveForm  string   `json:"activeForm"`
+	Status      string   `json:"status"`
+	Blocks      []string `json:"blocks"`
+	BlockedBy   []string `json:"blockedBy"`
+}
+
 // WorkHoursStats 工作时段统计
 type WorkHoursStats struct {
 	HourlyData     []HourlyItem `json:"hourly_data"` // 每小时数据
@@ -599,6 +776,12 @@ type ProjectAggregate struct {
 	FileSnapshotStats   map[string]*FileSnapshotAgg        `json:"-"`                // file-history-snapshot 统计
 	FileEditedStats     map[string]*FileEditedAgg          `json:"-"`                // edited_text_file 统计
 	FileAnalysis        *FileAnalysisData                  `json:"file_analysis"`    // 文件与编辑质量分析（输出格式）
+	// --- task_plan_analysis (Milestone 4) ---
+	PlanModeAgg         *PlanModeAgg                       `json:"-"`                // plan_mode 事件聚合
+	GoalStatusAgg       *GoalStatusAgg                     `json:"-"`                // goal_status 事件聚合
+	ReminderAgg         *ReminderAgg                       `json:"-"`                // reminder 频率聚合
+	TaskAgg             *TaskAgg                           `json:"-"`                // tasks/ 目录扫描结果
+	TaskPlanAnalysis    *TaskPlanAnalysisData              `json:"task_plan_analysis"` // Task/Plan 分析（输出格式）
 	WorkHoursStats      *WorkHoursStats                    `json:"work_hours"`       // 工作时段统计
 	mu                  sync.RWMutex                       `json:"-"`                // 保护并发写入
 }

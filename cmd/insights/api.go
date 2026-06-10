@@ -41,7 +41,8 @@ type DashboardData struct {
 	CostAnalysis    *CostAnalysisData    `json:"cost_analysis,omitempty"`
 	FailureAnalysis *FailureAnalysisData `json:"failure_analysis,omitempty"`
 	SessionAnalysis *SessionAnalysisData `json:"session_analysis,omitempty"`
-	FileAnalysis   *FileAnalysisData    `json:"file_analysis,omitempty"`
+	FileAnalysis      *FileAnalysisData      `json:"file_analysis,omitempty"`
+	TaskPlanAnalysis  *TaskPlanAnalysisData   `json:"task_plan_analysis,omitempty"`
 }
 
 // TimeRangeInfo 时间范围信息
@@ -296,6 +297,7 @@ func buildDataFromCache(tf TimeFilter, preset string) (*DashboardData, error) {
 	failureAnalysis := cloneFailureAnalysis(cached.FailureAnalysis)
 	sessionAnalysis := cloneSessionAnalysis(cached.SessionAnalysis)
 	fileAnalysis := cloneFileAnalysis(cached.FileAnalysis)
+	taskPlanAnalysis := cloneTaskPlanAnalysis(cached.TaskPlanAnalysis)
 
 	// 构建时间范围信息
 	rangeInfo := TimeRangeInfo{Preset: preset}
@@ -329,7 +331,8 @@ func buildDataFromCache(tf TimeFilter, preset string) (*DashboardData, error) {
 		CostAnalysis:    costAnalysis,
 		FailureAnalysis: failureAnalysis,
 		SessionAnalysis: sessionAnalysis,
-	FileAnalysis:   fileAnalysis,
+	FileAnalysis:      fileAnalysis,
+		TaskPlanAnalysis:  taskPlanAnalysis,
 	}, nil
 }
 
@@ -341,9 +344,10 @@ func buildDataFromParsing(tf TimeFilter, preset string) (*DashboardData, error) 
 	var hourlyCountsMap map[string]int
 	var aggregate *ProjectAggregate
 	var toolStats []MCPToolStats
+	var taskAnalysis *TaskAnalysisData
 
 	var wg sync.WaitGroup
-	wg.Add(3)
+	wg.Add(4)
 
 	// 1. history.jsonl 解析（独立）
 	go func() {
@@ -365,9 +369,23 @@ func buildDataFromParsing(tf TimeFilter, preset string) (*DashboardData, error) 
 		toolStats, _ = safeParseDebugLogs(tf)
 	}()
 
+	// 4. tasks/ 目录扫描（M4: task_plan_analysis）
+	go func() {
+		defer wg.Done()
+		taskAnalysis, _ = safeParseTasksOnce(tf)
+	}()
+
 	wg.Wait()
 
-	// SessionStats 从已解析的 aggregate 中提取（P0，依赖 projects 结果）
+	// M4: 合并 task 分析结果到 aggregate
+	if taskAnalysis != nil && aggregate != nil {
+		if aggregate.TaskPlanAnalysis == nil {
+			aggregate.TaskPlanAnalysis = &TaskPlanAnalysisData{}
+		}
+		aggregate.TaskPlanAnalysis.Tasks = *taskAnalysis
+	}
+
+	// SessionStats 从已解析的 aggregate 中提取（P0，依赖 projects结果）
 	sessionStats, _ := extractSessionStatsFromAggregate(aggregate)
 
 	// 从聚合数据中提取每日活动趋势（确保非 nil）
@@ -424,8 +442,9 @@ func buildDataFromParsing(tf TimeFilter, preset string) (*DashboardData, error) 
 		CostAnalysis:    aggregate.CostAnalysis,
 		FailureAnalysis: aggregate.FailureAnalysis,
 		SessionAnalysis: aggregate.SessionAnalysis,
-	FileAnalysis:   aggregate.FileAnalysis,
-	}, nil
+		FileAnalysis:      aggregate.FileAnalysis,
+			TaskPlanAnalysis:  aggregate.TaskPlanAnalysis,
+		}, nil
 }
 
 func buildToolAnalysisFromCache(cache *CacheFile) *ToolAnalysisData {
@@ -582,6 +601,16 @@ func safeParseSessionStats(tf TimeFilter) (*SessionStats, error) {
 		}, nil
 	}
 	return stats, nil
+}
+
+// safeParseTasksOnce 安全解析 tasks/ 目录（容错包装，M4）
+func safeParseTasksOnce(tf TimeFilter) (*TaskAnalysisData, error) {
+	data, err := ParseTasksConcurrent(tf)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[降级] ParseTasksConcurrent 失败(使用空结果): %v\n", err)
+		return &TaskAnalysisData{}, nil
+	}
+	return data, nil
 }
 
 // extractSessionStatsFromAggregate 从已解析的 ProjectAggregate 中提取会话统计
