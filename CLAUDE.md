@@ -430,22 +430,27 @@ type CacheFile struct {
 
 详见 `docs/dashboard_roadmap.md`，主要扩展方向：
 
-**Phase 2: 核心扩展**（已部分实现）
-- ✅ 项目活跃度排名 - `ParseProjectStatsWithFilter`
-- ✅ 模型使用统计 - `ParseModelUsageFromProjects`
-- ✅ 会话统计 - `ParseSessionStatsWithFilter`
-- ✅ 星期分布统计 - `ParseProjectStatsByWeekday`
-- ✅ 工作时段分析 - `ParseWorkHoursStats`
+**Phase 1: 基础统计**（✅ 已完成）
+- ✅ Slash Commands / 每日趋势 / MCP工具 / 会话统计
+- ✅ 项目活跃度排名 / 星期分布 / 模型使用 / 工作时段
 
-**Phase 3: 增强功能**
-- Agent使用统计 - 需解析history.jsonl中的agent调用记录
-- 工具调用密度分析 - toolCallCount/messageCount比率
-- 活动峰值/低谷分析
+**Phase 2: 核心分析**（✅ 已完成）
+- ✅ 工具调用分析 (ToolAnalysis) - 成功率/失败率/Missing Result
+- ✅ 失败原因细分 (FailureAnalysis) - 按 reason/tool/model 三维
+- ✅ 运行事件与 Hook (EventAnalysis) - 事件类型/Hook 状态/权限模式
+- ✅ Agent/Subagent 分析 (AgentAnalysis) - 主会话 vs subagent 工具调用
+- ✅ Bash 与文件操作 (CommandAnalysis) - 风险等级分类
+- ✅ Token 与成本分析 (CostAnalysis) - 按模型/项目/会话
 
-**Phase 4: 高级功能**
+**Phase 3: 质量与生命周期**（✅ 已完成）
+- ✅ Session 生命周期复盘 (SessionAnalysis) - 失败/耗时/结果状态
+- ✅ 文件与编辑质量 (FileAnalysis/M3) - 热门文件/Edit失败/Snapshot热点
+- ✅ Task / Plan 结构分析 (TaskPlanAnalysis/M4) - Plan mode 生命周期/任务状态分布
+
+**Phase 4: 未来方向**
 - Shell命令统计 - 解析shell-snapshots/目录
-- Token效率分析 - 基于dailyModelTokens数据
-- 缓存系统集成 - 使用CacheBuilder提升首次加载性能
+- Token效率分析 - 缓存命中率/成本优化建议
+- 活动峰值/低谷分析 - 异常检测
 
 ## Project Metadata
 
