@@ -13,6 +13,8 @@ func newProjectAggregate() *ProjectAggregate {
 		DailyProjectCounts:  make(map[string]map[string]int),
 		DailyModelCounts:    make(map[string]map[string]int),
 		DailyModelTokens:    make(map[string]map[string]int),
+		DailyHourlyCounts:   make(map[string][24]int),
+		DailyRuntime:        make(map[string]*ProjectAggregate),
 		ModelUsage:          make(map[string]*ModelUsageItem),
 		ToolStats:           make(map[string]*ToolStatItem),
 		ToolModelStats:      make(map[string]*ToolModelStatItem),
@@ -92,6 +94,20 @@ func mergeProjectAggregate(dst, src *ProjectAggregate) {
 		for model, tokens := range models {
 			dst.DailyModelTokens[date][model] += tokens
 		}
+	}
+	for date, counts := range src.DailyHourlyCounts {
+		dstCounts := dst.DailyHourlyCounts[date]
+		for hour, count := range counts {
+			dstCounts[hour] += count
+		}
+		dst.DailyHourlyCounts[date] = dstCounts
+	}
+	for date, runtimeAgg := range src.DailyRuntime {
+		if runtimeAgg == nil {
+			continue
+		}
+		dstRuntime := ensureDailyRuntimeAggregate(dst, date)
+		mergeProjectAggregate(dstRuntime, runtimeAgg)
 	}
 	for date, sessions := range src.DailySessions {
 		if dst.DailySessions[date] == nil {
@@ -477,6 +493,10 @@ func mergeProjectAggregate(dst, src *ProjectAggregate) {
 }
 
 func aggregateToProjectFileAggregate(src *ProjectAggregate) ProjectFileAggregate {
+	return aggregateToProjectFileAggregateWithDaily(src, true)
+}
+
+func aggregateToProjectFileAggregateWithDaily(src *ProjectAggregate, includeDaily bool) ProjectFileAggregate {
 	out := ProjectFileAggregate{
 		ProjectStats:        make(map[string]ProjectStatItem, len(src.ProjectStats)),
 		WeekdayData:         src.WeekdayData,
@@ -485,6 +505,8 @@ func aggregateToProjectFileAggregate(src *ProjectAggregate) ProjectFileAggregate
 		DailyProjectCounts:  copyNestedIntMap(src.DailyProjectCounts),
 		DailyModelCounts:    copyNestedIntMap(src.DailyModelCounts),
 		DailyModelTokens:    copyNestedIntMap(src.DailyModelTokens),
+		DailyHourlyCounts:   copyDailyHourlyCounts(src.DailyHourlyCounts),
+		DailyRuntime:        make(map[string]ProjectFileAggregate),
 		HourlyCounts:        src.HourlyCounts,
 		ModelUsage:          make(map[string]ModelUsageItem, len(src.ModelUsage)),
 		CostModelStats:      make(map[string]CostModelStat, len(src.CostModelStats)),
@@ -518,6 +540,9 @@ func aggregateToProjectFileAggregate(src *ProjectAggregate) ProjectFileAggregate
 		ReminderAgg:         serializeReminderAgg(src.ReminderAgg),
 		ToolPerfStats:       make(map[string]ToolPerfAgg, len(src.ToolPerfStats)),
 		SlowestCalls:        append([]ToolSlowCallItem(nil), src.SlowestCalls...),
+	}
+	if !includeDaily {
+		out.DailyRuntime = nil
 	}
 	for key, stat := range src.ProjectStats {
 		out.ProjectStats[key] = *stat
@@ -597,6 +622,16 @@ func aggregateToProjectFileAggregate(src *ProjectAggregate) ProjectFileAggregate
 	for key, ed := range src.FileEditedStats {
 		out.FileEditedStats[key] = *ed
 	}
+	if includeDaily {
+		for date, runtimeAgg := range src.DailyRuntime {
+			if runtimeAgg != nil {
+				out.DailyRuntime[date] = aggregateToProjectFileAggregateWithDaily(runtimeAgg, false)
+			}
+		}
+		if len(out.DailyRuntime) == 0 {
+			out.DailyRuntime = nil
+		}
+	}
 	return out
 }
 
@@ -612,6 +647,10 @@ func projectFileAggregateToAggregate(src ProjectFileAggregate) *ProjectAggregate
 	out.DailyProjectCounts = copyNestedIntMap(src.DailyProjectCounts)
 	out.DailyModelCounts = copyNestedIntMap(src.DailyModelCounts)
 	out.DailyModelTokens = copyNestedIntMap(src.DailyModelTokens)
+	out.DailyHourlyCounts = copyDailyHourlyCounts(src.DailyHourlyCounts)
+	for date, runtimeSnapshot := range src.DailyRuntime {
+		out.DailyRuntime[date] = projectFileAggregateToAggregate(runtimeSnapshot)
+	}
 	out.HourlyCounts = src.HourlyCounts
 	for key, stat := range src.ModelUsage {
 		statCopy := stat
@@ -727,6 +766,16 @@ func projectFileAggregateToAggregate(src ProjectFileAggregate) *ProjectAggregate
 	return out
 }
 
+func ensureDailyRuntimeAggregate(agg *ProjectAggregate, date string) *ProjectAggregate {
+	if agg.DailyRuntime == nil {
+		agg.DailyRuntime = make(map[string]*ProjectAggregate)
+	}
+	if agg.DailyRuntime[date] == nil {
+		agg.DailyRuntime[date] = newProjectAggregate()
+	}
+	return agg.DailyRuntime[date]
+}
+
 func copyIntMap(src map[string]int) map[string]int {
 	if len(src) == 0 {
 		return nil
@@ -745,6 +794,17 @@ func copyNestedIntMap(src map[string]map[string]int) map[string]map[string]int {
 	out := make(map[string]map[string]int, len(src))
 	for key, values := range src {
 		out[key] = copyIntMap(values)
+	}
+	return out
+}
+
+func copyDailyHourlyCounts(src map[string][24]int) map[string][24]int {
+	if len(src) == 0 {
+		return nil
+	}
+	out := make(map[string][24]int, len(src))
+	for key, value := range src {
+		out[key] = value
 	}
 	return out
 }

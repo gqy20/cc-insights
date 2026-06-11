@@ -806,6 +806,8 @@ type ProjectAggregate struct {
 	DailyProjectCounts  map[string]map[string]int          `json:"-"`                // 每日项目消息数 date→project→count
 	DailyModelCounts    map[string]map[string]int          `json:"-"`                // 每日模型请求数 date→model→count
 	DailyModelTokens    map[string]map[string]int          `json:"-"`                // 每日模型 token 数 date→model→tokens
+	DailyHourlyCounts   map[string][24]int                 `json:"-"`                // 每日小时消息数 date→hour→count
+	DailyRuntime        map[string]*ProjectAggregate       `json:"-"`                // 每日运行时聚合（工具/成本/失败/性能等）
 	HourlyCounts        [24]int                            `json:"-"`                // 小时统计
 	HourlyData          []HourlyItem                       `json:"-"`                // 小时数据
 	ModelUsage          map[string]*ModelUsageItem         `json:"-"`                // 模型使用（map）

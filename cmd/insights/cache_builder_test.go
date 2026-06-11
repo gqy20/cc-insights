@@ -104,6 +104,76 @@ func TestCacheBuilderBuildFullCacheDailyProjectAndModelCounts(t *testing.T) {
 	if result.ModelUsage["claude-sonnet-4.5"].Tokens != 30 {
 		t.Fatalf("Model tokens=%d, want 30", result.ModelUsage["claude-sonnet-4.5"].Tokens)
 	}
+	hourlyTotal := 0
+	for _, hourly := range result.HourlyStats {
+		if hourly != nil {
+			hourlyTotal += hourly.MessageCount
+		}
+	}
+	if hourlyTotal != result.TotalMessages {
+		t.Fatalf("Hourly total=%d, want %d", hourlyTotal, result.TotalMessages)
+	}
+	weekdayTotal := 0
+	for _, weekday := range result.WeekdayStats {
+		if weekday != nil {
+			weekdayTotal += weekday.MessageCount
+		}
+	}
+	if weekdayTotal != result.TotalMessages {
+		t.Fatalf("Weekday total=%d, want %d", weekdayTotal, result.TotalMessages)
+	}
+}
+
+func TestCacheQueryByTimeRangeScopesRuntimeAnalysis(t *testing.T) {
+	tmpDir := t.TempDir()
+	dataDir := filepath.Join(tmpDir, "data")
+	projectDir := filepath.Join(dataDir, "projects", "runtime-project")
+	if err := os.MkdirAll(projectDir, 0755); err != nil {
+		t.Fatalf("Create projects dir failed: %v", err)
+	}
+
+	oldTime := time.Date(2026, 1, 1, 10, 0, 0, 0, time.UTC)
+	newTime := time.Date(2026, 1, 2, 11, 0, 0, 0, time.UTC)
+	content := toolUseRecordWithInput("/tmp/runtime-project", "old-session", oldTime, "old-call", "Bash", "old-model", false, "", `{"command":"go test ./..."}`) + "\n" +
+		toolResultRecord("/tmp/runtime-project", "old-session", oldTime.Add(time.Second), "old-call", "ok") + "\n" +
+		toolUseRecordWithInput("/tmp/runtime-project", "new-session", newTime, "new-call", "mcp__crawl__extract_url", "new-model", false, "", `{"url":"https://example.com"}`) + "\n" +
+		toolResultRecord("/tmp/runtime-project", "new-session", newTime.Add(2*time.Second), "new-call", "fetched") + "\n"
+	if err := os.WriteFile(filepath.Join(projectDir, "session.jsonl"), []byte(content), 0644); err != nil {
+		t.Fatalf("Write project jsonl failed: %v", err)
+	}
+
+	cachePath := filepath.Join(tmpDir, "cache.db")
+	builder := &CacheBuilder{CachePath: cachePath, DataDir: dataDir}
+	if err := builder.BuildFullCache(); err != nil {
+		t.Fatalf("BuildFullCache() failed: %v", err)
+	}
+
+	cache, err := LoadCacheFile(cachePath)
+	if err != nil {
+		t.Fatalf("LoadCacheFile() failed: %v", err)
+	}
+	start := time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC)
+	end := time.Date(2026, 1, 3, 0, 0, 0, 0, time.UTC)
+	result := cache.QueryByTimeRange(start, end)
+
+	if result.ToolAnalysis == nil || result.ToolAnalysis.TotalCalls != 1 {
+		t.Fatalf("ToolAnalysis.TotalCalls=%v, want 1", result.ToolAnalysis)
+	}
+	if len(result.ToolAnalysis.Tools) != 1 || result.ToolAnalysis.Tools[0].Tool != "mcp__crawl__extract_url" {
+		t.Fatalf("ToolAnalysis.Tools=%+v, want only mcp__crawl__extract_url", result.ToolAnalysis.Tools)
+	}
+	if result.MCPToolStats["crawl::extract_url"] != 1 {
+		t.Fatalf("MCPToolStats=%+v, want crawl::extract_url=1", result.MCPToolStats)
+	}
+	if result.CostAnalysis == nil || result.CostAnalysis.Totals.RequestCount != 1 {
+		t.Fatalf("CostAnalysis totals=%+v, want request_count=1", result.CostAnalysis)
+	}
+	if result.CostAnalysis.ByModel[0].Model != "new-model" {
+		t.Fatalf("CostAnalysis.ByModel=%+v, want new-model", result.CostAnalysis.ByModel)
+	}
+	if result.ToolPerformance == nil || result.ToolPerformance.TotalPairedCalls != 1 {
+		t.Fatalf("ToolPerformance=%+v, want one paired call", result.ToolPerformance)
+	}
 }
 
 // TestCacheBuilderIncrementalUpdate 测试增量更新缓存

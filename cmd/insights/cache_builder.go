@@ -88,6 +88,12 @@ func (cb *CacheBuilder) BuildFullCache() error {
 		TaskPlanAnalysis: aggregate.TaskPlanAnalysis,
 		ToolPerformance:  aggregate.ToolPerformance,
 		ProjectFiles:     projectFiles,
+		DailyRuntime:     make(map[string]ProjectFileAggregate, len(aggregate.DailyRuntime)),
+	}
+	for date, runtimeAgg := range aggregate.DailyRuntime {
+		if runtimeAgg != nil {
+			cache.DailyRuntime[date] = aggregateToProjectFileAggregateWithDaily(runtimeAgg, false)
+		}
 	}
 	// 填充 HourlyStats
 	for i := 0; i < 24; i++ {
@@ -117,7 +123,7 @@ func (cb *CacheBuilder) BuildFullCache() error {
 			MessageCount:  day.MessageCount,
 			SessionCount:  sessionCount,
 			ToolCallCount: 0,
-			HourlyCounts:  [24]int{},
+			HourlyCounts:  aggregate.DailyHourlyCounts[day.Date],
 			ProjectCounts: copyIntMap(aggregate.DailyProjectCounts[day.Date]),
 			ModelCounts:   copyIntMap(aggregate.DailyModelCounts[day.Date]),
 			ModelTokens:   copyIntMap(aggregate.DailyModelTokens[day.Date]),

@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-const CacheVersion = "2.8"
+const CacheVersion = "2.9"
 
 // CacheFile 缓存文件结构
 type CacheFile struct {
@@ -36,9 +36,10 @@ type CacheFile struct {
 	CommandAnalysis  *CommandAnalysisData
 	CostAnalysis     *CostAnalysisData
 	FileAnalysis     *FileAnalysisData
-	TaskPlanAnalysis *TaskPlanAnalysisData        `json:"task_plan_analysis,omitempty"`
-	ToolPerformance  *ToolPerformanceData         `json:"tool_performance,omitempty"`
-	ProjectFiles     map[string]*ProjectFileCache `json:"project_file_caches,omitempty"`
+	TaskPlanAnalysis *TaskPlanAnalysisData           `json:"task_plan_analysis,omitempty"`
+	ToolPerformance  *ToolPerformanceData            `json:"tool_performance,omitempty"`
+	ProjectFiles     map[string]*ProjectFileCache    `json:"project_file_caches,omitempty"`
+	DailyRuntime     map[string]ProjectFileAggregate `json:"daily_runtime,omitempty"`
 }
 
 // ProjectFileCache 单个 projects JSONL 文件的增量缓存
@@ -58,6 +59,8 @@ type ProjectFileAggregate struct {
 	DailyProjectCounts  map[string]map[string]int         `json:"daily_project_counts,omitempty"`
 	DailyModelCounts    map[string]map[string]int         `json:"daily_model_counts,omitempty"`
 	DailyModelTokens    map[string]map[string]int         `json:"daily_model_tokens,omitempty"`
+	DailyHourlyCounts   map[string][24]int                `json:"daily_hourly_counts,omitempty"`
+	DailyRuntime        map[string]ProjectFileAggregate   `json:"daily_runtime,omitempty"`
 	HourlyCounts        [24]int                           `json:"hourly_counts"`
 	ModelUsage          map[string]ModelUsageItem         `json:"model_usage,omitempty"`
 	CostModelStats      map[string]CostModelStat          `json:"cost_model_stats,omitempty"`
@@ -208,6 +211,8 @@ func (cf *CacheFile) QueryByTimeRange(start, end time.Time) *CacheFile {
 	}
 
 	queryRange := TimeRange{Start: start, End: end}
+	runtimeAggregate := newProjectAggregate()
+	hasRuntimeAggregate := false
 
 	// 遍历每日统计，过滤时间范围
 	for date, dayStats := range cf.DailyStats {
@@ -225,6 +230,24 @@ func (cf *CacheFile) QueryByTimeRange(start, end time.Time) *CacheFile {
 
 			result.TotalMessages += dayStats.MessageCount
 			result.TotalSessions += dayStats.SessionCount
+
+			for hour, count := range dayStats.HourlyCounts {
+				if count == 0 {
+					continue
+				}
+				if result.HourlyStats[hour] == nil {
+					result.HourlyStats[hour] = &HourAggregate{Hour: hour}
+				}
+				result.HourlyStats[hour].MessageCount += count
+			}
+			weekday := (int(dateParsed.Weekday()) + 6) % 7
+			if result.WeekdayStats[weekday] == nil {
+				result.WeekdayStats[weekday] = &WeekdayItem{
+					Weekday:     weekday,
+					WeekdayName: weekdayName(weekday),
+				}
+			}
+			result.WeekdayStats[weekday].MessageCount += dayStats.MessageCount
 
 			for project, count := range dayStats.ProjectCounts {
 				if result.ProjectStats[project] == nil {
@@ -244,51 +267,61 @@ func (cf *CacheFile) QueryByTimeRange(start, end time.Time) *CacheFile {
 				}
 				result.ModelUsage[model].Tokens += tokens
 			}
+			if runtimeSnapshot, ok := cf.DailyRuntime[date]; ok {
+				mergeProjectAggregate(runtimeAggregate, projectFileAggregateToAggregate(runtimeSnapshot))
+				hasRuntimeAggregate = true
+			}
 		}
 	}
 
-	// 复制 HourlyStats（全局分布模式，不过滤）
-	for i, hs := range cf.HourlyStats {
-		if hs != nil {
-			hsCopy := *hs
-			result.HourlyStats[i] = &hsCopy
+	if hasRuntimeAggregate {
+		runtimeAggregate.finalize()
+		result.ToolAnalysis = runtimeAggregate.ToolAnalysis
+		result.FailureAnalysis = runtimeAggregate.FailureAnalysis
+		result.EventAnalysis = runtimeAggregate.EventAnalysis
+		result.AgentAnalysis = runtimeAggregate.AgentAnalysis
+		result.CommandAnalysis = runtimeAggregate.CommandAnalysis
+		result.CostAnalysis = runtimeAggregate.CostAnalysis
+		result.SessionAnalysis = runtimeAggregate.SessionAnalysis
+		result.FileAnalysis = runtimeAggregate.FileAnalysis
+		result.TaskPlanAnalysis = runtimeAggregate.TaskPlanAnalysis
+		result.ToolPerformance = runtimeAggregate.ToolPerformance
+		for _, tool := range runtimeAggregate.ToolAnalysis.Tools {
+			toolCopy := tool
+			result.ToolStats[tool.Tool] = &toolCopy
+			if server, name, ok := splitMCPToolName(tool.Tool); ok {
+				result.MCPToolStats[server+"::"+name] = tool.CallCount
+			}
 		}
 	}
 
-	// 复制 WeekdayStats（全局分布模式，不过滤）
-	for i, ws := range cf.WeekdayStats {
-		if ws != nil {
-			result.WeekdayStats[i] = ws
+	if !hasRuntimeAggregate {
+		// 兼容旧缓存：没有日维度 runtime 时保留旧的全局分析。
+		for tool, count := range cf.MCPToolStats {
+			result.MCPToolStats[tool] = count
 		}
-	}
-
-	// MCPToolStats（全局统计，不过滤——debug日志无每日分解）
-	for tool, count := range cf.MCPToolStats {
-		result.MCPToolStats[tool] = count
-	}
-
-	// ToolStats（全局统计，v1 暂不按日分解）
-	for tool, stats := range cf.ToolStats {
-		if stats != nil {
-			statsCopy := *stats
-			result.ToolStats[tool] = &statsCopy
+		for tool, stats := range cf.ToolStats {
+			if stats != nil {
+				statsCopy := *stats
+				result.ToolStats[tool] = &statsCopy
+			}
 		}
+		if cf.ToolAnalysis != nil {
+			analysisCopy := *cf.ToolAnalysis
+			analysisCopy.Tools = append([]ToolStatItem(nil), cf.ToolAnalysis.Tools...)
+			analysisCopy.ByModel = append([]ToolModelStatItem(nil), cf.ToolAnalysis.ByModel...)
+			result.ToolAnalysis = &analysisCopy
+		}
+		result.EventAnalysis = cloneEventAnalysis(cf.EventAnalysis)
+		result.AgentAnalysis = cloneAgentAnalysis(cf.AgentAnalysis)
+		result.CommandAnalysis = cloneCommandAnalysis(cf.CommandAnalysis)
+		result.CostAnalysis = cloneCostAnalysis(cf.CostAnalysis)
+		result.FailureAnalysis = cloneFailureAnalysis(cf.FailureAnalysis)
+		result.SessionAnalysis = cloneSessionAnalysis(cf.SessionAnalysis)
+		result.FileAnalysis = cloneFileAnalysis(cf.FileAnalysis)
+		result.TaskPlanAnalysis = cloneTaskPlanAnalysis(cf.TaskPlanAnalysis)
+		result.ToolPerformance = cloneToolPerformance(cf.ToolPerformance)
 	}
-	if cf.ToolAnalysis != nil {
-		analysisCopy := *cf.ToolAnalysis
-		analysisCopy.Tools = append([]ToolStatItem(nil), cf.ToolAnalysis.Tools...)
-		analysisCopy.ByModel = append([]ToolModelStatItem(nil), cf.ToolAnalysis.ByModel...)
-		result.ToolAnalysis = &analysisCopy
-	}
-	result.EventAnalysis = cloneEventAnalysis(cf.EventAnalysis)
-	result.AgentAnalysis = cloneAgentAnalysis(cf.AgentAnalysis)
-	result.CommandAnalysis = cloneCommandAnalysis(cf.CommandAnalysis)
-	result.CostAnalysis = cloneCostAnalysis(cf.CostAnalysis)
-	result.FailureAnalysis = cloneFailureAnalysis(cf.FailureAnalysis)
-	result.SessionAnalysis = cloneSessionAnalysis(cf.SessionAnalysis)
-	result.FileAnalysis = cloneFileAnalysis(cf.FileAnalysis)
-	result.TaskPlanAnalysis = cloneTaskPlanAnalysis(cf.TaskPlanAnalysis)
-	result.ToolPerformance = cloneToolPerformance(cf.ToolPerformance)
 
 	return result
 }
@@ -413,6 +446,14 @@ func cloneTaskPlanAnalysis(source *TaskPlanAnalysisData) *TaskPlanAnalysisData {
 	copyValue.Tasks.StatusDistribution = append([]TaskStatusItem(nil), source.Tasks.StatusDistribution...)
 	copyValue.Tasks.SessionTaskCounts = append([]SessionTaskItem(nil), source.Tasks.SessionTaskCounts...)
 	return &copyValue
+}
+
+func weekdayName(weekday int) string {
+	names := []string{"周一", "周二", "周三", "周四", "周五", "周六", "周日"}
+	if weekday < 0 || weekday >= len(names) {
+		return ""
+	}
+	return names[weekday]
 }
 
 // AddMessage 添加一条消息记录到每日聚合

@@ -58,6 +58,11 @@ func parseToolResults(record ProjectRecord, timestamp time.Time, projectName str
 				Timestamp:   timestamp,
 			}
 		}
+		dateKey := call.Timestamp.Format("2006-01-02")
+		if call.Timestamp.IsZero() {
+			dateKey = timestamp.Format("2006-01-02")
+		}
+		dailyAgg := ensureDailyRuntimeAggregate(agg, dateKey)
 
 		classification := classifyToolResult(call.Tool, content)
 		preview := toolResultPreview(content.Content)
@@ -70,8 +75,12 @@ func parseToolResults(record ProjectRecord, timestamp time.Time, projectName str
 			addToolCallLocked(agg, call.Tool, call.Model)
 			addAgentToolCallLocked(agg, call)
 			addSessionToolCallLocked(agg, call)
+			addToolCallLocked(dailyAgg, call.Tool, call.Model)
+			addAgentToolCallLocked(dailyAgg, call)
+			addSessionToolCallLocked(dailyAgg, call)
 		}
 		addToolResultLocked(agg, call, classification, preview, timestamp, durationMs, resultSize)
+		addToolResultLocked(dailyAgg, call, classification, preview, timestamp, durationMs, resultSize)
 
 		delete(pendingTools, content.ToolUseID)
 	}
@@ -396,18 +405,18 @@ func recordRuntimeEventLocked(agg *ProjectAggregate, record ProjectRecord, times
 				Name string `json:"name"`
 				Path string `json:"path"`
 			} `json:"skills"`
-				Snapshot   json.RawMessage `json:"snapshot"` // file-analysis: for file-history-snapshot
+			Snapshot json.RawMessage `json:"snapshot"` // file-analysis: for file-history-snapshot
 			// task_plan_analysis (Milestone 4): plan/task attachment fields
-			PlanFilePath string `json:"planFilePath"`     // plan_mode, plan_file_reference
-			PlanExists   bool   `json:"planExists"`       // plan_mode
-			ReminderType string `json:"reminderType"`     // plan_mode
-			IsSubAgent   bool   `json:"isSubAgent"`       // plan_mode
-			PlanContent  string `json:"planContent"`      // plan_file_reference (full markdown!)
-			ExitReason   string `json:"exitReason"`       // plan_mode_exit
-			Met          bool   `json:"met"`              // goal_status
-			Sentinel     bool   `json:"sentinel"`         // goal_status
-			Condition    string `json:"condition"`        // goal_status
-			ItemCount    int    `json:"itemCount"`        // task_reminder, todo_reminder
+			PlanFilePath string `json:"planFilePath"` // plan_mode, plan_file_reference
+			PlanExists   bool   `json:"planExists"`   // plan_mode
+			ReminderType string `json:"reminderType"` // plan_mode
+			IsSubAgent   bool   `json:"isSubAgent"`   // plan_mode
+			PlanContent  string `json:"planContent"`  // plan_file_reference (full markdown!)
+			ExitReason   string `json:"exitReason"`   // plan_mode_exit
+			Met          bool   `json:"met"`          // goal_status
+			Sentinel     bool   `json:"sentinel"`     // goal_status
+			Condition    string `json:"condition"`    // goal_status
+			ItemCount    int    `json:"itemCount"`    // task_reminder, todo_reminder
 		}
 		if err := json.Unmarshal(record.Attachment, &attachment); err == nil && attachment.Type != "" {
 			eventType = "attachment:" + attachment.Type
@@ -1058,7 +1067,9 @@ func formatCategoryDisplay(baseTool, categoryKey string) string {
 
 func extractSampleInputForSlow(call pendingToolCall) string {
 	if call.CommandName != "" {
-		var input struct{ Command string `json:"command"` }
+		var input struct {
+			Command string `json:"command"`
+		}
 		if json.Unmarshal(call.Input, &input) == nil && input.Command != "" {
 			return previewString(input.Command, 120)
 		}

@@ -141,6 +141,9 @@ func parseProjectFileAggregate(filePath string, tf TimeFilter, agg *ProjectAggre
 		}
 
 		recordRuntimeEventLocked(agg, record, timestamp, projectName)
+		if hasTimestamp {
+			recordRuntimeEventLocked(ensureDailyRuntimeAggregate(agg, timestamp.Format("2006-01-02")), record, timestamp, projectName)
+		}
 
 		if record.Type == "user" {
 			parseToolResults(record, timestamp, projectName, pendingTools, agg)
@@ -191,8 +194,12 @@ func parseProjectFileAggregate(filePath string, tf TimeFilter, agg *ProjectAggre
 		// 4. 小时统计
 		hour := timestamp.Hour()
 		agg.HourlyCounts[hour]++
+		dailyHourlyCounts := agg.DailyHourlyCounts[dateKey]
+		dailyHourlyCounts[hour]++
+		agg.DailyHourlyCounts[dateKey] = dailyHourlyCounts
 
 		// 5. 模型使用统计
+		dailyRuntimeAgg := ensureDailyRuntimeAggregate(agg, dateKey)
 		if msg.Model != "" {
 			if agg.ModelUsage[msg.Model] == nil {
 				agg.ModelUsage[msg.Model] = &ModelUsageItem{
@@ -210,6 +217,7 @@ func parseProjectFileAggregate(filePath string, tf TimeFilter, agg *ProjectAggre
 			}
 			agg.DailyModelTokens[dateKey][msg.Model] += msg.Usage.InputTokens + msg.Usage.OutputTokens
 			recordCostUsageLocked(agg, msg, record, projectName)
+			recordCostUsageLocked(dailyRuntimeAgg, msg, record, projectName)
 		}
 
 		// 6. 工具调用统计
@@ -233,6 +241,11 @@ func parseProjectFileAggregate(filePath string, tf TimeFilter, agg *ProjectAggre
 			addAgentToolCallLocked(agg, call)
 			addSessionToolCallLocked(agg, call)
 			recordStructuredToolInputLocked(agg, &call)
+			dailyCall := call
+			addToolCallLocked(dailyRuntimeAgg, content.Name, msg.Model)
+			addAgentToolCallLocked(dailyRuntimeAgg, dailyCall)
+			addSessionToolCallLocked(dailyRuntimeAgg, dailyCall)
+			recordStructuredToolInputLocked(dailyRuntimeAgg, &dailyCall)
 			pendingTools[content.ID] = call
 		}
 	}
@@ -240,6 +253,10 @@ func parseProjectFileAggregate(filePath string, tf TimeFilter, agg *ProjectAggre
 	if len(pendingTools) > 0 {
 		for _, call := range pendingTools {
 			addMissingToolResultLocked(agg, call)
+			dateKey := call.Timestamp.Format("2006-01-02")
+			if dateKey != "0001-01-01" {
+				addMissingToolResultLocked(ensureDailyRuntimeAggregate(agg, dateKey), call)
+			}
 		}
 	}
 }
