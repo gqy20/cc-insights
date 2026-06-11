@@ -713,13 +713,14 @@ type TaskRaw struct {
 
 // ToolPerformanceData 工具性能与质量分析结果（输出格式）
 type ToolPerformanceData struct {
-	TotalPairedCalls    int                     `json:"total_paired_calls"`
-	TotalErrors         int                     `json:"total_errors"`
-	OverallErrorRate    float64                 `json:"overall_error_rate"`
-	OverallAvgDuration  float64                 `json:"overall_avg_duration_ms"`
-	ByCategory          []ToolPerfCategoryItem  `json:"by_category"`
-	SlowestCalls        []ToolSlowCallItem      `json:"slowest_calls"`
-	QualityDistribution []QualityBucketItem     `json:"quality_distribution"`
+	TotalPairedCalls    int                        `json:"total_paired_calls"`
+	TotalErrors         int                        `json:"total_errors"`
+	OverallErrorRate    float64                    `json:"overall_error_rate"`
+	OverallAvgDuration  float64                    `json:"overall_avg_duration_ms"`
+	ByCategory          []ToolPerfCategoryItem     `json:"by_category"`        // 按 BaseTool 分层截断后的类别列表
+	CategoryGroups      map[string][]ToolPerfCategoryItem `json:"category_groups,omitempty"` // 按 BaseTool 分组（前端可选展示）
+	SlowestCalls        []ToolSlowCallItem         `json:"slowest_calls"`
+	QualityDistribution []QualityBucketItem        `json:"quality_distribution"`
 }
 
 // ToolPerfCategoryItem 单个细分类别的工具性能统计

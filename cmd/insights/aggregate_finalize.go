@@ -651,13 +651,25 @@ func (agg *ProjectAggregate) finalizeTaskPlanAnalysis() {
 }
 
 // finalizeToolPerformance 生成工具性能与质量分析结果 (M5)
+// 按 BaseTool 分层截断，避免文件路径淹没命令分类
 func (agg *ProjectAggregate) finalizeToolPerformance() {
 	if len(agg.ToolPerfStats) == 0 {
 		return
 	}
 
+	// Per-BaseTool 截断配额：每种工具类型独立 Top-N
+	var perToolCap = map[string]int{
+		"Bash":    30, // 命令最多样化
+		"Read":    15, // 文件路径
+		"Edit":    15, // 文件路径
+		"Write":   10,
+		"MultiEdit": 10,
+		"default": 5, // Agent/TaskOutput 等内置工具
+	}
+
 	out := &ToolPerformanceData{
-		ByCategory:          make([]ToolPerfCategoryItem, 0, len(agg.ToolPerfStats)),
+		ByCategory:          make([]ToolPerfCategoryItem, 0),
+		CategoryGroups:      make(map[string][]ToolPerfCategoryItem),
 		SlowestCalls:        agg.SlowestCalls,
 		QualityDistribution: buildQualityDistribution(agg.ToolPerfStats),
 	}
@@ -665,6 +677,9 @@ func (agg *ProjectAggregate) finalizeToolPerformance() {
 	totalPaired := 0
 	totalErrors := 0
 	grandDuration := int64(0)
+
+	// Phase 1: 构建 + 按 BaseTool 分组
+	groups := make(map[string][]ToolPerfCategoryItem)
 
 	for key, stat := range agg.ToolPerfStats {
 		item := ToolPerfCategoryItem{
@@ -701,7 +716,7 @@ func (agg *ProjectAggregate) finalizeToolPerformance() {
 			item.AvgResultSize = float64(item.TotalResultSize) / float64(item.CallCount)
 		}
 
-		out.ByCategory = append(out.ByCategory, item)
+		groups[item.BaseTool] = append(groups[item.BaseTool], item)
 
 		paired := stat.CallCount - stat.MissingCount
 		if paired > 0 {
@@ -711,15 +726,33 @@ func (agg *ProjectAggregate) finalizeToolPerformance() {
 		grandDuration += stat.TotalDurationMs
 	}
 
-	// Sort by TotalDurationMs desc (most time-consuming categories first)
+	// Phase 2: 每组内按 TotalDurationMs 降序排列，应用配额截断
+	for baseTool, items := range groups {
+		sort.Slice(items, func(i, j int) bool {
+			return items[i].TotalDurationMs > items[j].TotalDurationMs
+		})
+
+		cap := perToolCap["default"]
+		if c, ok := perToolCap[baseTool]; ok {
+			cap = c
+		}
+		// MCP 工具通常数量少且每个都有意义，不截断
+		if strings.HasPrefix(baseTool, "mcp__") {
+			cap = len(items)
+		}
+
+		if len(items) > cap {
+			items = items[:cap]
+		}
+
+		out.CategoryGroups[baseTool] = items
+		out.ByCategory = append(out.ByCategory, items...)
+	}
+
+	// Phase 3: 最终按 TotalDurationMs 全局排序（保持分层结果的顺序可读）
 	sort.Slice(out.ByCategory, func(i, j int) bool {
 		return out.ByCategory[i].TotalDurationMs > out.ByCategory[j].TotalDurationMs
 	})
-
-	// Cap output size
-	if len(out.ByCategory) > 100 {
-		out.ByCategory = out.ByCategory[:100]
-	}
 
 	out.TotalPairedCalls = totalPaired
 	out.TotalErrors = totalErrors

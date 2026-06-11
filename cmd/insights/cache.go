@@ -315,6 +315,10 @@ func cloneToolPerformance(source *ToolPerformanceData) *ToolPerformanceData {
 	}
 	copyVal := *source
 	copyVal.ByCategory = append([]ToolPerfCategoryItem(nil), source.ByCategory...)
+	copyVal.CategoryGroups = make(map[string][]ToolPerfCategoryItem, len(source.CategoryGroups))
+	for k, v := range source.CategoryGroups {
+		copyVal.CategoryGroups[k] = append([]ToolPerfCategoryItem(nil), v...)
+	}
 	copyVal.SlowestCalls = append([]ToolSlowCallItem(nil), source.SlowestCalls...)
 	copyVal.QualityDistribution = append([]QualityBucketItem(nil), source.QualityDistribution...)
 	return &copyVal
