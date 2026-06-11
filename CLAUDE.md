@@ -260,9 +260,20 @@ make release-static         # 多平台静态版本（跨平台发布）
 ### 命令行参数
 
 ```bash
--data <path>    # 指定数据目录（默认: ./data）
+-data <path>    # 指定数据目录（默认: ~/.claude）
+-cache <path>   # 指定缓存目录（默认: ~/.cc-insights/cache/）
 -addr <addr>    # 指定监听地址（默认: :8932）
 ```
+
+**目录结构**:
+- **数据目录** (`~/.claude`): Claude Code 的原始数据，只读引用
+  - `projects/*.jsonl` — 项目对话记录
+  - `history.jsonl` — 操作历史
+  - `debug/*.log` — 调试日志
+  - `stats-cache.json` — 统计缓存
+- **家目录** (`~/.cc-insights/`): cc-insights 自身的状态管理
+  - `cache/cache.db` — 预聚合缓存 (~48MB)
+  - `config.json` — 持久化配置（未来）
 
 ### 开发模式运行
 使用 `make run-dev` 可以快速迭代开发，它会使用上级目录的 `data` 目录：
@@ -459,6 +470,7 @@ type CacheFile struct {
 - **主要依赖**: `github.com/go-echarts/go-echarts/v2 v2.3.3`
 - **模块名**: `cc-insights`
 - **二进制名**: `cc-insights` (原名 `cc-dashboard`)
-- **数据目录**: 默认 `./data`，可通过 `-data` 参数指定
+- **数据目录**: 默认 `~/.claude`，可通过 `-data` 参数指定
 - **监听地址**: 默认 `:8932`，可通过 `-addr` 参数指定
-- **缓存目录**: 默认 `./cache`，用于存放预聚合数据
+- **家目录**: `~/.cc-insights/`，缓存等状态文件统一管理
+- **缓存目录**: 默认 `~/.cc-insights/cache/`，可通过 `-cache` 参数指定
