@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -99,6 +101,7 @@ func handleDataAPI(w http.ResponseWriter, r *http.Request) {
 
 	go func() {
 		var data *DashboardData
+		source := "parsing"
 
 		// 优先使用缓存
 		if globalCache != nil {
@@ -106,9 +109,15 @@ func handleDataAPI(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				Warn("缓存读取失败，降级到实时解析", "error", err.Error())
 				data, err = buildDataFromParsing(tf, preset)
+			} else {
+				source = "cache"
 			}
 		} else {
 			data, err = buildDataFromParsing(tf, preset)
+		}
+
+		if err == nil {
+			maybeValidateDashboardData(source, data)
 		}
 
 		resultCh <- result{data: data, err: err}
@@ -134,6 +143,17 @@ func handleDataAPI(w http.ResponseWriter, r *http.Request) {
 
 // buildDataFromCache 从缓存数据构建 API 响应
 func buildDataFromCache(tf TimeFilter, preset string) (*DashboardData, error) {
+	startedAt := time.Now()
+
+	type historyResult struct {
+		commands []CommandStats
+	}
+	historyCh := make(chan historyResult, 1)
+	go func() {
+		cmdStats, _, _ := safeParseHistoryConcurrent(tf)
+		historyCh <- historyResult{commands: cmdStats}
+	}()
+
 	// 确定查询时间范围
 	var start, end time.Time
 	if tf.Start != nil {
@@ -144,10 +164,9 @@ func buildDataFromCache(tf TimeFilter, preset string) (*DashboardData, error) {
 	}
 
 	// 从缓存查询时间范围数据
+	queryStartedAt := time.Now()
 	cached := globalCache.QueryByTimeRange(start, end)
-
-	// 构建 CommandStats（缓存中没有，需要实时解析，使用安全包装）
-	cmdStats, _, _ := safeParseHistoryConcurrent(tf)
+	queryDuration := time.Since(queryStartedAt)
 
 	// 构建 MCPTools（从缓存中的 MCPToolStats 转换）
 	mcpTools := make([]MCPToolStats, 0, len(cached.MCPToolStats))
@@ -168,69 +187,28 @@ func buildDataFromCache(tf TimeFilter, preset string) (*DashboardData, error) {
 	}
 	sortMCPToolStats(mcpTools)
 
-	// 构建每日趋势
-	var dates []string
-	var counts []int
-	for date := range cached.DailyStats {
-		dates = append(dates, date)
-		counts = append(counts, cached.DailyStats[date].MessageCount)
-	}
-	// 按日期排序
-	sortDatesAndCounts(dates, counts, cached.DailyStats)
-
-	// 构建小时统计
-	hourlyCountsMap := make(map[string]int)
-	for hour, aggregate := range cached.HourlyStats {
-		if aggregate != nil {
-			hourKey := fmt.Sprintf("%02d", hour)
-			hourlyCountsMap[hourKey] = aggregate.MessageCount
-		}
-	}
-
-	// 构建项目统计
-	projects := make([]ProjectStatItem, 0, len(cached.ProjectStats))
-	for _, stats := range cached.ProjectStats {
-		projects = append(projects, *stats)
-	}
-	// 按消息数排序
-	sortProjectStats(projects)
-
-	// 构建星期统计
-	weekdayStats := &WeekdayStats{
-		WeekdayData: make([]WeekdayItem, 7),
-	}
-	for i, ws := range cached.WeekdayStats {
-		if ws != nil {
-			weekdayStats.WeekdayData[i] = *ws
-		}
-	}
-
-	// 构建模型使用统计
-	modelUsage := make([]ModelUsageItem, 0, len(cached.ModelUsage))
-	for _, mu := range cached.ModelUsage {
-		modelUsage = append(modelUsage, *mu)
-	}
-	sortModelUsage(modelUsage)
-
-	// 构建会话统计（从 DailyStats 构建）
-	dailySessionMap := make(map[string]int)
-	for date, dayStats := range cached.DailyStats {
-		dailySessionMap[date] = dayStats.SessionCount
-	}
-
-	// 找出峰值和谷值
+	// 单次遍历 DailyStats：构建每日趋势和 session 峰谷。
+	dates := make([]string, 0, len(cached.DailyStats))
+	counts := make([]int, 0, len(cached.DailyStats))
+	dailySessionMap := make(map[string]int, len(cached.DailyStats))
 	peakDate, peakCount := "", 0
 	valleyDate, valleyCount := "", 0
-	for date, count := range dailySessionMap {
-		if count > peakCount {
-			peakCount = count
+	for date, dayStats := range cached.DailyStats {
+		dates = append(dates, date)
+		counts = append(counts, dayStats.MessageCount)
+
+		sessionCount := dayStats.SessionCount
+		dailySessionMap[date] = sessionCount
+		if sessionCount > peakCount {
+			peakCount = sessionCount
 			peakDate = date
 		}
-		if valleyCount == 0 || count < valleyCount {
-			valleyCount = count
+		if valleyCount == 0 || sessionCount < valleyCount {
+			valleyCount = sessionCount
 			valleyDate = date
 		}
 	}
+	sortDatesAndCounts(dates, counts)
 
 	sessionStats := &SessionStats{
 		TotalSessions:   cached.TotalSessions,
@@ -241,7 +219,8 @@ func buildDataFromCache(tf TimeFilter, preset string) (*DashboardData, error) {
 		DailySessionMap: dailySessionMap,
 	}
 
-	// 构建工作时段统计（从 HourlyStats 计算）
+	// 单次遍历 HourlyStats：同时构建 hourly_counts 和工作时段统计。
+	hourlyCountsMap := make(map[string]int, 24)
 	hourlyData := make([]HourlyItem, 0, 24)
 	workHoursCount := 0
 	offHoursCount := 0
@@ -250,7 +229,8 @@ func buildDataFromCache(tf TimeFilter, preset string) (*DashboardData, error) {
 
 	for hour := 0; hour < 24; hour++ {
 		count := 0
-		if cached.HourlyStats[hour] != nil {
+		hasHourlyAggregate := cached.HourlyStats[hour] != nil
+		if hasHourlyAggregate {
 			count = cached.HourlyStats[hour].MessageCount
 		}
 
@@ -268,6 +248,10 @@ func buildDataFromCache(tf TimeFilter, preset string) (*DashboardData, error) {
 			workHoursCount += count
 		} else {
 			offHoursCount += count
+		}
+
+		if hasHourlyAggregate {
+			hourlyCountsMap[fmt.Sprintf("%02d", hour)] = count
 		}
 
 		if count > peakHourCount {
@@ -290,6 +274,28 @@ func buildDataFromCache(tf TimeFilter, preset string) (*DashboardData, error) {
 		PeakHour:       peakHour,
 		PeakHourCount:  peakHourCount,
 	}
+
+	projects := make([]ProjectStatItem, 0, len(cached.ProjectStats))
+	for _, stats := range cached.ProjectStats {
+		projects = append(projects, *stats)
+	}
+	sortProjectStats(projects)
+
+	weekdayStats := &WeekdayStats{
+		WeekdayData: make([]WeekdayItem, 7),
+	}
+	for i, ws := range cached.WeekdayStats {
+		if ws != nil {
+			weekdayStats.WeekdayData[i] = *ws
+		}
+	}
+
+	modelUsage := make([]ModelUsageItem, 0, len(cached.ModelUsage))
+	for _, mu := range cached.ModelUsage {
+		modelUsage = append(modelUsage, *mu)
+	}
+	sortModelUsage(modelUsage)
+
 	toolAnalysis := buildToolAnalysisFromCache(cached)
 	eventAnalysis := cloneEventAnalysis(cached.EventAnalysis)
 	agentAnalysis := cloneAgentAnalysis(cached.AgentAnalysis)
@@ -310,7 +316,8 @@ func buildDataFromCache(tf TimeFilter, preset string) (*DashboardData, error) {
 		rangeInfo.End = tf.End.Format("2006-01-02")
 	}
 
-	return &DashboardData{
+	cmdStats := (<-historyCh).commands
+	data := &DashboardData{
 		Timestamp:    time.Now().Format("2006-01-02 15:04:05"),
 		TimeRange:    rangeInfo,
 		Commands:     cmdStats,
@@ -336,7 +343,14 @@ func buildDataFromCache(tf TimeFilter, preset string) (*DashboardData, error) {
 		FileAnalysis:     fileAnalysis,
 		TaskPlanAnalysis: taskPlanAnalysis,
 		ToolPerformance:  toolPerformance,
-	}, nil
+	}
+	Debug("缓存数据组装完成",
+		"preset", preset,
+		"query_duration", queryDuration.Round(time.Millisecond),
+		"total_duration", time.Since(startedAt).Round(time.Millisecond),
+		"messages", cached.TotalMessages,
+	)
+	return data, nil
 }
 
 // buildDataFromParsing 通过实时解析构建 API 响应（优雅降级版）
@@ -462,64 +476,85 @@ func buildToolAnalysisFromCache(cache *CacheFile) *ToolAnalysisData {
 }
 
 // sortDatesAndCounts 按日期排序日期和计数数组
-func sortDatesAndCounts(dates []string, counts []int, dailyStats map[string]*DayAggregate) {
-	// 简单冒泡排序
-	n := len(dates)
-	for i := 0; i < n-1; i++ {
-		for j := 0; j < n-i-1; j++ {
-			if dates[j] > dates[j+1] {
-				dates[j], dates[j+1] = dates[j+1], dates[j]
-				counts[j], counts[j+1] = counts[j+1], counts[j]
-			}
+func sortDatesAndCounts(dates []string, counts []int) {
+	items := make([]struct {
+		date  string
+		count int
+	}, 0, len(dates))
+	for i, date := range dates {
+		count := 0
+		if i < len(counts) {
+			count = counts[i]
 		}
+		items = append(items, struct {
+			date  string
+			count int
+		}{date: date, count: count})
+	}
+	sort.SliceStable(items, func(i, j int) bool {
+		return items[i].date < items[j].date
+	})
+	for i, item := range items {
+		dates[i] = item.date
+		counts[i] = item.count
 	}
 }
 
 // sortProjectStats 按消息数排序项目统计
 func sortProjectStats(projects []ProjectStatItem) {
-	n := len(projects)
-	for i := 0; i < n-1; i++ {
-		for j := 0; j < n-i-1; j++ {
-			if projects[j].MessageCount < projects[j+1].MessageCount {
-				projects[j], projects[j+1] = projects[j+1], projects[j]
-			}
+	sort.SliceStable(projects, func(i, j int) bool {
+		if projects[i].MessageCount != projects[j].MessageCount {
+			return projects[i].MessageCount > projects[j].MessageCount
 		}
-	}
+		return projects[i].Project < projects[j].Project
+	})
 }
 
 func sortModelUsage(models []ModelUsageItem) {
-	n := len(models)
-	for i := 0; i < n-1; i++ {
-		for j := 0; j < n-i-1; j++ {
-			if models[j].Count < models[j+1].Count {
-				models[j], models[j+1] = models[j+1], models[j]
-			}
+	sort.SliceStable(models, func(i, j int) bool {
+		if models[i].Count != models[j].Count {
+			return models[i].Count > models[j].Count
 		}
-	}
+		return models[i].Model < models[j].Model
+	})
 }
 
 func sortMCPToolStats(tools []MCPToolStats) {
-	n := len(tools)
-	for i := 0; i < n-1; i++ {
-		for j := 0; j < n-i-1; j++ {
-			if tools[j].Count < tools[j+1].Count ||
-				(tools[j].Count == tools[j+1].Count && tools[j].Server+"::"+tools[j].Tool > tools[j+1].Server+"::"+tools[j+1].Tool) {
-				tools[j], tools[j+1] = tools[j+1], tools[j]
-			}
+	sort.SliceStable(tools, func(i, j int) bool {
+		if tools[i].Count != tools[j].Count {
+			return tools[i].Count > tools[j].Count
 		}
-	}
+		return tools[i].Server+"::"+tools[i].Tool < tools[j].Server+"::"+tools[j].Tool
+	})
 }
 
 func sortToolStats(tools []ToolStatItem) {
-	n := len(tools)
-	for i := 0; i < n-1; i++ {
-		for j := 0; j < n-i-1; j++ {
-			if tools[j].CallCount < tools[j+1].CallCount ||
-				(tools[j].CallCount == tools[j+1].CallCount && tools[j].Tool > tools[j+1].Tool) {
-				tools[j], tools[j+1] = tools[j+1], tools[j]
-			}
+	sort.SliceStable(tools, func(i, j int) bool {
+		if tools[i].CallCount != tools[j].CallCount {
+			return tools[i].CallCount > tools[j].CallCount
 		}
+		return tools[i].Tool < tools[j].Tool
+	})
+}
+
+func maybeValidateDashboardData(source string, data *DashboardData) {
+	if !dashboardValidationEnabled() {
+		return
 	}
+	report := buildDashboardConsistencyReport(data)
+	if len(report.Issues) > 0 {
+		Warn("Dashboard 数据一致性检查发现问题",
+			"source", source,
+			"issues", strings.Join(report.Issues, "; "),
+		)
+		return
+	}
+	Debug("Dashboard 数据一致性检查通过", "source", source)
+}
+
+func dashboardValidationEnabled() bool {
+	value := strings.TrimSpace(os.Getenv("CC_INSIGHTS_VALIDATE"))
+	return value == "1" || strings.EqualFold(value, "true") || strings.EqualFold(value, "yes")
 }
 
 // sendJSON 发送 JSON 响应
