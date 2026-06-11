@@ -2,7 +2,7 @@
 
 > 本文档记录 Claude Code Dashboard 可以新增的统计功能和分析维度
 
-**当前状态**: Dashboard v2.0 已实现基础统计、核心分析、质量与生命周期分析（M0-M4 全部完成）
+**当前状态**: Dashboard v2.1 已实现基础统计、核心分析、质量与生命周期分析、工具性能分析（M0-M5 全部完成）
 
 ---
 
@@ -77,6 +77,33 @@
 5. 底部全宽: Per-session Task 数 Top 10 (堆叠横向)
 
 **状态**: 已实现 (`TaskPlanAnalysisData`, `initTaskPlanChart`)
+
+### ✅ M5: 工具性能与质量分析 (ToolPerformance)
+
+**数据源**: `projects/*.jsonl` tool_use ↔ tool_result 配对（零额外 IO）
+
+**核心设计 — 细分类别**:
+
+| 原工具 | 细分规则 | 示例 |
+|--------|---------|------|
+| Bash | 按主命令名细分 | `Bash:git`, `Bash:make`, `Bash:go test` |
+| Read/Edit/Write | 按文件路径细分 | `Read:/home/user/main.go` |
+| MCP (mcp__*) | 保持全名（已够细） | `mcp__crawl-mcp__search_text` |
+
+**5 维度输出**:
+1. **细分类别性能** (`by_category`) — 100 个类别，含 call_count/avg_duration_ms/error_rate/min/max
+2. **最慢 Top-N 调用** (`slowest_calls`) — 全局最慢 20 次，含工具/耗时/是否错误/示例输入
+3. **结果质量分布** (`quality_distribution`) — 6 个桶: 空/极小(≤50B)/小(≤200B)/中(≤1KB)/大(≤5KB)/巨大(>5KB)
+4. **全局汇总** — total_paired_calls/total_errors/overall_error_rate/overall_avg_duration_ms
+5. **前端三网格图表** — 类别性能柱+折线组合 / 最慢Top10 / 质量分布
+
+**关键实现细节**:
+- 耗时计算: `tool_result.Timestamp - tool_use.Timestamp`（毫秒精度，已有数据零额外 IO）
+- 复用 `bashCommandName()` 和 `filePathFromToolInput()` 作为细分类别 key
+- SlowestCalls 固定 Top-20 使用 slice+sort 维护
+- Quality Distribution 按**调用数**加权（非类别数）
+
+**状态**: 已实现 (`ToolPerformanceData`, `initToolPerformanceChart`)
 
 ---
 
@@ -214,7 +241,7 @@
 
 ## 🎯 实施优先级
 
-### ✅ 已完成（M0-M4）
+### ✅ 已完成（M0-M5）
 
 | Milestone | 功能 | 状态 | 关键文件 |
 |-----------|------|------|---------|
@@ -223,6 +250,7 @@
 | M2 | Session 生命周期复盘 | ✅ | session_stats.go, charts_runtime.js |
 | M3 | 文件与编辑质量分析 | ✅ | parser.go (attachment), charts_runtime.js |
 | M4 | Task / Plan 结构分析 | ✅ | task_parser.go, parser.go (plan events), charts_runtime.js |
+| M5 | 工具性能与质量分析 (细分类别/耗时/错误率/质量分布/最慢Top-N) | ✅ | parser.go (M5 functions), aggregate_finalize.go, charts_runtime.js |
 
 ### 未来方向
 
@@ -240,7 +268,7 @@
 
 ### 当前架构
 
-- **单次遍历聚合**: `ParseProjectsConcurrentOnce` 一次遍历 `projects/*.jsonl`，同时产出项目、日期、会话、星期、小时、模型、工具、失败、事件、agent、命令、成本、文件、plan 等 14+ 维度统计
+- **单次遍历聚合**: `ParseProjectsConcurrentOnce` 一次遍历 `projects/*.jsonl`，同时产出项目、日期、会话、星期、小时、模型、工具、失败、事件、agent、命令、成本、文件、plan、tool_performance 等 15+ 维度统计
 - **双数据源设计**: M4 引入独立数据源模式 — Plan 分析复用 JSONL 零额外 IO，Task 分析从 `tasks/` 目录独立并发扫描
 - **四数据源并行**: API 层 history/projects/debug/tasks 四个 goroutine 并行解析，整体耗时由最慢的数据源决定
 - **缓存系统**: `BuildFullCache` → CacheFile JSON → `QueryByTimeRange` 时间过滤 → 优雅降级实时解析
@@ -264,4 +292,4 @@
 
 ---
 
-*最后更新: 2026-06-11 (M4: Task/Plan 分析完成)*
+*最后更新: 2026-06-11 (M5: 工具性能与质量分析完成)*

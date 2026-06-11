@@ -261,7 +261,7 @@ make release-static         # 多平台静态版本（跨平台发布）
 
 ```bash
 -data <path>    # 指定数据目录（默认: ./data）
--addr <addr>    # 指定监听地址（默认: :8080）
+-addr <addr>    # 指定监听地址（默认: :8932）
 ```
 
 ### 开发模式运行
@@ -446,6 +446,7 @@ type CacheFile struct {
 - ✅ Session 生命周期复盘 (SessionAnalysis) - 失败/耗时/结果状态
 - ✅ 文件与编辑质量 (FileAnalysis/M3) - 热门文件/Edit失败/Snapshot热点
 - ✅ Task / Plan 结构分析 (TaskPlanAnalysis/M4) - Plan mode 生命周期/任务状态分布
+- ✅ 工具性能与质量分析 (ToolPerformance/M5) - 细分类别耗时/错误率/结果质量/最慢Top-N
 
 **Phase 4: 未来方向**
 - Shell命令统计 - 解析shell-snapshots/目录
@@ -459,5 +460,5 @@ type CacheFile struct {
 - **模块名**: `cc-insights`
 - **二进制名**: `cc-insights` (原名 `cc-dashboard`)
 - **数据目录**: 默认 `./data`，可通过 `-data` 参数指定
-- **监听地址**: 默认 `:8080`，可通过 `-addr` 参数指定
+- **监听地址**: 默认 `:8932`，可通过 `-addr` 参数指定
 - **缓存目录**: 默认 `./cache`，用于存放预聚合数据

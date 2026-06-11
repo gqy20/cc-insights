@@ -85,6 +85,8 @@ func (cb *CacheBuilder) BuildFullCache() error {
 		CommandAnalysis: aggregate.CommandAnalysis,
 		CostAnalysis:    aggregate.CostAnalysis,
 		FileAnalysis:   aggregate.FileAnalysis,
+		TaskPlanAnalysis: aggregate.TaskPlanAnalysis,
+		ToolPerformance:  aggregate.ToolPerformance,
 		ProjectFiles:    projectFiles,
 	}
 	// 填充 HourlyStats

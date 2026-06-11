@@ -31,6 +31,7 @@ func newProjectAggregate() *ProjectAggregate {
 		FileEditFailures:   make(map[string]*FileEditFailureAgg),
 		FileSnapshotStats:  make(map[string]*FileSnapshotAgg),
 		FileEditedStats:    make(map[string]*FileEditedAgg),
+		ToolPerfStats:      make(map[string]*ToolPerfAgg),
 		HourlyCounts:        [24]int{},
 		CostModelStats:      make(map[string]*CostModelStat),
 		CostProjectStats:    make(map[string]*CostProjectStat),
@@ -413,7 +414,40 @@ func mergeProjectAggregate(dst, src *ProjectAggregate) {
 				dst.ReminderAgg.TodoSessionProjects[sid] = proj
 			}
 		}
+	// M5: merge ToolPerfStats
+	for key, stat := range src.ToolPerfStats {
+		dstStat := ensureToolPerfAgg(dst, key)
+		dstStat.CallCount += stat.CallCount
+		dstStat.SuccessCount += stat.SuccessCount
+		dstStat.ErrorCount += stat.ErrorCount
+		dstStat.MissingCount += stat.MissingCount
+		dstStat.TotalDurationMs += stat.TotalDurationMs
+		if stat.MinDurationMs < dstStat.MinDurationMs {
+			dstStat.MinDurationMs = stat.MinDurationMs
+		}
+		if stat.MaxDurationMs > dstStat.MaxDurationMs {
+			dstStat.MaxDurationMs = stat.MaxDurationMs
+		}
+		dstStat.TotalResultSize += stat.TotalResultSize
+		dstStat.EmptyResults += stat.EmptyResults
+		if dstStat.SampleInput == "" && stat.SampleInput != "" {
+			dstStat.SampleInput = stat.SampleInput
+		}
+	}
+
+	// Merge SlowestCalls (keep global top-N across merged aggregates)
+	for _, sc := range src.SlowestCalls {
+		if len(dst.SlowestCalls) < maxSlowCalls {
+			dst.SlowestCalls = append(dst.SlowestCalls, sc)
+			sortSlowCallsDesc(dst.SlowestCalls)
+		} else if sc.DurationMs > dst.SlowestCalls[len(dst.SlowestCalls)-1].DurationMs {
+			dst.SlowestCalls[len(dst.SlowestCalls)-1] = sc
+			sortSlowCallsDesc(dst.SlowestCalls)
+		}
+	}
 	}}
+
+
 
 func aggregateToProjectFileAggregate(src *ProjectAggregate) ProjectFileAggregate {
 	out := ProjectFileAggregate{
@@ -452,6 +486,8 @@ func aggregateToProjectFileAggregate(src *ProjectAggregate) ProjectFileAggregate
 		PlanModeAgg:        serializePlanModeAgg(src.PlanModeAgg),
 		GoalStatusAgg:      serializeGoalStatusAgg(src.GoalStatusAgg),
 		ReminderAgg:        serializeReminderAgg(src.ReminderAgg),
+		ToolPerfStats:      make(map[string]ToolPerfAgg, len(src.ToolPerfStats)),
+		SlowestCalls:       append([]ToolSlowCallItem(nil), src.SlowestCalls...),
 	}
 	for key, stat := range src.ProjectStats {
 		out.ProjectStats[key] = *stat
@@ -525,6 +561,9 @@ func aggregateToProjectFileAggregate(src *ProjectAggregate) ProjectFileAggregate
 		// For now store session count in a separate field or just skip SessionSet
 		out.FileSnapshotStats[key] = ssCopy
 	}
+		for key, stat := range src.ToolPerfStats {
+			out.ToolPerfStats[key] = *stat
+		}
 	for key, ed := range src.FileEditedStats {
 		out.FileEditedStats[key] = *ed
 	}
@@ -646,6 +685,12 @@ func projectFileAggregateToAggregate(src ProjectFileAggregate) *ProjectAggregate
 	out.PlanModeAgg = deserializePlanModeAgg(src.PlanModeAgg)
 	out.GoalStatusAgg = deserializeGoalStatusAgg(src.GoalStatusAgg)
 	out.ReminderAgg = deserializeReminderAgg(src.ReminderAgg)
+	// M5: restore ToolPerfStats
+	for key, stat := range src.ToolPerfStats {
+		statCopy := stat
+		out.ToolPerfStats[key] = &statCopy
+	}
+	out.SlowestCalls = append([]ToolSlowCallItem(nil), src.SlowestCalls...)
 	return out
 }
 

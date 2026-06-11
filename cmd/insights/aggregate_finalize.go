@@ -2,7 +2,9 @@ package main
 
 import (
 	"fmt"
+	"math"
 	"sort"
+	"strings"
 )
 
 // finalize 生成输出格式的数据
@@ -67,6 +69,7 @@ func (agg *ProjectAggregate) finalize() {
 	agg.finalizeSessionAnalysis()
 	agg.finalizeFileAnalysis()
 	agg.finalizeTaskPlanAnalysis()
+	agg.finalizeToolPerformance()
 
 	// 8. 生成工作时段统计
 	var workHoursCount, offHoursCount int
@@ -645,4 +648,157 @@ func (agg *ProjectAggregate) finalizeTaskPlanAnalysis() {
 	}
 
 	agg.TaskPlanAnalysis = out
+}
+
+// finalizeToolPerformance 生成工具性能与质量分析结果 (M5)
+func (agg *ProjectAggregate) finalizeToolPerformance() {
+	if len(agg.ToolPerfStats) == 0 {
+		return
+	}
+
+	out := &ToolPerformanceData{
+		ByCategory:          make([]ToolPerfCategoryItem, 0, len(agg.ToolPerfStats)),
+		SlowestCalls:        agg.SlowestCalls,
+		QualityDistribution: buildQualityDistribution(agg.ToolPerfStats),
+	}
+
+	totalPaired := 0
+	totalErrors := 0
+	grandDuration := int64(0)
+
+	for key, stat := range agg.ToolPerfStats {
+		item := ToolPerfCategoryItem{
+			Category:        formatCategoryDisplayFromKey(key),
+			CallCount:       stat.CallCount,
+			SuccessCount:    stat.SuccessCount,
+			ErrorCount:      stat.ErrorCount,
+			MissingCount:    stat.MissingCount,
+			TotalDurationMs: stat.TotalDurationMs,
+			MinDurationMs:   stat.MinDurationMs,
+			MaxDurationMs:   stat.MaxDurationMs,
+			TotalResultSize: stat.TotalResultSize,
+			EmptyResults:    stat.EmptyResults,
+			SampleInput:     stat.SampleInput,
+		}
+
+		// Split key into baseTool and subKey
+		if idx := strings.IndexByte(key, '\x00'); idx >= 0 {
+			item.BaseTool = key[:idx]
+			item.SubKey = key[idx+1:]
+		} else {
+			item.BaseTool = key
+		}
+
+		// Fix MinDurationMs if no valid durations were recorded
+		if item.MinDurationMs == math.MaxInt64 {
+			item.MinDurationMs = 0
+		}
+
+		// Derived metrics
+		if item.CallCount > 0 {
+			item.ErrorRate = float64(item.ErrorCount) / float64(item.CallCount) * 100
+			item.AvgDurationMs = float64(item.TotalDurationMs) / float64(item.CallCount)
+			item.AvgResultSize = float64(item.TotalResultSize) / float64(item.CallCount)
+		}
+
+		out.ByCategory = append(out.ByCategory, item)
+
+		paired := stat.CallCount - stat.MissingCount
+		if paired > 0 {
+			totalPaired += paired
+		}
+		totalErrors += stat.ErrorCount
+		grandDuration += stat.TotalDurationMs
+	}
+
+	// Sort by TotalDurationMs desc (most time-consuming categories first)
+	sort.Slice(out.ByCategory, func(i, j int) bool {
+		return out.ByCategory[i].TotalDurationMs > out.ByCategory[j].TotalDurationMs
+	})
+
+	// Cap output size
+	if len(out.ByCategory) > 100 {
+		out.ByCategory = out.ByCategory[:100]
+	}
+
+	out.TotalPairedCalls = totalPaired
+	out.TotalErrors = totalErrors
+	if totalPaired > 0 {
+		out.OverallErrorRate = float64(totalErrors) / float64(totalPaired) * 100
+	}
+	if totalPaired > 0 {
+		out.OverallAvgDuration = float64(grandDuration) / float64(totalPaired)
+	}
+
+	agg.ToolPerformance = out
+}
+
+func formatCategoryDisplayFromKey(key string) string {
+	if idx := strings.IndexByte(key, '\x00'); idx >= 0 {
+		base := key[:idx]
+		sub := key[idx+1:]
+		if sub == "" {
+			return base
+		}
+		return base + ":" + sub
+	}
+	return key
+}
+
+func buildQualityDistribution(stats map[string]*ToolPerfAgg) []QualityBucketItem {
+	buckets := []struct {
+		Name  string
+		Limit int // upper bound (exclusive); 0 means exactly 0
+	}{
+		{"空", 0},
+		{"极小(≤50B)", 50},
+		{"小(≤200B)", 200},
+		{"中(≤1KB)", 1024},
+		{"大(≤5KB)", 5120},
+		{"巨大(>5KB)", 999999999},
+	}
+
+	counts := make([]int, len(buckets))
+	totalCalls := int64(0)
+
+	for _, stat := range stats {
+		avgSize := 0
+		if stat.CallCount > 0 {
+			avgSize = int(stat.TotalResultSize / int64(stat.CallCount))
+		}
+		totalCalls += int64(stat.CallCount)
+
+		bucketIdx := len(buckets) - 1
+		for i, b := range buckets {
+			if i == 0 { // empty
+				if stat.EmptyResults > stat.CallCount/2 {
+					bucketIdx = 0
+					break
+				}
+				continue
+			}
+			if avgSize < b.Limit && avgSize > 0 {
+				bucketIdx = i
+				break
+			} else if avgSize == 0 && i < len(buckets)-1 {
+				bucketIdx = i
+				break
+			}
+		}
+		counts[bucketIdx] += stat.CallCount
+	}
+
+	result := make([]QualityBucketItem, 0, len(buckets))
+	for i, b := range buckets {
+		rate := 0.0
+		if totalCalls > 0 {
+			rate = float64(counts[i]) / float64(totalCalls) * 100
+		}
+		result = append(result, QualityBucketItem{
+			Bucket: b.Name,
+			Count:  counts[i],
+			Rate:   rate,
+		})
+	}
+	return result
 }

@@ -932,3 +932,123 @@ function initTaskPlanChart(tpa) {
         '提醒总次数 <strong>' + formatNumber((reminder.task_reminder_count || 0) + (reminder.todo_reminder_count || 0)) + '</strong> 次。' +
         (goalCount > 0 ? '目标达成事件 <strong>' + goalCount + '</strong> 条。' : '');
 }
+
+// === M5: Tool Performance & Quality Analysis ===
+function initToolPerformanceChart(tp) {
+    var insight = document.getElementById('toolPerformanceChart-insight');
+    if (!tp || !tp.by_category || tp.by_category.length === 0) {
+        if (insight) insight.innerHTML = '<strong>数据洞察:</strong> 暂无工具性能数据';
+        return;
+    }
+
+    var chart = echarts.init(document.getElementById('toolPerformanceChart'), 'wonderland');
+    var categories = tp.by_category.slice(0, 20);
+    var labels = categories.map(function(item) { return shortCategoryLabel(item.category); });
+    var slowest = (tp.slowest_calls || []).slice(0, 10);
+    var qualityDist = tp.quality_distribution || [];
+
+    chart.setOption({
+        title: {
+            text: '工具性能与质量分析',
+            subtext: '细分类别耗时 · 最慢调用 · 结果质量分布',
+            left: 'center'
+        },
+        tooltip: {
+            trigger: 'axis',
+            axisPointer: { type: 'shadow' },
+            formatter: function(params) {
+                var idx = params[0] ? params[0].dataIndex : -1;
+                var item = categories[idx];
+                if (!item) return '';
+                return escapeHtml(item.category) + '<br/>' +
+                    '调用: ' + formatNumber(item.call_count) + '<br/>' +
+                    '成功: ' + formatNumber(item.success_count) + ' | 失败: ' + formatNumber(item.error_count) + ' | 缺失: ' + formatNumber(item.missing_count) + '<br/>' +
+                    '失败率: ' + item.error_rate.toFixed(1) + '%<br/>' +
+                    '总耗时: ' + formatDuration(item.total_duration_ms) + '<br/>' +
+                    '平均耗时: +item.avg_duration_ms.toFixed(0) + 'ms<br/>' +
+                    '最小: ' + formatDuration(item.min_duration_ms) + ' | 最大: ' + formatDuration(item.max_duration_ms) + '<br/>' +
+                    '平均结果大小: ' + formatBytes(item.avg_result_size);
+            }
+        },
+        legend: {
+            data: ['总耗时', '平均耗时(ms)', '失败率%'],
+            top: 50
+        },
+        grid: [
+            { top: 95, left: 70, right: 70, height: 200, containLabel: true },
+            { top: 330, left: 70, right: 70, height: 170, containLabel: true },
+            { top: 530, left: 70, right: 70, height: 150, containLabel: true }
+        ],
+        xAxis: [
+            { type: 'category', gridIndex: 0, data: labels, axisLabel: { interval: 0, rotate: 30, fontSize: 9 } },
+            { type: 'category', gridIndex: 1, data: slowest.map(function(s) { return s.category || s.tool; }), axisLabel: { interval: 0, rotate: 25, fontSize: 9 } },
+            { type: 'category', gridIndex: 2, data: qualityDist.map(function(q) { return q.bucket; }), axisLabel: { interval: 0, fontSize: 10 } }
+        ],
+        yAxis: [
+            { type: 'value', gridIndex: 0, name: '耗时 ms' },
+            { type: 'value', gridIndex: 0, name: '失败率 %', max: 100 },
+            { type: 'value', gridIndex: 1, name: '耗时 ms' },
+            { type: 'value', gridIndex: 2, name: '类别数' }
+        ],
+        series: [
+            // Grid 0: Category performance - bar + lines
+            {
+                name: '总耗时', type: 'bar', xAxisIndex: 0, yAxisIndex: 0,
+                data: categories.map(function(i) { return i.total_duration_ms; }),
+                itemStyle: { color: '#5470c6' }
+            },
+            {
+                name: '平均耗时(ms)', type: 'line', xAxisIndex: 0, yAxisIndex: 0,
+                data: categories.map(function(i) { return +i.avg_duration_ms.toFixed(0); }),
+                itemStyle: { color: '#91cc75' }, smooth: true
+            },
+            {
+                name: '失败率%', type: 'line', xAxisIndex: 0, yAxisIndex: 1,
+                data: categories.map(function(i) { return +i.error_rate.toFixed(1); }),
+                itemStyle: { color: '#ee6666' }, smooth: true
+            },
+            // Grid 1: Slowest calls
+            {
+                name: '耗时(ms)', type: 'bar', xAxisIndex: 1, yAxisIndex: 2,
+                data: slowest.map(function(s) { return s.duration_ms; }),
+                itemStyle: function(params) {
+                    return { color: slowest[params.dataIndex].is_error ? '#e74c3c' : '#f39c12' };
+                }
+            },
+            // Grid 2: Quality distribution
+            {
+                name: '类别数', type: 'bar', xAxisIndex: 2, yAxisIndex: 3,
+                data: qualityDist.map(function(q) { return q.count; }),
+                itemStyle: { color: '#8e44ad' }
+            }
+        ]
+    });
+
+    // Insight text
+    if (insight) {
+        insight.innerHTML =
+            '<strong>数据洞察:</strong> 共配对 <strong>' + formatNumber(tp.total_paired_calls) + '</strong> 次工具调用，' +
+            '整体错误率 <strong>' + (tp.overall_error_rate || 0).toFixed(1) + '%</strong>，' +
+            '平均耗时 <strong>' + (tp.overall_avg_duration || 0).toFixed(0) + 'ms</strong>。' +
+            (slowest.length > 0 ? '最慢的单次调用是 <strong>' + escapeHtml(slowest[0].category || slowest[0].tool || '-') + '</strong>，耗时 <strong>' + formatDuration(slowest[0].duration_ms) + '</strong>。' : '');
+    }
+}
+
+function shortCategoryLabel(cat) {
+    if (!cat) return '-';
+    if (cat.length > 35) return cat.slice(0, 32) + '...';
+    return cat;
+}
+
+function formatBytes(val) {
+    if (!val || val === 0) return '0 B';
+    if (val < 1024) return val.toFixed(0) + ' B';
+    if (val < 1048576) return (val / 1024).toFixed(1) + ' KB';
+    return (val / 1048576).toFixed(1) + ' MB';
+}
+
+function formatDuration(ms) {
+    if (!ms && ms !== 0) return '-';
+    if (ms < 1000) return ms.toFixed(0) + 'ms';
+    return (ms / 1000).toFixed(1) + 's';
+}

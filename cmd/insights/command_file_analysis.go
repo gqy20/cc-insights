@@ -213,6 +213,17 @@ func rawJSONText(raw json.RawMessage) string {
 
 func previewString(value string, limit int) string {
 	value = strings.Join(strings.Fields(value), " ")
+	// 安全化：替换引号和控制字符，防止破坏外层 JSON
+	value = strings.ReplaceAll(value, `"`, "'")
+	value = strings.ReplaceAll(value, "\\", "/")
+	var sb strings.Builder
+	sb.Grow(len(value))
+	for _, r := range value {
+		if r >= 32 && r != 127 {
+			sb.WriteRune(r)
+		}
+	}
+	value = sb.String()
 	if len(value) > limit {
 		return value[:limit]
 	}

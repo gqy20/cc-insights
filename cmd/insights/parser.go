@@ -3,8 +3,10 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"math"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 )
@@ -60,12 +62,16 @@ func parseToolResults(record ProjectRecord, timestamp time.Time, projectName str
 		classification := classifyToolResult(call.Tool, content)
 		preview := toolResultPreview(content.Content)
 
+		// M5: compute duration and result size
+		durationMs := timestamp.Sub(call.Timestamp).Milliseconds()
+		resultSize := len(toolResultText(content.Content))
+
 		if !ok {
 			addToolCallLocked(agg, call.Tool, call.Model)
 			addAgentToolCallLocked(agg, call)
 			addSessionToolCallLocked(agg, call)
 		}
-		addToolResultLocked(agg, call, classification, preview, timestamp)
+		addToolResultLocked(agg, call, classification, preview, timestamp, durationMs, resultSize)
 
 		delete(pendingTools, content.ToolUseID)
 	}
@@ -78,7 +84,7 @@ func addToolCallLocked(agg *ProjectAggregate, tool string, model string) {
 	modelStat.CallCount++
 }
 
-func addToolResultLocked(agg *ProjectAggregate, call pendingToolCall, classification toolFailureClassification, preview string, timestamp time.Time) {
+func addToolResultLocked(agg *ProjectAggregate, call pendingToolCall, classification toolFailureClassification, preview string, timestamp time.Time, durationMs int64, resultSize int) {
 	stat := ensureToolStat(agg, call.Tool)
 	modelStat := ensureToolModelStat(agg, call.Tool, call.Model)
 	if classification.Failed {
@@ -107,6 +113,8 @@ func addToolResultLocked(agg *ProjectAggregate, call pendingToolCall, classifica
 				ContentPreview: preview,
 			})
 		}
+		// M5: record performance for error result
+		recordToolPerformanceLocked(agg, call, durationMs, resultSize, true, false)
 		return
 	}
 	stat.SuccessCount++
@@ -114,6 +122,8 @@ func addToolResultLocked(agg *ProjectAggregate, call pendingToolCall, classifica
 	addAgentToolResultLocked(agg, call, false, false)
 	addSessionToolResultLocked(agg, call, false, false)
 	addCommandOrFileResultLocked(agg, call, false, false)
+	// M5: record performance for success result
+	recordToolPerformanceLocked(agg, call, durationMs, resultSize, false, false)
 }
 
 func addMissingToolResultLocked(agg *ProjectAggregate, call pendingToolCall) {
@@ -124,6 +134,8 @@ func addMissingToolResultLocked(agg *ProjectAggregate, call pendingToolCall) {
 	addAgentToolResultLocked(agg, call, false, true)
 	addSessionToolResultLocked(agg, call, false, true)
 	addCommandOrFileResultLocked(agg, call, false, true)
+	// M5: record missing result
+	recordToolPerformanceLocked(agg, call, -1, 0, false, true)
 }
 
 // --- file_analysis: 按文件记录 Edit 失败原因 ---
@@ -891,11 +903,7 @@ func kindFromCategoryReason(category, reason string) string {
 
 func toolResultPreview(raw json.RawMessage) string {
 	text := toolResultText(raw)
-	text = strings.Join(strings.Fields(text), " ")
-	if len(text) > 240 {
-		return text[:240]
-	}
-	return text
+	return previewString(text, 240)
 }
 
 func toolResultText(raw json.RawMessage) string {
@@ -909,4 +917,157 @@ func toolResultText(raw json.RawMessage) string {
 		return s
 	}
 	return string(raw)
+}
+
+// === M5: Tool Performance & Quality Analysis ===
+
+const maxSlowCalls = 20 // Top-N slowest calls to retain globally
+
+// buildToolPerfCategoryKey constructs the M5 category key and display parts.
+// Returns (categoryKey, baseTool, subKey, sampleInput)
+func buildToolPerfCategoryKey(call pendingToolCall) (string, string, string, string) {
+	switch call.Tool {
+	case "Bash":
+		subKey := call.CommandName
+		if subKey == "" {
+			subKey = "unknown"
+		}
+		sampleInput := ""
+		if len(call.Input) > 0 {
+			var input struct {
+				Command string `json:"command"`
+			}
+			if json.Unmarshal(call.Input, &input) == nil && input.Command != "" {
+				sampleInput = previewString(input.Command, 120)
+			}
+		}
+		return "Bash\x00" + subKey, "Bash", subKey, sampleInput
+	case "Read", "Edit", "Write", "MultiEdit":
+		if call.FileOpKey != "" {
+			parts := strings.SplitN(call.FileOpKey, "\x00", 2)
+			subKey := ""
+			if len(parts) == 2 {
+				subKey = parts[1]
+			}
+			sampleInput := truncatePath(subKey)
+			return call.FileOpKey, call.Tool, subKey, sampleInput
+		}
+		return call.Tool + "\x00", call.Tool, "", ""
+	default:
+		// MCP tools like mcp__jina__web_search are already granular enough
+		return call.Tool + "\x00", call.Tool, "", ""
+	}
+}
+
+func truncatePath(path string) string {
+	if len(path) <= 80 {
+		return path
+	}
+	return "..." + path[len(path)-77:]
+}
+
+func ensureToolPerfAgg(agg *ProjectAggregate, categoryKey string) *ToolPerfAgg {
+	if agg.ToolPerfStats == nil {
+		agg.ToolPerfStats = make(map[string]*ToolPerfAgg)
+	}
+	if agg.ToolPerfStats[categoryKey] == nil {
+		agg.ToolPerfStats[categoryKey] = &ToolPerfAgg{
+			MinDurationMs: math.MaxInt64,
+		}
+	}
+	return agg.ToolPerfStats[categoryKey]
+}
+
+// recordToolPerformanceLocked records one paired tool_use->tool_result event.
+func recordToolPerformanceLocked(agg *ProjectAggregate, call pendingToolCall, durationMs int64, resultSize int, isError bool, isMissing bool) {
+	categoryKey, baseTool, _, sampleInput := buildToolPerfCategoryKey(call)
+	stat := ensureToolPerfAgg(agg, categoryKey)
+
+	stat.CallCount++
+	switch {
+	case isMissing:
+		stat.MissingCount++
+	case isError:
+		stat.ErrorCount++
+	default:
+		stat.SuccessCount++
+	}
+
+	if durationMs >= 0 {
+		stat.TotalDurationMs += durationMs
+		if durationMs < stat.MinDurationMs {
+			stat.MinDurationMs = durationMs
+		}
+		if durationMs > stat.MaxDurationMs {
+			stat.MaxDurationMs = durationMs
+		}
+	}
+
+	stat.TotalResultSize += int64(resultSize)
+	if resultSize == 0 {
+		stat.EmptyResults++
+	}
+
+	if stat.SampleInput == "" && sampleInput != "" {
+		stat.SampleInput = sampleInput
+	}
+
+	// Maintain global slowest-calls Top-N (only for paired calls with valid duration)
+	if durationMs >= 0 && !isMissing {
+		recordSlowCallLocked(agg, call, baseTool, categoryKey, durationMs, isError, resultSize)
+	}
+}
+
+func recordSlowCallLocked(agg *ProjectAggregate, call pendingToolCall, baseTool, categoryKey string, durationMs int64, isError bool, resultSize int) {
+	item := ToolSlowCallItem{
+		Tool:        call.Tool,
+		Category:    formatCategoryDisplay(baseTool, categoryKey),
+		DurationMs:  durationMs,
+		IsError:     isError,
+		ResultSize:  resultSize,
+		Timestamp:   call.Timestamp.Format(time.RFC3339),
+		SampleInput: extractSampleInputForSlow(call),
+	}
+
+	if len(agg.SlowestCalls) < maxSlowCalls {
+		agg.SlowestCalls = append(agg.SlowestCalls, item)
+		sortSlowCallsDesc(agg.SlowestCalls)
+	} else if durationMs > agg.SlowestCalls[len(agg.SlowestCalls)-1].DurationMs {
+		agg.SlowestCalls[len(agg.SlowestCalls)-1] = item
+		sortSlowCallsDesc(agg.SlowestCalls)
+	}
+}
+
+func sortSlowCallsDesc(calls []ToolSlowCallItem) {
+	sort.Slice(calls, func(i, j int) bool {
+		return calls[i].DurationMs > calls[j].DurationMs
+	})
+}
+
+func formatCategoryDisplay(baseTool, categoryKey string) string {
+	idx := strings.IndexByte(categoryKey, '\x00')
+	if idx < 0 {
+		return baseTool
+	}
+	subKey := categoryKey[idx+1:]
+	if subKey == "" {
+		return baseTool
+	}
+	return baseTool + ":" + subKey
+}
+
+func extractSampleInputForSlow(call pendingToolCall) string {
+	if call.CommandName != "" {
+		var input struct{ Command string `json:"command"` }
+		if json.Unmarshal(call.Input, &input) == nil && input.Command != "" {
+			return previewString(input.Command, 120)
+		}
+	}
+	if call.FileOpKey != "" {
+		parts := strings.SplitN(call.FileOpKey, "\x00", 2)
+		if len(parts) == 2 {
+			return truncatePath(parts[1])
+		}
+	}
+	return ""
 }

@@ -194,6 +194,9 @@ function renderCharts(data) {
     // Task / Plan 结构分析（M4）
     container.appendChild(createChartDiv('taskPlanChart', '1200px', '750px'));
 
+    // Tool Performance & Quality Analysis (M5)
+    container.appendChild(createChartDiv('toolPerformanceChart', '1200px', '800px'));
+
     // 初始化 go-echarts 图表
     initDailyTrendChart(data.daily_trend);
     initCommandsChart(data.commands);
@@ -212,6 +215,7 @@ function renderCharts(data) {
     initSessionAnalysisChart(data.session_analysis);
     initFileAnalysisChart(data.file_analysis);
     initTaskPlanChart(data.task_plan_analysis);
+    initToolPerformanceChart(data.tool_performance);
 
     container.style.display = 'block';
 }

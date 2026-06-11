@@ -709,6 +709,72 @@ type TaskRaw struct {
 	BlockedBy   []string `json:"blockedBy"`
 }
 
+// === M5: Tool Performance & Quality Analysis ===
+
+// ToolPerformanceData 工具性能与质量分析结果（输出格式）
+type ToolPerformanceData struct {
+	TotalPairedCalls    int                     `json:"total_paired_calls"`
+	TotalErrors         int                     `json:"total_errors"`
+	OverallErrorRate    float64                 `json:"overall_error_rate"`
+	OverallAvgDuration  float64                 `json:"overall_avg_duration_ms"`
+	ByCategory          []ToolPerfCategoryItem  `json:"by_category"`
+	SlowestCalls        []ToolSlowCallItem      `json:"slowest_calls"`
+	QualityDistribution []QualityBucketItem     `json:"quality_distribution"`
+}
+
+// ToolPerfCategoryItem 单个细分类别的工具性能统计
+type ToolPerfCategoryItem struct {
+	Category        string  `json:"category"`           // "Bash:git", "Read:/path", "mcp__jina__web_search"
+	BaseTool        string  `json:"base_tool"`          // "Bash", "Read", "mcp__jina__web_search"
+	SubKey          string  `json:"sub_key,omitempty"`  // "git", "/path/to/file", ""
+	CallCount       int     `json:"call_count"`
+	SuccessCount    int     `json:"success_count"`
+	ErrorCount      int     `json:"error_count"`
+	MissingCount    int     `json:"missing_count"`
+	ErrorRate       float64 `json:"error_rate"`
+	TotalDurationMs int64   `json:"total_duration_ms"`
+	AvgDurationMs   float64 `json:"avg_duration_ms"`
+	MinDurationMs   int64   `json:"min_duration_ms"`
+	MaxDurationMs   int64   `json:"max_duration_ms"`
+	TotalResultSize int64   `json:"total_result_size"`
+	AvgResultSize   float64 `json:"avg_result_size"`
+	EmptyResults    int     `json:"empty_results"`
+	SampleInput     string  `json:"sample_input,omitempty"`
+}
+
+// ToolSlowCallItem 最慢的单次工具调用记录
+type ToolSlowCallItem struct {
+	Tool        string `json:"tool"`
+	Category    string `json:"category"`
+	DurationMs  int64  `json:"duration_ms"`
+	IsError     bool   `json:"is_error"`
+	ResultSize  int    `json:"result_size"`
+	Timestamp   string `json:"timestamp"`
+	SampleInput string `json:"sample_input,omitempty"`
+}
+
+// QualityBucketItem 结果质量分桶
+type QualityBucketItem struct {
+	Bucket string  `json:"bucket"` // "空", "极小(≤50B)", ...
+	Count  int     `json:"count"`
+	Rate   float64 `json:"rate"`
+}
+
+// ToolPerfAgg 中间聚合：按细分类别的工具性能统计
+// key = category, e.g. "Bash\x00git" or "Read\x00/path/to/file" or "mcp__jina__web_search\x00"
+type ToolPerfAgg struct {
+	CallCount       int
+	SuccessCount    int
+	ErrorCount      int
+	MissingCount    int
+	TotalDurationMs int64
+	MinDurationMs   int64 // 初始化为 math.MaxInt64，首条有效数据时更新
+	MaxDurationMs   int64
+	TotalResultSize int64
+	EmptyResults    int
+	SampleInput     string
+}
+
 // WorkHoursStats 工作时段统计
 type WorkHoursStats struct {
 	HourlyData     []HourlyItem `json:"hourly_data"` // 每小时数据
@@ -782,6 +848,10 @@ type ProjectAggregate struct {
 	ReminderAgg         *ReminderAgg                       `json:"-"`                // reminder 频率聚合
 	TaskAgg             *TaskAgg                           `json:"-"`                // tasks/ 目录扫描结果
 	TaskPlanAnalysis    *TaskPlanAnalysisData              `json:"task_plan_analysis"` // Task/Plan 分析（输出格式）
+	// --- tool_performance (Milestone 5) ---
+	ToolPerfStats       map[string]*ToolPerfAgg            `json:"-"`                  // M5: 工具性能中间聚合
+	SlowestCalls        []ToolSlowCallItem                 `json:"-"`                  // M5: 全局最慢 Top-N 调用
+	ToolPerformance     *ToolPerformanceData               `json:"tool_performance"`   // M5: 输出格式
 	WorkHoursStats      *WorkHoursStats                    `json:"work_hours"`       // 工作时段统计
 	mu                  sync.RWMutex                       `json:"-"`                // 保护并发写入
 }

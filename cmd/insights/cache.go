@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-const CacheVersion = "2.5"
+const CacheVersion = "2.6"
 
 // CacheFile 缓存文件结构
 type CacheFile struct {
@@ -37,6 +37,7 @@ type CacheFile struct {
 	CostAnalysis    *CostAnalysisData
 	FileAnalysis   *FileAnalysisData
 	TaskPlanAnalysis *TaskPlanAnalysisData        `json:"task_plan_analysis,omitempty"`
+	ToolPerformance  *ToolPerformanceData          `json:"tool_performance,omitempty"`
 	ProjectFiles    map[string]*ProjectFileCache `json:"project_file_caches,omitempty"`
 }
 
@@ -87,6 +88,8 @@ type ProjectFileAggregate struct {
 	PlanModeAgg        *SerializedPlanModeAgg            `json:"plan_mode_agg,omitempty"`
 	GoalStatusAgg      *GoalStatusAgg                    `json:"goal_status_agg,omitempty"`
 	ReminderAgg        *ReminderAgg                      `json:"reminder_agg,omitempty"`
+	ToolPerfStats      map[string]ToolPerfAgg            `json:"tool_perf_stats,omitempty"`
+	SlowestCalls       []ToolSlowCallItem                 `json:"slowest_calls,omitempty"`
 }
 
 // DayAggregate 每日聚合数据
@@ -287,6 +290,7 @@ func (cf *CacheFile) QueryByTimeRange(start, end time.Time) *CacheFile {
 	result.SessionAnalysis = cloneSessionAnalysis(cf.SessionAnalysis)
 	result.FileAnalysis = cloneFileAnalysis(cf.FileAnalysis)
 	result.TaskPlanAnalysis = cloneTaskPlanAnalysis(cf.TaskPlanAnalysis)
+	result.ToolPerformance = cloneToolPerformance(cf.ToolPerformance)
 
 	return result
 }
@@ -303,6 +307,17 @@ func cloneSessionAnalysis(source *SessionAnalysisData) *SessionAnalysisData {
 	copyValue.QueueOperations = append([]QueueOperationStat(nil), source.QueueOperations...)
 	copyValue.Titles = append([]SessionTitleStat(nil), source.Titles...)
 	return &copyValue
+}
+
+func cloneToolPerformance(source *ToolPerformanceData) *ToolPerformanceData {
+	if source == nil {
+		return nil
+	}
+	copyVal := *source
+	copyVal.ByCategory = append([]ToolPerfCategoryItem(nil), source.ByCategory...)
+	copyVal.SlowestCalls = append([]ToolSlowCallItem(nil), source.SlowestCalls...)
+	copyVal.QualityDistribution = append([]QualityBucketItem(nil), source.QualityDistribution...)
+	return &copyVal
 }
 
 func cloneFailureAnalysis(source *FailureAnalysisData) *FailureAnalysisData {

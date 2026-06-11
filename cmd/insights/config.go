@@ -30,7 +30,7 @@ func init() {
 
 	flag.StringVar(&cfg.DataDir, "data", defaultDataDir, "数据目录路径")
 	flag.StringVar(&cfg.CacheDir, "cache", defaultCacheDir, "缓存目录路径")
-	flag.StringVar(&cfg.ListenAddr, "addr", ":8080", "监听地址")
+	flag.StringVar(&cfg.ListenAddr, "addr", ":8932", "监听地址")
 	flag.StringVar(&cfg.BaseURL, "base", "", "基础URL（用于反向代理）")
 }
 
