@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -105,7 +104,7 @@ func handleDataAPI(w http.ResponseWriter, r *http.Request) {
 		if globalCache != nil {
 			data, err = buildDataFromCache(tf, preset)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "缓存读取失败，降级到实时解析: %v\n", err)
+				Warn("缓存读取失败，降级到实时解析", "error", err.Error())
 				data, err = buildDataFromParsing(tf, preset)
 			}
 		} else {
@@ -569,7 +568,7 @@ func emptyProjectAggregate() *ProjectAggregate {
 func safeParseHistoryConcurrent(tf TimeFilter) ([]CommandStats, map[string]int, error) {
 	cmdStats, hourlyCounts, err := ParseHistoryConcurrent(tf)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "[降级] ParseHistoryConcurrent 失败(使用空结果): %v\n", err)
+		Warn("ParseHistoryConcurrent 失败，使用空结果", "error", err.Error())
 		return []CommandStats{}, make(map[string]int), nil
 	}
 	return cmdStats, hourlyCounts, nil
@@ -579,7 +578,7 @@ func safeParseHistoryConcurrent(tf TimeFilter) ([]CommandStats, map[string]int, 
 func safeParseProjectsOnce(tf TimeFilter) (*ProjectAggregate, error) {
 	agg, err := ParseProjectsConcurrentOnce(tf)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "[降级] ParseProjectsConcurrentOnce 失败(使用空结果): %v\n", err)
+		Warn("ParseProjectsConcurrentOnce 失败，使用空结果", "error", err.Error())
 		return emptyProjectAggregate(), nil
 	}
 	return agg, nil
@@ -589,7 +588,7 @@ func safeParseProjectsOnce(tf TimeFilter) (*ProjectAggregate, error) {
 func safeParseDebugLogs(tf TimeFilter) ([]MCPToolStats, error) {
 	tools, err := ParseDebugLogsConcurrent(tf)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "[降级] ParseDebugLogsConcurrent 失败(使用空结果): %v\n", err)
+		Warn("ParseDebugLogsConcurrent 失败，使用空结果", "error", err.Error())
 		return []MCPToolStats{}, nil
 	}
 	return tools, nil
@@ -599,7 +598,7 @@ func safeParseDebugLogs(tf TimeFilter) ([]MCPToolStats, error) {
 func safeParseSessionStats(tf TimeFilter) (*SessionStats, error) {
 	stats, err := ParseSessionStatsWithFilter(tf)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "[降级] ParseSessionStatsWithFilter 失败(使用空结果): %v\n", err)
+		Warn("ParseSessionStatsWithFilter 失败，使用空结果", "error", err.Error())
 		return &SessionStats{
 			TotalSessions:   0,
 			DailySessionMap: make(map[string]int),
@@ -612,7 +611,7 @@ func safeParseSessionStats(tf TimeFilter) (*SessionStats, error) {
 func safeParseTasksOnce(tf TimeFilter) (*TaskAnalysisData, error) {
 	data, err := ParseTasksConcurrent(tf)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "[降级] ParseTasksConcurrent 失败(使用空结果): %v\n", err)
+		Warn("ParseTasksConcurrent 失败，使用空结果", "error", err.Error())
 		return &TaskAnalysisData{}, nil
 	}
 	return data, nil

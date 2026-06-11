@@ -53,7 +53,7 @@ func (cb *CacheBuilder) BuildFullCache() error {
 		return fmt.Errorf("解析项目数据失败: %w", err)
 	}
 	if reused > 0 || parsed > 0 {
-		fmt.Printf("   项目文件: 复用 %d, 解析 %d\n", reused, parsed)
+		Info("项目文件处理完成", "reused", reused, "parsed", parsed)
 	}
 
 	// 从已解析的 aggregate 中提取会话统计（无需重新遍历 projects 文件）
@@ -144,7 +144,7 @@ func (cb *CacheBuilder) BuildFullCache() error {
 		return fmt.Errorf("保存缓存失败: %w", err)
 	}
 
-	fmt.Printf("✅ 缓存构建完成！共 %d 条消息，%d 个会话\n", cache.TotalMessages, cache.TotalSessions)
+	Info("缓存构建完成", "messages", cache.TotalMessages, "sessions", cache.TotalSessions)
 	return nil
 }
 
@@ -197,7 +197,7 @@ func (cb *CacheBuilder) buildProjectAggregateIncremental(dataDir string, previou
 	// task_plan_analysis (M4): 扫描 tasks/ 目录
 	taskAnalysis, taskErr := ParseTasksConcurrent(TimeFilter{})
 	if taskErr != nil {
-		fmt.Fprintf(os.Stderr, "[警告] tasks/ 目录扫描失败: %v\n", taskErr)
+		Warn("tasks/ 目录扫描失败", "error", taskErr.Error())
 	}
 	if taskAnalysis != nil && aggregate.TaskPlanAnalysis == nil {
 		aggregate.TaskPlanAnalysis = &TaskPlanAnalysisData{}
@@ -303,7 +303,7 @@ func (cb *CacheBuilder) IncrementalUpdate() error {
 		return cb.BuildFullCache()
 	}
 
-	fmt.Printf("🔄 检查增量更新（缓存时间: %s）...\n", cache.LastUpdate.Format("2006-01-02 15:04:05"))
+	Info("检查增量更新", "cache_time", cache.LastUpdate.Format("2006-01-02 15:04:05"))
 
 	// 2. 检查是否有新数据
 	lastDataMod, err := cb.GetLastDataModified()

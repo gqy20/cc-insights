@@ -26,43 +26,57 @@ var buildDate = ""
 func main() {
 	flag.Parse()
 
+	// 初始化日志系统（在所有操作之前）
+	logDir := filepath.Join(filepath.Dir(cfg.CacheDir), "logs")
+	if err := InitLogger(logDir); err != nil {
+		fmt.Fprintf(os.Stderr, "日志初始化失败: %v\n", err)
+	}
+	defer CloseLogger()
+
+	Info("Claude Code Dashboard 启动",
+		"version", version,
+		"commit", commit,
+	)
+
 	// 验证数据目录
 	if _, err := os.Stat(cfg.DataDir); os.IsNotExist(err) {
-		fmt.Fprintf(os.Stderr, "错误: 数据目录不存在: %s\n", cfg.DataDir)
-		fmt.Fprintf(os.Stderr, "提示: 使用 -data 参数指定数据目录\n")
+		Error("数据目录不存在", "path", cfg.DataDir)
+		Info("提示: 使用 -data 参数指定数据目录")
 		os.Exit(1)
 	}
 
-	fmt.Printf("📊 Claude Code Dashboard\n")
-	fmt.Printf("   数据目录: %s\n", cfg.DataDir)
-	fmt.Printf("   缓存目录: %s\n", cfg.CacheDir)
-	fmt.Printf("   监听地址: %s\n", cfg.ListenAddr)
+	Info("配置信息",
+		"data_dir", cfg.DataDir,
+		"cache_dir", cfg.CacheDir,
+		"listen_addr", cfg.ListenAddr,
+	)
 
 	// 初始化缓存
 	if err := initializeCache(); err != nil {
-		fmt.Fprintf(os.Stderr, "⚠️  缓存初始化失败: %v\n", err)
-		fmt.Fprintf(os.Stderr, "   将使用实时解析模式\n")
+		Warn("缓存初始化失败，将使用实时解析模式", "error", err.Error())
 	}
 
-	fmt.Printf("\n启动服务...\n")
-
 	// 路由
-	http.HandleFunc("/", indexHandler)
-	http.HandleFunc("/dashboard", dashboardPageHandler)
-	http.HandleFunc("/api/data", handleDataAPI)
-	http.HandleFunc("/api/stats", statsAPIHandler)
-	http.HandleFunc("/api/reload", reloadHandler)
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", indexHandler)
+	mux.HandleFunc("/dashboard", dashboardPageHandler)
+	mux.HandleFunc("/api/data", handleDataAPI)
+	mux.HandleFunc("/api/stats", statsAPIHandler)
+	mux.HandleFunc("/api/reload", reloadHandler)
 
 	// 静态资源（使用嵌入的文件系统）
 	staticSub, _ := fs.Sub(staticFS, "static")
-	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.FS(staticSub))))
+	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.FS(staticSub))))
 
-	// 启动服务器
-	fmt.Printf("\n✅ Dashboard 已启动!\n")
-	fmt.Printf("   访问: http://localhost%s\n", cfg.ListenAddr)
-	fmt.Printf("   Dashboard: http://localhost%s/dashboard\n", cfg.ListenAddr)
-	if err := http.ListenAndServe(cfg.ListenAddr, nil); err != nil {
-		fmt.Fprintf(os.Stderr, "启动失败: %v\n", err)
+	// 包装日志中间件
+	handler := LoggingMiddleware(mux)
+
+	Info("服务就绪",
+		"url", "http://localhost"+cfg.ListenAddr,
+		"dashboard", "http://localhost"+cfg.ListenAddr+"/dashboard",
+	)
+	if err := http.ListenAndServe(cfg.ListenAddr, handler); err != nil {
+		Error("启动失败", "error", err.Error())
 		os.Exit(1)
 	}
 }
@@ -295,8 +309,8 @@ func dashboardPageHandler(w http.ResponseWriter, r *http.Request) {
             <div id="chartsContainer" class="charts-container" style="display:none;"></div>
         </main>
     </div>
-    <script src="https://go-echarts.github.io/go-echarts-assets/assets/echarts.min.js"></script>
-    <script src="/static/app.js"></script>
+    <script src="https://go-echarts.github.io/go-echarts-assets/assets/echarts.min.js" defer></script>
+    <script src="/static/app.js" defer></script>
 </body>
 </html>`
 
@@ -359,28 +373,32 @@ func initializeCache() error {
 
 	// 检查是否需要重建缓存
 	if builder.NeedsRebuild() {
-		fmt.Printf("🔨 正在构建缓存...\n")
+		Info("正在构建缓存...", "cache_path", cachePath)
 		start := time.Now()
 
 		if err := builder.BuildFullCache(); err != nil {
+			Error("缓存构建失败", "error", err.Error())
 			return fmt.Errorf("构建缓存失败: %w", err)
 		}
 
 		elapsed := time.Since(start)
-		fmt.Printf("✅ 缓存构建完成 (耗时: %.1fs)\n", elapsed.Seconds())
+		Info("缓存构建完成", "duration_sec", elapsed.Seconds())
 	} else {
-		fmt.Printf("✅ 使用现有缓存\n")
+		Info("使用现有缓存", "cache_path", cachePath)
 	}
 
 	// 加载缓存到全局变量
 	cache, err := LoadCacheFile(cachePath)
 	if err != nil {
+		Error("加载缓存失败", "error", err.Error())
 		return fmt.Errorf("加载缓存失败: %w", err)
 	}
 
 	globalCache = cache
-	fmt.Printf("   缓存统计: %d 条消息, %d 个会话\n",
-		globalCache.TotalMessages, globalCache.TotalSessions)
+	Info("缓存已加载",
+		"messages", globalCache.TotalMessages,
+		"sessions", globalCache.TotalSessions,
+	)
 
 	return nil
 }
