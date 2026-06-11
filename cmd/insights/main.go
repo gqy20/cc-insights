@@ -154,116 +154,7 @@ func dashboardPageHandler(w http.ResponseWriter, r *http.Request) {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Claude Code Dashboard</title>
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f5; color: #333; }
-        .container { display: flex; min-height: 100vh; }
-        .sidebar { width: 280px; background: #2c3e50; color: #ecf0f1; padding: 20px; position: fixed; height: 100vh; overflow-y: auto; }
-        .sidebar h2 { font-size: 18px; margin-bottom: 20px; padding-bottom: 10px; border-bottom: 1px solid #34495e; }
-        .sidebar h3 { font-size: 14px; color: #95a5a6; margin: 20px 0 10px; text-transform: uppercase; }
-        .preset-buttons { display: flex; flex-direction: column; gap: 8px; }
-        .preset-btn { padding: 10px 15px; background: #34495e; border: none; border-radius: 6px; color: #ecf0f1; cursor: pointer; text-align: left; transition: all 0.2s; }
-        .preset-btn:hover { background: #415b76; }
-        .preset-btn.active { background: #3498db; }
-        .custom-range { margin-top: 15px; padding: 15px; background: #34495e; border-radius: 6px; }
-        .custom-range label { display: block; font-size: 12px; color: #95a5a6; margin-bottom: 5px; }
-        .custom-range input { width: 100%; padding: 8px; margin-bottom: 10px; border: 1px solid #4a5f7a; border-radius: 4px; background: #2c3e50; color: #ecf0f1; }
-        .custom-range button { width: 100%; padding: 10px; background: #27ae60; border: none; border-radius: 4px; color: white; cursor: pointer; font-weight: 500; }
-        .custom-range button:hover { background: #2ecc71; }
-        .stats-info { margin-top: 20px; padding: 15px; background: #34495e; border-radius: 6px; font-size: 12px; }
-        .stats-info p { margin: 5px 0; color: #95a5a6; }
-        .stats-info strong { color: #ecf0f1; }
-        .main-content { flex: 1; margin-left: 280px; padding: 30px; }
-        .main-content h1 { font-size: 24px; margin-bottom: 20px; color: #2c3e50; }
-        .charts-container { display: flex; flex-direction: column; gap: 30px; }
-        .chart-wrapper { background: white; border-radius: 8px; padding: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-        .error { background: #e74c3c; color: white; padding: 15px; border-radius: 6px; margin-bottom: 20px; }
-
-        /* 加载动画容器 */
-        .loading { text-align: center; padding: 60px 40px; }
-        .loading-container {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            gap: 20px;
-        }
-
-        /* 旋转加载器 */
-        .spinner {
-            width: 50px;
-            height: 50px;
-            border: 4px solid #e0e0e0;
-            border-top: 4px solid #3498db;
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
-        }
-
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-
-        /* 加载文本 */
-        .loading-text {
-            font-size: 16px;
-            color: #7f8c8d;
-            font-weight: 500;
-        }
-
-        /* 进度信息 */
-        .loading-progress {
-            font-size: 13px;
-            color: #95a5a6;
-            max-width: 300px;
-            line-height: 1.6;
-        }
-
-        /* 预估时间 */
-        .loading-eta {
-            font-size: 12px;
-            color: #bdc3c7;
-            padding: 8px 16px;
-            background: #f8f9fa;
-            border-radius: 20px;
-            margin-top: 10px;
-        }
-
-        /* 趣味提示 */
-        .loading-tip {
-            font-size: 13px;
-            color: #3498db;
-            font-style: italic;
-            animation: fadeInOut 3s ease-in-out infinite;
-        }
-
-        @keyframes fadeInOut {
-            0%, 100% { opacity: 0.6; }
-            50% { opacity: 1; }
-        }
-
-        /* 进度条样式 */
-        .progress-bar {
-            width: 200px;
-            height: 4px;
-            background: #e0e0e0;
-            border-radius: 2px;
-            overflow: hidden;
-            margin-top: 10px;
-        }
-
-        .progress-bar-fill {
-            height: 100%;
-            background: linear-gradient(90deg, #3498db, #2ecc71);
-            border-radius: 2px;
-            animation: progress 2s ease-in-out infinite;
-            width: 60%;
-        }
-
-        @keyframes progress {
-            0% { transform: translateX(-100%); }
-            100% { transform: translateX(400%); }
-        }
-    </style>
+    <link rel="stylesheet" href="/static/app.css">
 </head>
 <body>
     <div class="container">
@@ -292,21 +183,23 @@ func dashboardPageHandler(w http.ResponseWriter, r *http.Request) {
             </div>
         </aside>
         <main class="main-content">
-            <h1>📊 Claude Code Dashboard</h1>
-            <div id="errorMessage"></div>
-            <div id="loadingIndicator" class="loading">
-                <div class="loading-container">
-                    <div class="spinner"></div>
-                    <div class="loading-text">正在加载数据</div>
-                    <div class="progress-bar">
-                        <div class="progress-bar-fill"></div>
+            <div class="content-inner">
+                <h1>📊 Claude Code Dashboard</h1>
+                <div id="errorMessage"></div>
+                <div id="loadingIndicator" class="loading">
+                    <div class="loading-container">
+                        <div class="spinner"></div>
+                        <div class="loading-text">正在加载数据</div>
+                        <div class="progress-bar">
+                            <div class="progress-bar-fill"></div>
+                        </div>
+                        <div class="loading-progress" id="loadingProgress">正在读取数据文件...</div>
+                        <div class="loading-eta" id="loadingEta">预计需要 2-3 秒</div>
+                        <div class="loading-tip" id="loadingTip">☕ 顺便喝口水吧~</div>
                     </div>
-                    <div class="loading-progress" id="loadingProgress">正在读取数据文件...</div>
-                    <div class="loading-eta" id="loadingEta">预计需要 2-3 秒</div>
-                    <div class="loading-tip" id="loadingTip">☕ 顺便喝口水吧~</div>
                 </div>
+                <div id="chartsContainer" class="charts-container" style="display:none;"></div>
             </div>
-            <div id="chartsContainer" class="charts-container" style="display:none;"></div>
         </main>
     </div>
     <script src="https://go-echarts.github.io/go-echarts-assets/assets/echarts.min.js" defer></script>

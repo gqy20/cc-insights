@@ -965,7 +965,7 @@ function initToolPerformanceChart(tp) {
                     '成功: ' + formatNumber(item.success_count) + ' | 失败: ' + formatNumber(item.error_count) + ' | 缺失: ' + formatNumber(item.missing_count) + '<br/>' +
                     '失败率: ' + item.error_rate.toFixed(1) + '%<br/>' +
                     '总耗时: ' + formatDuration(item.total_duration_ms) + '<br/>' +
-                    '平均耗时: +item.avg_duration_ms.toFixed(0) + 'ms<br/>' +
+                    '平均耗时: ' + item.avg_duration_ms.toFixed(0) + 'ms<br/>' +
                     '最小: ' + formatDuration(item.min_duration_ms) + ' | 最大: ' + formatDuration(item.max_duration_ms) + '<br/>' +
                     '平均结果大小: ' + formatBytes(item.avg_result_size);
             }

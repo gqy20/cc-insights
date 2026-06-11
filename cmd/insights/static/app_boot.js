@@ -1,4 +1,6 @@
 function initDashboard() {
+    installChartTracking();
+    setupChartResizeListener();
     setupEventListeners();
     loadData('preset=all');
 }

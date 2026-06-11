@@ -107,7 +107,7 @@ function initCommandsChart(commands) {
     document.getElementById('commands-insight').innerHTML =
         `<strong>💡 数据洞察:</strong> 共使用了 <strong>${uniqueCmds}</strong> 种不同的命令，` +
         `总计 <strong>${totalCmds.toLocaleString()}</strong> 次。` +
-        `最常用的是 <strong>${topCmd.command}</strong>，使用了 <strong>${topCmd.count}</strong> 次（占比 ${topCmdPercent}%）。`;
+        `最常用的是 <strong>${escapeHtml(topCmd.command)}</strong>，使用了 <strong>${topCmd.count}</strong> 次（占比 ${topCmdPercent}%）。`;
 }
 
 // 初始化 MCP 工具图
@@ -135,7 +135,9 @@ function initMCPToolsChart(tools) {
         },
         tooltip: {
             trigger: 'item',
-            formatter: '{b}: {c} ({d}%)'
+            formatter: function(params) {
+                return `${escapeHtml(params.name)}: ${formatNumber(params.value)} (${params.percent}%)`;
+            }
         },
         series: [{
             name: 'MCP 工具调用',
@@ -164,7 +166,7 @@ function initMCPToolsChart(tools) {
     document.getElementById('mcpTools-insight').innerHTML =
         `<strong>💡 数据洞察:</strong> 共调用了 <strong>${tools.length}</strong> 种不同的 MCP 工具，` +
         `总计 <strong>${totalCalls.toLocaleString()}</strong> 次。` +
-        `最活跃的服务器是 <strong>${topServer[0]}</strong>，最常用工具是 <strong>${topTool.server}::${topTool.tool}</strong>（占比 ${topToolPercent}%）。`;
+        `最活跃的服务器是 <strong>${escapeHtml(topServer[0])}</strong>，最常用工具是 <strong>${escapeHtml(topTool.server)}::${escapeHtml(topTool.tool)}</strong>（占比 ${topToolPercent}%）。`;
 }
 
 // 显示/隐藏加载状态
@@ -195,19 +197,22 @@ function showLoading(show, preset = 'all') {
     } else {
         // 隐藏加载动画
         loadingIndicator.style.display = 'none';
-        chartsContainer.style.display = 'flex';
+        chartsContainer.style.display = '';
     }
 }
 
 // 显示错误
 function showError(message) {
     const errorDiv = document.getElementById('errorMessage');
-    errorDiv.innerHTML = `<div class="error">${message}</div>`;
+    const messageDiv = document.createElement('div');
+    messageDiv.className = 'error';
+    messageDiv.textContent = message;
+    errorDiv.replaceChildren(messageDiv);
 }
 
 // 隐藏错误
 function hideError() {
-    document.getElementById('errorMessage').innerHTML = '';
+    document.getElementById('errorMessage').replaceChildren();
 }
 
 // 初始化会话统计图
@@ -307,7 +312,7 @@ function initProjectChart(projectData) {
             },
             formatter: function(params) {
                 const item = top15[params[0].dataIndex];
-                return `${item.originalName}<br/>消息数: ${item.value.toLocaleString()}`;
+                return `${escapeHtml(item.originalName)}<br/>消息数: ${item.value.toLocaleString()}`;
             }
         },
         xAxis: {
@@ -345,7 +350,7 @@ function initProjectChart(projectData) {
     document.getElementById('projectChart-insight').innerHTML =
         `<strong>💡 数据洞察:</strong> 统计期间共涉及 <strong>${projectData.projects.length}</strong> 个项目，` +
         `总计 <strong>${projectData.total_messages.toLocaleString()}</strong> 条消息。` +
-        `最活跃的是 <strong>${topProject.name}</strong>，贡献了 ${topPercent}% 的消息。`;
+        `最活跃的是 <strong>${escapeHtml(topProject.name)}</strong>，贡献了 ${topPercent}% 的消息。`;
 }
 
 // 初始化星期分布图
@@ -410,7 +415,7 @@ function initWeekdayChart(weekdayData) {
     const weekendTotal = weekdays.slice(5).reduce((sum, w) => sum + w.message_count, 0);
 
     document.getElementById('weekdayChart-insight').innerHTML =
-        `<strong>💡 数据洞察:</strong> 最活跃的是 <strong>${maxWeekday.weekday_name}</strong>（${maxCount.toLocaleString()} 条消息），` +
+        `<strong>💡 数据洞察:</strong> 最活跃的是 <strong>${escapeHtml(maxWeekday.weekday_name)}</strong>（${maxCount.toLocaleString()} 条消息），` +
         `日均 <strong>${avgMessages.toLocaleString()}</strong> 条。` +
         `工作日共 <strong>${workdayTotal.toLocaleString()}</strong> 条，周末 <strong>${weekendTotal.toLocaleString()}</strong> 条。`;
 }

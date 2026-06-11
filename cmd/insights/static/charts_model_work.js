@@ -104,7 +104,7 @@ function initModelChart(modelData) {
     const topModelShare = ((topModel.count / totalRequests) * 100).toFixed(1);
 
     document.getElementById('modelChart-insight').innerHTML =
-        `<strong>💡 数据洞察:</strong> 最常用的是 <strong>${topModel.model}</strong>（${topModel.count.toLocaleString()} 次请求，占比 ${topModelShare}%），` +
+        `<strong>💡 数据洞察:</strong> 最常用的是 <strong>${escapeHtml(topModel.model)}</strong>（${topModel.count.toLocaleString()} 次请求，占比 ${topModelShare}%），` +
         `总计 <strong>${totalRequests.toLocaleString()}</strong> 次请求，` +
         `消耗 <strong>${(totalTokens / 1000000).toFixed(1)}M</strong> Tokens，` +
         `平均每次请求 <strong>${avgTokensPerRequest.toLocaleString()}</strong> Tokens。`;
@@ -214,4 +214,3 @@ function initWorkHoursChart(workHoursData) {
         `非工作时段 <strong>${offCount}</strong> 次。` +
         (workRatio > 60 ? ' 主要在工作时段活动。' : workRatio < 40 ? ' 经常在非工作时间工作。' : '');
 }
-

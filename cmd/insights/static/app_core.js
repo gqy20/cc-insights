@@ -1,3 +1,71 @@
+const chartInstances = new Set();
+let resizeTimer = null;
+
+const chartDefinitions = [
+    { id: 'dailyTrend', height: 400, layout: 'wide', render: data => initDailyTrendChart(data.daily_trend) },
+    { id: 'commands', height: 500, layout: 'compact', render: data => initCommandsChart(data.commands) },
+    { id: 'mcpTools', height: 700, layout: 'compact', render: data => initMCPToolsChart(data.mcp_tools) },
+    { id: 'sessionChart', height: 400, layout: 'wide', render: data => initSessionChart(data.sessions) },
+    { id: 'projectChart', height: 500, layout: 'compact', render: data => initProjectChart(data.project_stats) },
+    { id: 'weekdayChart', height: 400, layout: 'compact', render: data => initWeekdayChart(data.weekday_stats) },
+    { id: 'modelChart', height: 500, layout: 'compact', render: data => initModelChart(data.model_usage) },
+    { id: 'workHoursChart', height: 450, layout: 'compact', render: data => initWorkHoursChart(data.work_hours_stats) },
+    { id: 'toolModelFailureChart', height: 560, layout: 'wide', render: data => initToolModelFailureChart(data.tool_analysis) },
+    { id: 'failureReasonChart', height: 620, layout: 'wide', render: data => initFailureReasonChart(data.failure_analysis) },
+    { id: 'eventHookChart', height: 560, layout: 'compact', render: data => initEventHookChart(data.event_analysis) },
+    { id: 'agentChart', height: 560, layout: 'compact', render: data => initAgentChart(data.agent_analysis) },
+    { id: 'commandFileChart', height: 620, layout: 'wide', render: data => initCommandFileChart(data.command_analysis) },
+    { id: 'costAnalysisChart', height: 620, layout: 'wide', render: data => initCostAnalysisChart(data.cost_analysis) },
+    { id: 'sessionAnalysisChart', height: 620, layout: 'wide', render: data => initSessionAnalysisChart(data.session_analysis) },
+    { id: 'fileAnalysisChart', height: 700, layout: 'wide', render: data => initFileAnalysisChart(data.file_analysis) },
+    { id: 'taskPlanChart', height: 750, layout: 'wide', render: data => initTaskPlanChart(data.task_plan_analysis) },
+    { id: 'toolPerformanceChart', height: 800, layout: 'wide', render: data => initToolPerformanceChart(data.tool_performance) }
+];
+
+function installChartTracking() {
+    if (!window.echarts || window.echarts.__ccInsightsTracked) {
+        return;
+    }
+
+    const originalInit = window.echarts.init.bind(window.echarts);
+    window.echarts.init = function(dom, theme, opts) {
+        const existing = window.echarts.getInstanceByDom(dom);
+        if (existing) {
+            existing.dispose();
+            chartInstances.delete(existing);
+        }
+
+        const chart = originalInit(dom, theme, opts);
+        chartInstances.add(chart);
+        return chart;
+    };
+    window.echarts.__ccInsightsTracked = true;
+}
+
+function disposeCharts() {
+    chartInstances.forEach(chart => {
+        if (chart && !chart.isDisposed()) {
+            chart.dispose();
+        }
+    });
+    chartInstances.clear();
+}
+
+function resizeCharts() {
+    chartInstances.forEach(chart => {
+        if (chart && !chart.isDisposed()) {
+            chart.resize();
+        }
+    });
+}
+
+function setupChartResizeListener() {
+    window.addEventListener('resize', () => {
+        clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(resizeCharts, 120);
+    });
+}
+
 // 设置事件监听
 function setupEventListeners() {
     // 预设按钮点击
@@ -129,11 +197,10 @@ function updateStatsInfo(data) {
     if (data.sessions) {
         const sessionInfo = document.getElementById('sessionInfo');
         if (sessionInfo) {
-            sessionInfo.innerHTML = `
-                <strong>总会话数:</strong> ${data.sessions.total_sessions.toLocaleString()} |
-                <strong>峰值:</strong> ${data.sessions.peak_date} (${data.sessions.peak_count}) |
-                <strong>谷值:</strong> ${data.sessions.valley_date} (${data.sessions.valley_count})
-            `;
+            sessionInfo.textContent =
+                `总会话数: ${data.sessions.total_sessions.toLocaleString()} | ` +
+                `峰值: ${data.sessions.peak_date} (${data.sessions.peak_count}) | ` +
+                `谷值: ${data.sessions.valley_date} (${data.sessions.valley_count})`;
         }
     }
 }
@@ -141,110 +208,35 @@ function updateStatsInfo(data) {
 // 渲染图表
 function renderCharts(data) {
     const container = document.getElementById('chartsContainer');
-    container.innerHTML = '';
+    disposeCharts();
+    container.replaceChildren();
 
-    // 每日趋势图
-    container.appendChild(createChartDiv('dailyTrend', '1200px', '400px'));
+    chartDefinitions.forEach(definition => {
+        container.appendChild(createChartDiv(definition));
+    });
 
-    // 命令统计图
-    container.appendChild(createChartDiv('commands', '1200px', '500px'));
+    container.style.display = '';
 
-    // MCP 工具图
-    container.appendChild(createChartDiv('mcpTools', '1200px', '700px'));
+    chartDefinitions.forEach(definition => {
+        definition.render(data);
+    });
 
-    // 会话统计图
-    container.appendChild(createChartDiv('sessionChart', '1200px', '400px'));
-
-    // 项目活跃度排名图
-    container.appendChild(createChartDiv('projectChart', '1200px', '500px'));
-
-    // 星期分布图
-    container.appendChild(createChartDiv('weekdayChart', '1200px', '400px'));
-
-    // 模型使用分析图
-    container.appendChild(createChartDiv('modelChart', '1200px', '500px'));
-
-    // 工作时段热力图
-    container.appendChild(createChartDiv('workHoursChart', '1200px', '450px'));
-
-    // 工具失败与模型关联
-    container.appendChild(createChartDiv('toolModelFailureChart', '1200px', '560px'));
-
-    // 失败原因细分
-    container.appendChild(createChartDiv('failureReasonChart', '1200px', '620px'));
-
-    // 运行事件与 Hook 状态
-    container.appendChild(createChartDiv('eventHookChart', '1200px', '560px'));
-
-    // Agent / Subagent 工具调用
-    container.appendChild(createChartDiv('agentChart', '1200px', '560px'));
-
-    // Bash 与文件操作失败
-    container.appendChild(createChartDiv('commandFileChart', '1200px', '620px'));
-
-    // Token 与成本分析
-    container.appendChild(createChartDiv('costAnalysisChart', '1200px', '620px'));
-
-    // Session 生命周期复盘
-    container.appendChild(createChartDiv('sessionAnalysisChart', '1200px', '620px'));
-
-    // 文件与编辑质量分析
-    container.appendChild(createChartDiv('fileAnalysisChart', '1200px', '700px'));
-
-    // Task / Plan 结构分析（M4）
-    container.appendChild(createChartDiv('taskPlanChart', '1200px', '750px'));
-
-    // Tool Performance & Quality Analysis (M5)
-    container.appendChild(createChartDiv('toolPerformanceChart', '1200px', '800px'));
-
-    // 初始化 go-echarts 图表
-    initDailyTrendChart(data.daily_trend);
-    initCommandsChart(data.commands);
-    initMCPToolsChart(data.mcp_tools);
-    initSessionChart(data.sessions);
-    initProjectChart(data.project_stats);
-    initWeekdayChart(data.weekday_stats);
-    initModelChart(data.model_usage);
-    initWorkHoursChart(data.work_hours_stats);
-    initToolModelFailureChart(data.tool_analysis);
-    initFailureReasonChart(data.failure_analysis);
-    initEventHookChart(data.event_analysis);
-    initAgentChart(data.agent_analysis);
-    initCommandFileChart(data.command_analysis);
-    initCostAnalysisChart(data.cost_analysis);
-    initSessionAnalysisChart(data.session_analysis);
-    initFileAnalysisChart(data.file_analysis);
-    initTaskPlanChart(data.task_plan_analysis);
-    initToolPerformanceChart(data.tool_performance);
-
-    container.style.display = 'block';
+    requestAnimationFrame(resizeCharts);
 }
 
 // 创建图表容器
-function createChartDiv(id, width, height) {
+function createChartDiv(definition) {
     const wrapper = document.createElement('div');
-    wrapper.className = 'chart-wrapper';
-    wrapper.style.width = width;
-    wrapper.style.marginBottom = '20px';
+    wrapper.className = `chart-wrapper ${definition.layout === 'wide' ? 'wide' : 'compact'}`;
 
     const chartDiv = document.createElement('div');
-    chartDiv.id = id;
-    chartDiv.style.width = width;
-    chartDiv.style.height = height;
+    chartDiv.id = definition.id;
+    chartDiv.className = 'chart-canvas';
+    chartDiv.style.setProperty('--chart-height', `${definition.height}px`);
 
     const insightDiv = document.createElement('div');
-    insightDiv.id = `${id}-insight`;
+    insightDiv.id = `${definition.id}-insight`;
     insightDiv.className = 'chart-insight';
-    insightDiv.style.cssText = `
-        margin-top: 15px;
-        padding: 12px 15px;
-        background: #f8f9fa;
-        border-left: 4px solid #3498db;
-        border-radius: 4px;
-        font-size: 13px;
-        line-height: 1.6;
-        color: #555;
-    `;
 
     wrapper.appendChild(chartDiv);
     wrapper.appendChild(insightDiv);
