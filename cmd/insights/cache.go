@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-const CacheVersion = "2.6"
+const CacheVersion = "2.8"
 
 // CacheFile 缓存文件结构
 type CacheFile struct {
@@ -21,24 +21,24 @@ type CacheFile struct {
 	HourlyStats [24]*HourAggregate       // 每小时统计
 
 	// 全局统计
-	TotalMessages   int // 总消息数
-	TotalSessions   int // 总会话数
-	ProjectStats    map[string]*ProjectStatItem
-	ModelUsage      map[string]*ModelUsageItem
-	WeekdayStats    [7]*WeekdayItem
-	MCPToolStats    map[string]int
-	ToolStats       map[string]*ToolStatItem
-	ToolAnalysis    *ToolAnalysisData
-	FailureAnalysis *FailureAnalysisData
-	SessionAnalysis *SessionAnalysisData
-	EventAnalysis   *EventAnalysisData
-	AgentAnalysis   *AgentAnalysisData
-	CommandAnalysis *CommandAnalysisData
-	CostAnalysis    *CostAnalysisData
-	FileAnalysis   *FileAnalysisData
+	TotalMessages    int // 总消息数
+	TotalSessions    int // 总会话数
+	ProjectStats     map[string]*ProjectStatItem
+	ModelUsage       map[string]*ModelUsageItem
+	WeekdayStats     [7]*WeekdayItem
+	MCPToolStats     map[string]int
+	ToolStats        map[string]*ToolStatItem
+	ToolAnalysis     *ToolAnalysisData
+	FailureAnalysis  *FailureAnalysisData
+	SessionAnalysis  *SessionAnalysisData
+	EventAnalysis    *EventAnalysisData
+	AgentAnalysis    *AgentAnalysisData
+	CommandAnalysis  *CommandAnalysisData
+	CostAnalysis     *CostAnalysisData
+	FileAnalysis     *FileAnalysisData
 	TaskPlanAnalysis *TaskPlanAnalysisData        `json:"task_plan_analysis,omitempty"`
-	ToolPerformance  *ToolPerformanceData          `json:"tool_performance,omitempty"`
-	ProjectFiles    map[string]*ProjectFileCache `json:"project_file_caches,omitempty"`
+	ToolPerformance  *ToolPerformanceData         `json:"tool_performance,omitempty"`
+	ProjectFiles     map[string]*ProjectFileCache `json:"project_file_caches,omitempty"`
 }
 
 // ProjectFileCache 单个 projects JSONL 文件的增量缓存
@@ -55,6 +55,9 @@ type ProjectFileAggregate struct {
 	WeekdayData         [7]WeekdayItem                    `json:"weekday_data"`
 	DailyActivity       map[string]int                    `json:"daily_activity,omitempty"`
 	DailySessions       map[string][]string               `json:"daily_sessions,omitempty"`
+	DailyProjectCounts  map[string]map[string]int         `json:"daily_project_counts,omitempty"`
+	DailyModelCounts    map[string]map[string]int         `json:"daily_model_counts,omitempty"`
+	DailyModelTokens    map[string]map[string]int         `json:"daily_model_tokens,omitempty"`
 	HourlyCounts        [24]int                           `json:"hourly_counts"`
 	ModelUsage          map[string]ModelUsageItem         `json:"model_usage,omitempty"`
 	CostModelStats      map[string]CostModelStat          `json:"cost_model_stats,omitempty"`
@@ -81,15 +84,15 @@ type ProjectFileAggregate struct {
 	AgentSessions       map[string][]string               `json:"agent_sessions,omitempty"`
 	BashCommandStats    map[string]BashCommandStat        `json:"bash_command_stats,omitempty"`
 	FileOperationStats  map[string]FileOperationStat      `json:"file_operation_stats,omitempty"`
-	FileHotStats       map[string]FileHotStat           `json:"file_hot_stats,omitempty"`
-	FileEditFailures   map[string]FileEditFailureAgg     `json:"file_edit_failures,omitempty"`
-	FileSnapshotStats  map[string]FileSnapshotAgg        `json:"file_snapshot_stats,omitempty"`
-	FileEditedStats    map[string]FileEditedAgg          `json:"file_edited_stats,omitempty"`
-	PlanModeAgg        *SerializedPlanModeAgg            `json:"plan_mode_agg,omitempty"`
-	GoalStatusAgg      *GoalStatusAgg                    `json:"goal_status_agg,omitempty"`
-	ReminderAgg        *ReminderAgg                      `json:"reminder_agg,omitempty"`
-	ToolPerfStats      map[string]ToolPerfAgg            `json:"tool_perf_stats,omitempty"`
-	SlowestCalls       []ToolSlowCallItem                 `json:"slowest_calls,omitempty"`
+	FileHotStats        map[string]FileHotStat            `json:"file_hot_stats,omitempty"`
+	FileEditFailures    map[string]FileEditFailureAgg     `json:"file_edit_failures,omitempty"`
+	FileSnapshotStats   map[string]FileSnapshotAgg        `json:"file_snapshot_stats,omitempty"`
+	FileEditedStats     map[string]FileEditedAgg          `json:"file_edited_stats,omitempty"`
+	PlanModeAgg         *SerializedPlanModeAgg            `json:"plan_mode_agg,omitempty"`
+	GoalStatusAgg       *GoalStatusAgg                    `json:"goal_status_agg,omitempty"`
+	ReminderAgg         *ReminderAgg                      `json:"reminder_agg,omitempty"`
+	ToolPerfStats       map[string]ToolPerfAgg            `json:"tool_perf_stats,omitempty"`
+	SlowestCalls        []ToolSlowCallItem                `json:"slowest_calls,omitempty"`
 }
 
 // DayAggregate 每日聚合数据
@@ -101,6 +104,7 @@ type DayAggregate struct {
 	HourlyCounts  [24]int        // 每小时消息数
 	ProjectCounts map[string]int // 项目 -> 消息数
 	ModelCounts   map[string]int // 模型 -> 请求次数
+	ModelTokens   map[string]int // 模型 -> token 数
 }
 
 // HourAggregate 每小时聚合数据
@@ -214,22 +218,32 @@ func (cf *CacheFile) QueryByTimeRange(start, end time.Time) *CacheFile {
 
 		if queryRange.Contains(dateParsed) {
 			dayCopy := *dayStats
+			dayCopy.ProjectCounts = copyIntMap(dayStats.ProjectCounts)
+			dayCopy.ModelCounts = copyIntMap(dayStats.ModelCounts)
+			dayCopy.ModelTokens = copyIntMap(dayStats.ModelTokens)
 			result.DailyStats[date] = &dayCopy
 
 			result.TotalMessages += dayStats.MessageCount
 			result.TotalSessions += dayStats.SessionCount
-		}
-	}
 
-	// 从过滤后的 DailyStats 中收集有效项目名和模型名
-	activeProjects := make(map[string]bool)
-	activeModels := make(map[string]bool)
-	for _, dayStats := range result.DailyStats {
-		for proj := range dayStats.ProjectCounts {
-			activeProjects[proj] = true
-		}
-		for model := range dayStats.ModelCounts {
-			activeModels[model] = true
+			for project, count := range dayStats.ProjectCounts {
+				if result.ProjectStats[project] == nil {
+					result.ProjectStats[project] = &ProjectStatItem{Project: project}
+				}
+				result.ProjectStats[project].MessageCount += count
+			}
+			for model, count := range dayStats.ModelCounts {
+				if result.ModelUsage[model] == nil {
+					result.ModelUsage[model] = &ModelUsageItem{Model: model}
+				}
+				result.ModelUsage[model].Count += count
+			}
+			for model, tokens := range dayStats.ModelTokens {
+				if result.ModelUsage[model] == nil {
+					result.ModelUsage[model] = &ModelUsageItem{Model: model}
+				}
+				result.ModelUsage[model].Tokens += tokens
+			}
 		}
 	}
 
@@ -245,22 +259,6 @@ func (cf *CacheFile) QueryByTimeRange(start, end time.Time) *CacheFile {
 	for i, ws := range cf.WeekdayStats {
 		if ws != nil {
 			result.WeekdayStats[i] = ws
-		}
-	}
-
-	// 过滤 ProjectStats：只保留时间范围内有活动的项目
-	for proj, stats := range cf.ProjectStats {
-		if activeProjects[proj] {
-			projCopy := *stats
-			result.ProjectStats[proj] = &projCopy
-		}
-	}
-
-	// 过滤 ModelUsage：只保留时间范围内使用的模型
-	for model, mu := range cf.ModelUsage {
-		if activeModels[model] {
-			muCopy := *mu
-			result.ModelUsage[model] = &muCopy
 		}
 	}
 
@@ -416,7 +414,6 @@ func cloneTaskPlanAnalysis(source *TaskPlanAnalysisData) *TaskPlanAnalysisData {
 	copyValue.Tasks.SessionTaskCounts = append([]SessionTaskItem(nil), source.Tasks.SessionTaskCounts...)
 	return &copyValue
 }
-
 
 // AddMessage 添加一条消息记录到每日聚合
 func (da *DayAggregate) AddMessage(project string, hour int) {

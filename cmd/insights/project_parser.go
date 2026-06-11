@@ -173,6 +173,10 @@ func parseProjectFileAggregate(filePath string, tf TimeFilter, agg *ProjectAggre
 		// 3. 每日活动
 		dateKey := timestamp.Format("2006-01-02")
 		agg.DailyActivity[dateKey]++
+		if agg.DailyProjectCounts[dateKey] == nil {
+			agg.DailyProjectCounts[dateKey] = make(map[string]int)
+		}
+		agg.DailyProjectCounts[dateKey][projectName]++
 
 		// 3.5 每日会话去重（同一 sessionID 同天只计一次）
 		if record.SessionID != "" {
@@ -197,6 +201,14 @@ func parseProjectFileAggregate(filePath string, tf TimeFilter, agg *ProjectAggre
 			}
 			agg.ModelUsage[msg.Model].Count++
 			agg.ModelUsage[msg.Model].Tokens += msg.Usage.InputTokens + msg.Usage.OutputTokens
+			if agg.DailyModelCounts[dateKey] == nil {
+				agg.DailyModelCounts[dateKey] = make(map[string]int)
+			}
+			agg.DailyModelCounts[dateKey][msg.Model]++
+			if agg.DailyModelTokens[dateKey] == nil {
+				agg.DailyModelTokens[dateKey] = make(map[string]int)
+			}
+			agg.DailyModelTokens[dateKey][msg.Model] += msg.Usage.InputTokens + msg.Usage.OutputTokens
 			recordCostUsageLocked(agg, msg, record, projectName)
 		}
 

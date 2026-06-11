@@ -432,32 +432,32 @@ type CostAnalysisData struct {
 // FileAnalysisData 文件与编辑质量分析结果
 type FileAnalysisData struct {
 	Totals       FileAnalysisTotals    `json:"totals"`
-	HotFiles     []FileHotItem         `json:"hot_files"`      // 综合活跃度 Top N（跨操作类型按路径聚合）
-	EditFailures []FileEditFailureItem `json:"edit_failures"`  // 按文件的 Edit 失败原因分布
-	Snapshots    []FileSnapshotItem    `json:"snapshots"`      // file-history-snapshot 统计
-	EditedFiles  []FileEditedItem      `json:"edited_files"`   // edited_text_file 统计
+	HotFiles     []FileHotItem         `json:"hot_files"`     // 综合活跃度 Top N（跨操作类型按路径聚合）
+	EditFailures []FileEditFailureItem `json:"edit_failures"` // 按文件的 Edit 失败原因分布
+	Snapshots    []FileSnapshotItem    `json:"snapshots"`     // file-history-snapshot 统计
+	EditedFiles  []FileEditedItem      `json:"edited_files"`  // edited_text_file 统计
 }
 
 // FileAnalysisTotals 文件分析汇总数字
 type FileAnalysisTotals struct {
-	UniqueFiles            int     `json:"unique_files"`             // 唯一文件数
-	TotalReads             int     `json:"total_reads"`              // Read 总调用
-	TotalEdits             int     `json:"total_edits"`              // Edit+MultiEdit 总调用
-	TotalWrites            int     `json:"total_writes"`             // Write 总调用
-	TotalEditFailures      int     `json:"total_edit_failures"`      // Edit 失败总数
-	TotalWriteFailures     int     `json:"total_write_failures"`     // Write 失败总数
+	UniqueFiles            int     `json:"unique_files"`              // 唯一文件数
+	TotalReads             int     `json:"total_reads"`               // Read 总调用
+	TotalEdits             int     `json:"total_edits"`               // Edit+MultiEdit 总调用
+	TotalWrites            int     `json:"total_writes"`              // Write 总调用
+	TotalEditFailures      int     `json:"total_edit_failures"`       // Edit 失败总数
+	TotalWriteFailures     int     `json:"total_write_failures"`      // Write 失败总数
 	OverallEditFailureRate float64 `json:"overall_edit_failure_rate"` // Edit 整体失败率 %
-	SnapshotEventCount     int     `json:"snapshot_event_count"`     // snapshot 事件总数
-	EditedFileCount        int     `json:"edited_file_count"`        // edited_text_file 数
+	SnapshotEventCount     int     `json:"snapshot_event_count"`      // snapshot 事件总数
+	EditedFileCount        int     `json:"edited_file_count"`         // edited_text_file 数
 }
 
 // FileHotItem 最活跃文件（按路径聚合，跨操作类型）
 type FileHotItem struct {
 	Path            string  `json:"path"`
 	ReadCount       int     `json:"read_count"`
-	EditCount       int     `json:"edit_count"`        // Edit + MultiEdit
+	EditCount       int     `json:"edit_count"` // Edit + MultiEdit
 	WriteCount      int     `json:"write_count"`
-	TotalOps        int     `json:"total_ops"`         // Read + Edit + Write
+	TotalOps        int     `json:"total_ops"` // Read + Edit + Write
 	SuccessCount    int     `json:"success_count"`
 	FailureCount    int     `json:"failure_count"`
 	MissingCount    int     `json:"missing_count"`
@@ -482,9 +482,9 @@ type FileFailureReasonDetail struct {
 // FileSnapshotItem file-history-snapshot 统计（按文件路径聚合）
 type FileSnapshotItem struct {
 	Path          string `json:"path"`
-	SnapshotCount int    `json:"snapshot_count"` // 出现在多少条 snapshot 事件中
-	MaxVersion    int    `json:"max_version"`    // 最高版本号
-	SessionCount  int    `json:"session_count"`  // 跨多少个不同 session
+	SnapshotCount int    `json:"snapshot_count"`  // 出现在多少条 snapshot 事件中
+	MaxVersion    int    `json:"max_version"`     // 最高版本号
+	SessionCount  int    `json:"session_count"`   // 跨多少个不同 session
 	IsUpdateCount int    `json:"is_update_count"` // 增量更新次数(isSnapshotUpdate=true)
 }
 
@@ -492,8 +492,8 @@ type FileSnapshotItem struct {
 type FileEditedItem struct {
 	Path       string `json:"path"`
 	EditCount  int    `json:"edit_count"`
-	AvgLines   int    `json:"avg_lines"`  // 平均行数
-	AvgChars   int    `json:"avg_chars"`  // 平均字符数
+	AvgLines   int    `json:"avg_lines"`   // 平均行数
+	AvgChars   int    `json:"avg_chars"`   // 平均字符数
 	TotalChars int64  `json:"total_chars"` // 累计字符数(估算编辑规模)
 }
 
@@ -536,21 +536,21 @@ type FileEditedAgg struct {
 
 // TaskPlanAnalysisData Task / Plan 结构分析结果（输出格式）
 type TaskPlanAnalysisData struct {
-	PlanLifecycle   PlanLifecycleData   `json:"plan_lifecycle"`    // Plan mode 生命周期
-	PlanFiles       []PlanFileItem      `json:"plan_files"`        // 引用的计划文件
-	GoalStatus      []GoalStatusItem    `json:"goal_status"`       // 目标达成状态
-	ReminderSummary ReminderSummaryData `json:"reminder_summary"`  // task/todo 提醒频率
-	Tasks           TaskAnalysisData    `json:"tasks"`             // Task 分析（来自 tasks/ 目录）
+	PlanLifecycle   PlanLifecycleData   `json:"plan_lifecycle"`   // Plan mode 生命周期
+	PlanFiles       []PlanFileItem      `json:"plan_files"`       // 引用的计划文件
+	GoalStatus      []GoalStatusItem    `json:"goal_status"`      // 目标达成状态
+	ReminderSummary ReminderSummaryData `json:"reminder_summary"` // task/todo 提醒频率
+	Tasks           TaskAnalysisData    `json:"tasks"`            // Task 分析（来自 tasks/ 目录）
 }
 
 // PlanLifecycleData Plan 模式生命周期统计
 type PlanLifecycleData struct {
-	EntryCount       int                  `json:"entry_count"`       // plan_mode 进入次数
-	ExitCount        int                  `json:"exit_count"`        // plan_mode_exit 次数
-	ReentryCount     int                  `json:"reentry_count"`     // plan_mode_reentry 次数
-	UniquePlans      int                  `json:"unique_plans"`      // 涉及的唯一计划文件数
+	EntryCount       int                  `json:"entry_count"`        // plan_mode 进入次数
+	ExitCount        int                  `json:"exit_count"`         // plan_mode_exit 次数
+	ReentryCount     int                  `json:"reentry_count"`      // plan_mode_reentry 次数
+	UniquePlans      int                  `json:"unique_plans"`       // 涉及的唯一计划文件数
 	SessionsWithPlan int                  `json:"sessions_with_plan"` // 使用过 plan mode 的 session 数
-	ExitReasons      []PlanExitReasonItem `json:"exit_reasons"`     // 退出原因分布
+	ExitReasons      []PlanExitReasonItem `json:"exit_reasons"`       // 退出原因分布
 }
 
 // PlanExitReasonItem Plan mode 退出原因
@@ -561,13 +561,13 @@ type PlanExitReasonItem struct {
 
 // PlanFileItem 单个计划文件引用记录
 type PlanFileItem struct {
-	FilePath  string `json:"file_path"`            // 完整路径
-	FileName  string `json:"file_name"`            // 文件名(basename)
-	CharCount int    `json:"char_count"`           // 内容字符数
-	LineCount int    `json:"line_count"`           // 内容行数
-	HasCode   bool   `json:"has_code"`             // 是否包含代码块
-	Preview   string `json:"preview,omitempty"`    // 内容前200字符预览
-	RefCount  int    `json:"ref_count"`            // 被引用次数(去重session)
+	FilePath  string `json:"file_path"`         // 完整路径
+	FileName  string `json:"file_name"`         // 文件名(basename)
+	CharCount int    `json:"char_count"`        // 内容字符数
+	LineCount int    `json:"line_count"`        // 内容行数
+	HasCode   bool   `json:"has_code"`          // 是否包含代码块
+	Preview   string `json:"preview,omitempty"` // 内容前200字符预览
+	RefCount  int    `json:"ref_count"`         // 被引用次数(去重session)
 }
 
 // GoalStatusItem 目标状态事件
@@ -581,12 +581,12 @@ type GoalStatusItem struct {
 
 // ReminderSummaryData 任务提醒汇总
 type ReminderSummaryData struct {
-	TaskReminderCount  int                 `json:"task_reminder_count"`  // task_reminder 总次数
-	TodoReminderCount  int                 `json:"todo_reminder_count"`  // todo_reminder 总次数
-	SessionsWithTask   int                 `json:"sessions_with_task"`   // 有task_reminder的session数
-	SessionsWithTodo   int                 `json:"sessions_with_todo"`   // 有todo_reminder的session数
-	TopTaskSessions    []ReminderSessionItem `json:"top_task_sessions"` // task_reminder最多的Top N session
-	TopTodoSessions    []ReminderSessionItem `json:"top_todo_sessions"` // todo_reminder最多的Top N session
+	TaskReminderCount int                   `json:"task_reminder_count"` // task_reminder 总次数
+	TodoReminderCount int                   `json:"todo_reminder_count"` // todo_reminder 总次数
+	SessionsWithTask  int                   `json:"sessions_with_task"`  // 有task_reminder的session数
+	SessionsWithTodo  int                   `json:"sessions_with_todo"`  // 有todo_reminder的session数
+	TopTaskSessions   []ReminderSessionItem `json:"top_task_sessions"`   // task_reminder最多的Top N session
+	TopTodoSessions   []ReminderSessionItem `json:"top_todo_sessions"`   // todo_reminder最多的Top N session
 }
 
 // ReminderSessionItem 单session的提醒次数
@@ -598,12 +598,12 @@ type ReminderSessionItem struct {
 
 // TaskAnalysisData Task 分析结果（来自 tasks/ 目录扫描）
 type TaskAnalysisData struct {
-	TotalTasks         int                `json:"total_tasks"`
-	TotalSessions      int                `json:"total_sessions"`
-	StatusDistribution []TaskStatusItem   `json:"status_distribution"` // 状态分布
-	SessionTaskCounts  []SessionTaskItem  `json:"session_task_counts"`  // per-session任务数Top N
-	AvgTasksPerSession float64            `json:"avg_tasks_per_session"`
-	CompletionRate     float64            `json:"completion_rate"`      // 整体完成率%
+	TotalTasks         int               `json:"total_tasks"`
+	TotalSessions      int               `json:"total_sessions"`
+	StatusDistribution []TaskStatusItem  `json:"status_distribution"` // 状态分布
+	SessionTaskCounts  []SessionTaskItem `json:"session_task_counts"` // per-session任务数Top N
+	AvgTasksPerSession float64           `json:"avg_tasks_per_session"`
+	CompletionRate     float64           `json:"completion_rate"` // 整体完成率%
 }
 
 // TaskStatusItem 任务状态分布项
@@ -615,22 +615,22 @@ type TaskStatusItem struct {
 
 // SessionTaskItem 单session任务概况
 type SessionTaskItem struct {
-	SessionID        string  `json:"session_id"`
-	TotalTasks       int     `json:"total_tasks"`
-	CompletedCount   int     `json:"completed_count"`
-	PendingCount     int     `json:"pending_count"`
-	InProgressCount  int     `json:"in_progress_count"`
-	CompletionRate   float64 `json:"completion_rate"`
+	SessionID       string  `json:"session_id"`
+	TotalTasks      int     `json:"total_tasks"`
+	CompletedCount  int     `json:"completed_count"`
+	PendingCount    int     `json:"pending_count"`
+	InProgressCount int     `json:"in_progress_count"`
+	CompletionRate  float64 `json:"completion_rate"`
 }
 
 // PlanModeAgg 中间聚合：plan_mode 事件
 type PlanModeAgg struct {
-	EntryCount   int                       // plan_mode 进入次数
-	ExitCount    int                       // plan_mode_exit 次数
-	ReentryCount int                       // plan_mode_reentry 次数
-	ExitReasons  map[string]int            // exitReason -> count
-	PlanFilePaths map[string]*PlanFileAgg  // filePath -> 详情
-	SessionSet   map[string]bool           // sessionID去重
+	EntryCount    int                     // plan_mode 进入次数
+	ExitCount     int                     // plan_mode_exit 次数
+	ReentryCount  int                     // plan_mode_reentry 次数
+	ExitReasons   map[string]int          // exitReason -> count
+	PlanFilePaths map[string]*PlanFileAgg // filePath -> 详情
+	SessionSet    map[string]bool         // sessionID去重
 }
 
 // PlanFileAgg 中间聚合：单个计划文件的引用详情
@@ -642,7 +642,7 @@ type PlanFileAgg struct {
 	CharCount   int
 	LineCount   int
 	HasCode     bool
-	RefCount    int              // 跨session去重引用次数
+	RefCount    int             // 跨session去重引用次数
 	RefSessions map[string]bool // sessionID去重
 }
 
@@ -659,11 +659,11 @@ type SerializedPlanFileAgg struct {
 
 // SerializedPlanModeAgg 可序列化版本（用于缓存）
 type SerializedPlanModeAgg struct {
-	EntryCount                                                      int                                 `json:"entry_count"`
-	ExitCount                                                       int                                 `json:"exit_count"`
-	ReentryCount                                                    int                                 `json:"reentry_count"`
-	ExitReasons                                                     map[string]int                      `json:"exit_reasons"`
-	PlanFilePaths                                                   map[string]*SerializedPlanFileAgg  `json:"plan_file_paths"`
+	EntryCount    int                               `json:"entry_count"`
+	ExitCount     int                               `json:"exit_count"`
+	ReentryCount  int                               `json:"reentry_count"`
+	ExitReasons   map[string]int                    `json:"exit_reasons"`
+	PlanFilePaths map[string]*SerializedPlanFileAgg `json:"plan_file_paths"`
 }
 
 // GoalStatusAgg 中间聚合：goal_status 事件
@@ -673,18 +673,18 @@ type GoalStatusAgg struct {
 
 // ReminderAgg 中间聚合：task/todo reminder 频率
 type ReminderAgg struct {
-	TaskReminderCount  int
-	TodoReminderCount  int
-	TaskSessionCounts map[string]int         // sessionID -> count
-	TodoSessionCounts map[string]int         // sessionID -> count
-	TaskSessionProjects map[string]string    // sessionID -> projectName
-	TodoSessionProjects map[string]string    // sessionID -> projectName
+	TaskReminderCount   int
+	TodoReminderCount   int
+	TaskSessionCounts   map[string]int    // sessionID -> count
+	TodoSessionCounts   map[string]int    // sessionID -> count
+	TaskSessionProjects map[string]string // sessionID -> projectName
+	TodoSessionProjects map[string]string // sessionID -> projectName
 }
 
 // TaskAgg 中间聚合：tasks/ 目录扫描结果
 type TaskAgg struct {
 	TotalTasks   int
-	StatusCounts map[string]int              // status -> count
+	StatusCounts map[string]int             // status -> count
 	SessionTasks map[string]*SessionTaskAgg // sessionUUID -> stats
 }
 
@@ -713,21 +713,21 @@ type TaskRaw struct {
 
 // ToolPerformanceData 工具性能与质量分析结果（输出格式）
 type ToolPerformanceData struct {
-	TotalPairedCalls    int                        `json:"total_paired_calls"`
-	TotalErrors         int                        `json:"total_errors"`
-	OverallErrorRate    float64                    `json:"overall_error_rate"`
-	OverallAvgDuration  float64                    `json:"overall_avg_duration_ms"`
-	ByCategory          []ToolPerfCategoryItem     `json:"by_category"`        // 按 BaseTool 分层截断后的类别列表
+	TotalPairedCalls    int                               `json:"total_paired_calls"`
+	TotalErrors         int                               `json:"total_errors"`
+	OverallErrorRate    float64                           `json:"overall_error_rate"`
+	OverallAvgDuration  float64                           `json:"overall_avg_duration_ms"`
+	ByCategory          []ToolPerfCategoryItem            `json:"by_category"`               // 按 BaseTool 分层截断后的类别列表
 	CategoryGroups      map[string][]ToolPerfCategoryItem `json:"category_groups,omitempty"` // 按 BaseTool 分组（前端可选展示）
-	SlowestCalls        []ToolSlowCallItem         `json:"slowest_calls"`
-	QualityDistribution []QualityBucketItem        `json:"quality_distribution"`
+	SlowestCalls        []ToolSlowCallItem                `json:"slowest_calls"`
+	QualityDistribution []QualityBucketItem               `json:"quality_distribution"`
 }
 
 // ToolPerfCategoryItem 单个细分类别的工具性能统计
 type ToolPerfCategoryItem struct {
-	Category        string  `json:"category"`           // "Bash:git", "Read:/path", "mcp__jina__web_search"
-	BaseTool        string  `json:"base_tool"`          // "Bash", "Read", "mcp__jina__web_search"
-	SubKey          string  `json:"sub_key,omitempty"`  // "git", "/path/to/file", ""
+	Category        string  `json:"category"`          // "Bash:git", "Read:/path", "mcp__jina__web_search"
+	BaseTool        string  `json:"base_tool"`         // "Bash", "Read", "mcp__jina__web_search"
+	SubKey          string  `json:"sub_key,omitempty"` // "git", "/path/to/file", ""
 	CallCount       int     `json:"call_count"`
 	SuccessCount    int     `json:"success_count"`
 	ErrorCount      int     `json:"error_count"`
@@ -803,6 +803,9 @@ type ProjectAggregate struct {
 	DailyActivity       map[string]int                     `json:"-"`                // 每日消息数（map）
 	DailyActivityList   []DailyActivity                    `json:"daily"`            // 每日活动（输出格式）
 	DailySessions       map[string]map[string]bool         `json:"-"`                // 每日会话集 date→sessionID→true（用于提取SessionStats，避免重复解析）
+	DailyProjectCounts  map[string]map[string]int          `json:"-"`                // 每日项目消息数 date→project→count
+	DailyModelCounts    map[string]map[string]int          `json:"-"`                // 每日模型请求数 date→model→count
+	DailyModelTokens    map[string]map[string]int          `json:"-"`                // 每日模型 token 数 date→model→tokens
 	HourlyCounts        [24]int                            `json:"-"`                // 小时统计
 	HourlyData          []HourlyItem                       `json:"-"`                // 小时数据
 	ModelUsage          map[string]*ModelUsageItem         `json:"-"`                // 模型使用（map）
@@ -844,17 +847,17 @@ type ProjectAggregate struct {
 	FileEditedStats     map[string]*FileEditedAgg          `json:"-"`                // edited_text_file 统计
 	FileAnalysis        *FileAnalysisData                  `json:"file_analysis"`    // 文件与编辑质量分析（输出格式）
 	// --- task_plan_analysis (Milestone 4) ---
-	PlanModeAgg         *PlanModeAgg                       `json:"-"`                // plan_mode 事件聚合
-	GoalStatusAgg       *GoalStatusAgg                     `json:"-"`                // goal_status 事件聚合
-	ReminderAgg         *ReminderAgg                       `json:"-"`                // reminder 频率聚合
-	TaskAgg             *TaskAgg                           `json:"-"`                // tasks/ 目录扫描结果
-	TaskPlanAnalysis    *TaskPlanAnalysisData              `json:"task_plan_analysis"` // Task/Plan 分析（输出格式）
+	PlanModeAgg      *PlanModeAgg          `json:"-"`                  // plan_mode 事件聚合
+	GoalStatusAgg    *GoalStatusAgg        `json:"-"`                  // goal_status 事件聚合
+	ReminderAgg      *ReminderAgg          `json:"-"`                  // reminder 频率聚合
+	TaskAgg          *TaskAgg              `json:"-"`                  // tasks/ 目录扫描结果
+	TaskPlanAnalysis *TaskPlanAnalysisData `json:"task_plan_analysis"` // Task/Plan 分析（输出格式）
 	// --- tool_performance (Milestone 5) ---
-	ToolPerfStats       map[string]*ToolPerfAgg            `json:"-"`                  // M5: 工具性能中间聚合
-	SlowestCalls        []ToolSlowCallItem                 `json:"-"`                  // M5: 全局最慢 Top-N 调用
-	ToolPerformance     *ToolPerformanceData               `json:"tool_performance"`   // M5: 输出格式
-	WorkHoursStats      *WorkHoursStats                    `json:"work_hours"`       // 工作时段统计
-	mu                  sync.RWMutex                       `json:"-"`                // 保护并发写入
+	ToolPerfStats   map[string]*ToolPerfAgg `json:"-"`                // M5: 工具性能中间聚合
+	SlowestCalls    []ToolSlowCallItem      `json:"-"`                // M5: 全局最慢 Top-N 调用
+	ToolPerformance *ToolPerformanceData    `json:"tool_performance"` // M5: 输出格式
+	WorkHoursStats  *WorkHoursStats         `json:"work_hours"`       // 工作时段统计
+	mu              sync.RWMutex            `json:"-"`                // 保护并发写入
 }
 
 // ProjectRecord projects/*.jsonl 记录

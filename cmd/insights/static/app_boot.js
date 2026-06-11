@@ -1,6 +1,6 @@
 function initDashboard() {
     setupEventListeners();
-    loadData('all');
+    loadData('preset=all');
 }
 
 // 初始化

@@ -52,6 +52,60 @@ func TestCacheBuilderBuildFullCache(t *testing.T) {
 	}
 }
 
+func TestCacheBuilderBuildFullCacheDailyProjectAndModelCounts(t *testing.T) {
+	tmpDir := t.TempDir()
+	dataDir := createTestDataDir(t, tmpDir)
+	cachePath := filepath.Join(tmpDir, "cache.db")
+	builder := &CacheBuilder{CachePath: cachePath, DataDir: dataDir}
+
+	if err := builder.BuildFullCache(); err != nil {
+		t.Fatalf("BuildFullCache() failed: %v", err)
+	}
+
+	cache, err := LoadCacheFile(cachePath)
+	if err != nil {
+		t.Fatalf("LoadCacheFile() failed: %v", err)
+	}
+
+	var queryDate string
+	for date, day := range cache.DailyStats {
+		if day.ProjectCounts["/tmp/test-project"] > 0 && day.ModelCounts["claude-sonnet-4.5"] > 0 {
+			queryDate = date
+			break
+		}
+	}
+	if queryDate == "" {
+		t.Fatalf("DailyStats did not retain project/model counts: %+v", cache.DailyStats)
+	}
+
+	start, err := time.Parse("2006-01-02", queryDate)
+	if err != nil {
+		t.Fatalf("Parse query date failed: %v", err)
+	}
+	result := cache.QueryByTimeRange(start, start.AddDate(0, 0, 1))
+	if len(result.ProjectStats) == 0 {
+		t.Fatal("QueryByTimeRange returned no ProjectStats")
+	}
+	if result.ProjectStats["/tmp/test-project"] == nil {
+		t.Fatalf("QueryByTimeRange missing /tmp/test-project: %+v", result.ProjectStats)
+	}
+	if result.ProjectStats["/tmp/test-project"].MessageCount != 2 {
+		t.Fatalf("Project message count=%d, want 2", result.ProjectStats["/tmp/test-project"].MessageCount)
+	}
+	if len(result.ModelUsage) == 0 {
+		t.Fatal("QueryByTimeRange returned no ModelUsage")
+	}
+	if result.ModelUsage["claude-sonnet-4.5"] == nil {
+		t.Fatalf("QueryByTimeRange missing claude-sonnet-4.5: %+v", result.ModelUsage)
+	}
+	if result.ModelUsage["claude-sonnet-4.5"].Count != 2 {
+		t.Fatalf("Model count=%d, want 2", result.ModelUsage["claude-sonnet-4.5"].Count)
+	}
+	if result.ModelUsage["claude-sonnet-4.5"].Tokens != 30 {
+		t.Fatalf("Model tokens=%d, want 30", result.ModelUsage["claude-sonnet-4.5"].Tokens)
+	}
+}
+
 // TestCacheBuilderIncrementalUpdate 测试增量更新缓存
 func TestCacheBuilderIncrementalUpdate(t *testing.T) {
 	// Arrange

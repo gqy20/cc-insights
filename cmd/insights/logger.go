@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"io"
 	"log"
 	"net/http"
 	"os"
@@ -62,8 +61,8 @@ func InitLogger(logDir string) error {
 	}
 	appLogger.file = f
 
-	// 文件日志带时间戳前缀
-	appLogger.fileLogger = log.New(io.MultiWriter(f, os.Stdout), "", 0)
+	// 文件日志只写文件；stdout 由 outLogger 单独负责。
+	appLogger.fileLogger = log.New(f, "", 0)
 
 	Info("日志系统初始化完成", "log_file", logFile)
 	return nil
@@ -127,7 +126,12 @@ func RequestLog(r *http.Request, status int, duration time.Duration, size int64)
 		userAgent = userAgent[:80] + "..."
 	}
 
-	msg := fmt.Sprintf("%s %s%s -> %d (%s, %dB)", method, path, query, status, duration.Round(time.Millisecond), size)
+	target := path
+	if query != "" {
+		target += "?" + query
+	}
+
+	msg := fmt.Sprintf("%s %s -> %d (%s, %dB)", method, target, status, duration.Round(time.Millisecond), size)
 	appLogger.log(LogLevelInfo, msg,
 		"client", clientIP,
 		"ua", userAgent,

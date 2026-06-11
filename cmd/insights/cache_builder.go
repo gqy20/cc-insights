@@ -67,27 +67,27 @@ func (cb *CacheBuilder) BuildFullCache() error {
 
 	// 创建缓存结构
 	cache := &CacheFile{
-		Version:         CacheVersion,
-		LastUpdate:      time.Now(),
-		TimeRange:       TimeRange{},
-		DailyStats:      make(map[string]*DayAggregate),
-		TotalMessages:   totalMessages,
-		TotalSessions:   sessionStats.TotalSessions,
-		ProjectStats:    make(map[string]*ProjectStatItem),
-		ModelUsage:      make(map[string]*ModelUsageItem),
-		MCPToolStats:    make(map[string]int),
-		ToolStats:       make(map[string]*ToolStatItem),
-		ToolAnalysis:    aggregate.ToolAnalysis,
-		FailureAnalysis: aggregate.FailureAnalysis,
-		SessionAnalysis: aggregate.SessionAnalysis,
-		EventAnalysis:   aggregate.EventAnalysis,
-		AgentAnalysis:   aggregate.AgentAnalysis,
-		CommandAnalysis: aggregate.CommandAnalysis,
-		CostAnalysis:    aggregate.CostAnalysis,
-		FileAnalysis:   aggregate.FileAnalysis,
+		Version:          CacheVersion,
+		LastUpdate:       time.Now(),
+		TimeRange:        TimeRange{},
+		DailyStats:       make(map[string]*DayAggregate),
+		TotalMessages:    totalMessages,
+		TotalSessions:    sessionStats.TotalSessions,
+		ProjectStats:     make(map[string]*ProjectStatItem),
+		ModelUsage:       make(map[string]*ModelUsageItem),
+		MCPToolStats:     make(map[string]int),
+		ToolStats:        make(map[string]*ToolStatItem),
+		ToolAnalysis:     aggregate.ToolAnalysis,
+		FailureAnalysis:  aggregate.FailureAnalysis,
+		SessionAnalysis:  aggregate.SessionAnalysis,
+		EventAnalysis:    aggregate.EventAnalysis,
+		AgentAnalysis:    aggregate.AgentAnalysis,
+		CommandAnalysis:  aggregate.CommandAnalysis,
+		CostAnalysis:     aggregate.CostAnalysis,
+		FileAnalysis:     aggregate.FileAnalysis,
 		TaskPlanAnalysis: aggregate.TaskPlanAnalysis,
 		ToolPerformance:  aggregate.ToolPerformance,
-		ProjectFiles:    projectFiles,
+		ProjectFiles:     projectFiles,
 	}
 	// 填充 HourlyStats
 	for i := 0; i < 24; i++ {
@@ -118,6 +118,9 @@ func (cb *CacheBuilder) BuildFullCache() error {
 			SessionCount:  sessionCount,
 			ToolCallCount: 0,
 			HourlyCounts:  [24]int{},
+			ProjectCounts: copyIntMap(aggregate.DailyProjectCounts[day.Date]),
+			ModelCounts:   copyIntMap(aggregate.DailyModelCounts[day.Date]),
+			ModelTokens:   copyIntMap(aggregate.DailyModelTokens[day.Date]),
 		}
 	}
 
