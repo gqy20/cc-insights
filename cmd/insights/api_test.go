@@ -448,7 +448,6 @@ func TestBuildDataFromParsing_NoRedundantIO(t *testing.T) {
 		len(data.Commands))
 }
 
-
 // === P1 性能优化: 三大数据源并行解析 ===
 
 // TestParallelParsing_Correctness 测试并行解析结果与串行一致
@@ -707,9 +706,9 @@ func TestHTTPTimeout_ProtectSlowRequests(t *testing.T) {
 // TestStatsAPIHandler_NoFakeData 测试 /api/stats 不应返回硬编码假数据
 //
 // 🔴 红阶段: 当前 statsAPIHandler 存在以下问题：
-//   1. 使用非并发遗留函数 ParseHistory/GetDailyTrend/ParseStatsCache
-//   2. dates 字段硬编码为 ["2025-12-31", "2026-01-01", ...]
-//   3. 不支持时间过滤，与 /api/data 功能重复且质量更低
+//  1. 使用非并发遗留函数 ParseHistory/GetDailyTrend/ParseStatsCache
+//  2. dates 字段硬编码为 ["2025-12-31", "2026-01-01", ...]
+//  3. 不支持时间过滤，与 /api/data 功能重复且质量更低
 func TestStatsAPIHandler_NoFakeData(t *testing.T) {
 	// Arrange: 创建最小数据集
 	tmpDir := t.TempDir()
@@ -797,10 +796,10 @@ func TestStatsAPIHandler_NoFakeData(t *testing.T) {
 func TestQueryByTimeRange_FilterGlobalStats(t *testing.T) {
 	// Arrange: 创建一个跨多天的缓存
 	cache := &CacheFile{
-		Version:    "1.0",
-		LastUpdate: time.Now(),
-		DailyStats:  make(map[string]*DayAggregate),
-		HourlyStats: [24]*HourAggregate{},
+		Version:      CacheVersion,
+		LastUpdate:   time.Now(),
+		DailyStats:   make(map[string]*DayAggregate),
+		HourlyStats:  [24]*HourAggregate{},
 		ProjectStats: make(map[string]*ProjectStatItem),
 		ModelUsage:   make(map[string]*ModelUsageItem),
 		MCPToolStats: make(map[string]int),
@@ -808,21 +807,21 @@ func TestQueryByTimeRange_FilterGlobalStats(t *testing.T) {
 
 	// Day1 (在范围内): project-A 有活动, model-X 有使用
 	cache.DailyStats["2026-01-01"] = &DayAggregate{
-		Date:         "2026-01-01",
+		Date:          "2026-01-01",
 		MessageCount:  10,
 		ProjectCounts: map[string]int{"project-a": 10},
 		ModelCounts:   map[string]int{"model-x": 10},
 	}
 	// Day2 (在范围内): project-B 有活动, model-Y 有使用
 	cache.DailyStats["2026-01-02"] = &DayAggregate{
-		Date:         "2026-01-02",
+		Date:          "2026-01-02",
 		MessageCount:  5,
 		ProjectCounts: map[string]int{"project-b": 5},
 		ModelCounts:   map[string]int{"model-y": 5},
 	}
 	// Day3 (范围外): project-C 有大量活动（应被过滤掉）
 	cache.DailyStats["2026-12-01"] = &DayAggregate{
-		Date:         "2026-12-01",
+		Date:          "2026-12-01",
 		MessageCount:  100,
 		ProjectCounts: map[string]int{"project-c": 100},
 		ModelCounts:   map[string]int{"model-z": 100},

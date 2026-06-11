@@ -295,34 +295,6 @@ func (cf *CacheFile) QueryByTimeRange(start, end time.Time) *CacheFile {
 		}
 	}
 
-	if !hasRuntimeAggregate {
-		// 兼容旧缓存：没有日维度 runtime 时保留旧的全局分析。
-		for tool, count := range cf.MCPToolStats {
-			result.MCPToolStats[tool] = count
-		}
-		for tool, stats := range cf.ToolStats {
-			if stats != nil {
-				statsCopy := *stats
-				result.ToolStats[tool] = &statsCopy
-			}
-		}
-		if cf.ToolAnalysis != nil {
-			analysisCopy := *cf.ToolAnalysis
-			analysisCopy.Tools = append([]ToolStatItem(nil), cf.ToolAnalysis.Tools...)
-			analysisCopy.ByModel = append([]ToolModelStatItem(nil), cf.ToolAnalysis.ByModel...)
-			result.ToolAnalysis = &analysisCopy
-		}
-		result.EventAnalysis = cloneEventAnalysis(cf.EventAnalysis)
-		result.AgentAnalysis = cloneAgentAnalysis(cf.AgentAnalysis)
-		result.CommandAnalysis = cloneCommandAnalysis(cf.CommandAnalysis)
-		result.CostAnalysis = cloneCostAnalysis(cf.CostAnalysis)
-		result.FailureAnalysis = cloneFailureAnalysis(cf.FailureAnalysis)
-		result.SessionAnalysis = cloneSessionAnalysis(cf.SessionAnalysis)
-		result.FileAnalysis = cloneFileAnalysis(cf.FileAnalysis)
-		result.TaskPlanAnalysis = cloneTaskPlanAnalysis(cf.TaskPlanAnalysis)
-		result.ToolPerformance = cloneToolPerformance(cf.ToolPerformance)
-	}
-
 	return result
 }
 
