@@ -657,14 +657,14 @@ func (agg *ProjectAggregate) finalizeToolPerformance() {
 		return
 	}
 
-	// Per-BaseTool 截断配额：每种工具类型独立 Top-N
+	// Per-BaseTool 截断配额：每种工具类型独立 Top-N（每类至少 50）
 	var perToolCap = map[string]int{
-		"Bash":    30, // 命令最多样化
-		"Read":    15, // 文件路径
-		"Edit":    15, // 文件路径
-		"Write":   10,
-		"MultiEdit": 10,
-		"default": 5, // Agent/TaskOutput 等内置工具
+		"Bash":       80, // 命令最多样化
+		"Read":       60, // 文件路径
+		"Edit":       60, // 文件路径
+		"Write":      50,
+		"MultiEdit":  50,
+		"default":    50, // Agent/TaskOutput/MCP 等内置工具
 	}
 
 	out := &ToolPerformanceData{
