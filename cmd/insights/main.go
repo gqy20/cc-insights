@@ -212,17 +212,17 @@ func dashboardPageHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // statsAPIHandler 统计数据 API (保持兼容)
-// 重写: 使用 buildDataFromParsing 获取真实数据，替代遗留函数+硬编码假日期
+// 保持旧响应格式，但复用 /api/data 的缓存优先数据管道。
 func statsAPIHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	// 使用统一的数据构建管道（与 /api/data 相同逻辑）
 	tf := TimeFilter{Start: nil, End: nil}
-	data, err := buildDataFromParsing(tf, "all")
+	data, source, err := buildDashboardData(tf, "all")
 	if err != nil {
 		http.Error(w, err.Error(), 500)
 		return
 	}
+	maybeValidateDashboardData(source, data)
 
 	// 保持原有响应格式（向后兼容），但使用真实数据
 	fmt.Fprintf(w, `{

@@ -100,21 +100,7 @@ func handleDataAPI(w http.ResponseWriter, r *http.Request) {
 	resultCh := make(chan result, 1)
 
 	go func() {
-		var data *DashboardData
-		source := "parsing"
-
-		// 优先使用缓存
-		if globalCache != nil {
-			data, err = buildDataFromCache(tf, preset)
-			if err != nil {
-				Warn("缓存读取失败，降级到实时解析", "error", err.Error())
-				data, err = buildDataFromParsing(tf, preset)
-			} else {
-				source = "cache"
-			}
-		} else {
-			data, err = buildDataFromParsing(tf, preset)
-		}
+		data, source, err := buildDashboardData(tf, preset)
 
 		if err == nil {
 			maybeValidateDashboardData(source, data)
@@ -555,6 +541,22 @@ func maybeValidateDashboardData(source string, data *DashboardData) {
 func dashboardValidationEnabled() bool {
 	value := strings.TrimSpace(os.Getenv("CC_INSIGHTS_VALIDATE"))
 	return value == "1" || strings.EqualFold(value, "true") || strings.EqualFold(value, "yes")
+}
+
+func buildDashboardData(tf TimeFilter, preset string) (*DashboardData, string, error) {
+	if globalCache != nil {
+		data, err := buildDataFromCache(tf, preset)
+		if err == nil {
+			return data, "cache", nil
+		}
+		Warn("缓存读取失败，降级到实时解析", "error", err.Error())
+	}
+
+	data, err := buildDataFromParsing(tf, preset)
+	if err != nil {
+		return nil, "parsing", err
+	}
+	return data, "parsing", nil
 }
 
 // sendJSON 发送 JSON 响应

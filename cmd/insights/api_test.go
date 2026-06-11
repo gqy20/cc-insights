@@ -666,12 +666,7 @@ func TestHTTPTimeout_ProtectSlowRequests(t *testing.T) {
 	t.Logf("✅ HTTP 请求在 %v 内完成（有超时保护时更安全）", elapsed)
 }
 
-// TestStatsAPIHandler_NoFakeData 测试 /api/stats 不应返回硬编码假数据
-//
-// 🔴 红阶段: 当前 statsAPIHandler 存在以下问题：
-//  1. 使用非并发遗留函数 ParseHistory/GetDailyTrend/ParseStatsCache
-//  2. dates 字段硬编码为 ["2025-12-31", "2026-01-01", ...]
-//  3. 不支持时间过滤，与 /api/data 功能重复且质量更低
+// TestStatsAPIHandler_NoFakeData 测试 /api/stats 不应返回硬编码假数据。
 func TestStatsAPIHandler_NoFakeData(t *testing.T) {
 	// Arrange: 创建最小数据集
 	tmpDir := t.TempDir()
@@ -684,14 +679,6 @@ func TestStatsAPIHandler_NoFakeData(t *testing.T) {
 {"display":"/c","pastedContents":{},"timestamp":1700172800000,"project":"/tmp"}
 `
 	os.WriteFile(historyPath, []byte(historyContent), 0644)
-
-	// 写入 stats-cache.json（statsAPIHandler 需要此文件）
-	statsCacheContent := `{
-		"dailyActivity": [{"date":"2024-11-15","messageCount":3,"sessionCount":1,"toolCallCount":0}],
-		"modelUsage": {"claude-sonnet-4-6":{"inputTokens":100,"outputTokens":200}},
-		"hourCounts": {"10":2,"11":1}
-}`
-	os.WriteFile(filepath.Join(tmpDir, "stats-cache.json"), []byte(statsCacheContent), 0644)
 
 	origDataDir := cfg.DataDir
 	cfg.DataDir = tmpDir
@@ -749,6 +736,85 @@ func TestStatsAPIHandler_NoFakeData(t *testing.T) {
 	}
 
 	t.Logf("✅ /api/stats 返回真实数据: dates=%v, commands=%d", dateList, len(cmds))
+}
+
+func TestStatsAPIHandlerUsesCacheWhenAvailable(t *testing.T) {
+	tmpDir := t.TempDir()
+	dataDir := filepath.Join(tmpDir, "data")
+	projectDir := filepath.Join(dataDir, "projects", "stats-cache-project")
+	if err := os.MkdirAll(projectDir, 0755); err != nil {
+		t.Fatalf("Create project dir failed: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(dataDir, "debug"), 0755); err != nil {
+		t.Fatalf("Create debug dir failed: %v", err)
+	}
+
+	ts := time.Date(2026, 2, 3, 10, 0, 0, 0, time.UTC)
+	projectContent := projectRecordJSON("/tmp/stats-cache", "stats-session", ts) + "\n"
+	if err := os.WriteFile(filepath.Join(projectDir, "session.jsonl"), []byte(projectContent), 0644); err != nil {
+		t.Fatalf("Write project jsonl failed: %v", err)
+	}
+	historyContent := `{"display":"/cached","timestamp":` + formatUnixMilli(ts) + `,"project":"stats-cache-project"}` + "\n"
+	if err := os.WriteFile(filepath.Join(dataDir, "history.jsonl"), []byte(historyContent), 0644); err != nil {
+		t.Fatalf("Write history failed: %v", err)
+	}
+
+	cachePath := filepath.Join(tmpDir, "cache.db")
+	builder := &CacheBuilder{CachePath: cachePath, DataDir: dataDir}
+	if err := builder.BuildFullCache(); err != nil {
+		t.Fatalf("BuildFullCache failed: %v", err)
+	}
+	cache, err := LoadCacheFile(cachePath)
+	if err != nil {
+		t.Fatalf("LoadCacheFile failed: %v", err)
+	}
+
+	originalCache := globalCache
+	originalDataDir := cfg.DataDir
+	globalCache = cache
+	cfg.DataDir = dataDir
+	defer func() {
+		globalCache = originalCache
+		cfg.DataDir = originalDataDir
+	}()
+
+	req := httptest.NewRequest("GET", "/api/stats", nil)
+	w := httptest.NewRecorder()
+	statsAPIHandler(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("HTTP status=%d, want 200; body=%s", w.Code, w.Body.String())
+	}
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("Decode response failed: %v", err)
+	}
+	if _, ok := resp["success"]; ok {
+		t.Fatalf("/api/stats should preserve legacy response shape, got success field: %v", resp)
+	}
+
+	dailyTrend, ok := resp["daily_trend"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("daily_trend missing or invalid: %v", resp)
+	}
+	dates, ok := dailyTrend["dates"].([]interface{})
+	if !ok || len(dates) != 1 || dates[0] != "2026-02-03" {
+		t.Fatalf("daily_trend.dates=%v, want [2026-02-03]", dailyTrend["dates"])
+	}
+
+	modelUsage, ok := resp["model_usage"].([]interface{})
+	if !ok || len(modelUsage) != 1 {
+		t.Fatalf("model_usage=%v, want one cached item", resp["model_usage"])
+	}
+	modelItem, ok := modelUsage[0].(map[string]interface{})
+	if !ok || modelItem["model"] != "claude-sonnet-4.5" {
+		t.Fatalf("model_usage[0]=%v, want claude-sonnet-4.5", modelUsage[0])
+	}
+
+	commands, ok := resp["commands"].([]interface{})
+	if !ok || len(commands) != 1 {
+		t.Fatalf("commands=%v, want one history command", resp["commands"])
+	}
 }
 
 // TestQueryByTimeRange_FilterGlobalStats 测试缓存查询应过滤全局统计
