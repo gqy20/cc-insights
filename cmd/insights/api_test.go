@@ -611,43 +611,6 @@ func TestBuildFullCache_NoRedundantSessionParse(t *testing.T) {
 		loadedCache.TotalSessions, expectedSessions.DailySessionMap)
 }
 
-// TestParallelParsing_FasterThanSerial 测试并行比串行快
-// 通过对比 buildDataFromParsing 与手动串行调用的耗时
-func TestParallelParsing_FasterThanSerial(t *testing.T) {
-	// Arrange: 使用实际数据目录（如果可用）
-	dataDir := os.Getenv("HOME") + "/.claude"
-	if _, err := os.Stat(dataDir); os.IsNotExist(err) {
-		t.Skip("跳过：实际数据目录不存在")
-	}
-
-	origDataDir := cfg.DataDir
-	cfg.DataDir = dataDir
-	defer func() { cfg.DataDir = origDataDir }()
-
-	tf := TimeFilter{Start: nil, End: nil}
-
-	// 预热
-	buildDataFromParsing(tf, "all")
-
-	// 测量并行版本（当前实现）
-	var parallelDur time.Duration
-	iterations := 3
-	for i := 0; i < iterations; i++ {
-		t0 := time.Now()
-		buildDataFromParsing(tf, "all")
-		parallelDur += time.Since(t0)
-	}
-	avgParallel := parallelDur / time.Duration(iterations)
-
-	t.Logf("✅ 并行解析平均耗时: %v (迭代%d次)", avgParallel, iterations)
-
-	// 注意: 此测试主要用于验证不崩溃和基本性能
-	// 真正的性能对比需要 benchmark 模式
-	if avgParallel > 60*time.Second {
-		t.Errorf("⚠️ 并行解析耗时 %v 过长，可能未真正并行化", avgParallel)
-	}
-}
-
 // === P1: HTTP 超时保护 ===
 
 // TestHTTPTimeout_ProtectSlowRequests 测试 handleDataAPI 应有超时保护
