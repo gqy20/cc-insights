@@ -29,10 +29,11 @@ cc-insights 是一个 Claude Code 使用数据分析 CLI，默认输出可读摘
   - 实时统计信息显示
 
 - 🤖 **AI 友好 CLI**
-  - `summary` - 快速概览 Claude Code 使用情况
-  - `failures` - 输出失败原因、失败工具和模型组合
-  - `inspect failures` - 按原因、工具、模型、项目或 Session 下钻失败样例
-  - `cost` - 输出 Token、模型、项目和会话消耗
+  - `sum` - 快速概览 Claude Code 使用情况
+  - `err` - 输出失败原因、失败工具和模型组合
+  - `why` - 按原因、工具、模型、项目或 Session 下钻失败样例
+  - `tok` - 输出 Token、模型、项目和会话消耗
+  - `web` - 启动 Web Dashboard
   - 支持 `--format json|markdown|table`
 
 ## 📦 快速开始
@@ -65,10 +66,9 @@ go build -trimpath -tags=prod -o cc-insights.exe ./cmd/insights
 ./cc-insights web --addr :9090
 
 # 给 AI 使用的 JSON 输出
-./cc-insights summary --preset 7d --format json
-./cc-insights failures --preset 7d --limit 10 --format json
-./cc-insights inspect failures --preset 7d --reason error_text --samples 20 --format json
-./cc-insights cost --preset 30d --format json
+./cc-insights err -p 7d -j
+./cc-insights why -p 7d --reason error_text -n 20 -j
+./cc-insights tok -p 30d -j
 ```
 
 ### 3. 访问
@@ -162,18 +162,28 @@ GET /api/data?preset=custom&start=2025-12-01&end=2026-01-08
 ## 🔧 CLI 用法
 
 ```
-cc-insights [summary] [--preset 30d] [--format table|json|markdown]
-cc-insights failures [--preset 7d] [--limit 10] [--format json]
-cc-insights inspect failures [--reason error_text] [--samples 20] [--format json]
-cc-insights cost [--preset 30d] [--limit 10] [--format json]
+cc-insights
+cc-insights err -p 7d -j
+cc-insights why -p 7d --reason error_text -n 20 -j
+cc-insights tok -p 30d -j
 cc-insights web [--addr :8932]
+
+命令：
+sum  总览
+err  失败来源
+why  失败样例下钻
+tok  Token 与成本
+web  Web Dashboard
 
 --data <path>     数据目录路径（默认: ~/.claude）
 --cache <path>    缓存目录路径（默认: ~/.cc-insights/cache）
---preset <range>  时间范围：24h、7d、30d、90d、all
+-p, --preset      时间范围：24h、7d、30d、90d、all
 --start <date>    自定义开始日期（YYYY-MM-DD）
 --end <date>      自定义结束日期（YYYY-MM-DD）
---format <fmt>    输出格式：table、json、markdown
+-f, --format      输出格式：table、json、markdown
+-j                输出 JSON
+-m                输出 Markdown
+-n                Top N 数量；对 why 表示样例数量
 --limit <n>       Top N 数量
 --samples <n>     下钻样例数量
 --reason <value>  按失败 reason 过滤

@@ -26,6 +26,11 @@ type cliOptions struct {
 	Session  string
 }
 
+type normalizedCommand struct {
+	Name string
+	Args []string
+}
+
 type cliSummary struct {
 	TimeRange       TimeRangeInfo `json:"time_range"`
 	Messages        int           `json:"messages"`
@@ -61,7 +66,14 @@ type cliCostReport struct {
 }
 
 func runCLI(args []string) error {
-	if len(args) > 0 && (args[0] == "web" || args[0] == "serve") {
+	if len(args) > 0 && (args[0] == "help" || args[0] == "-h" || args[0] == "--help") {
+		printCLIHelp(os.Stdout)
+		return nil
+	}
+
+	normalized := normalizeCLICommand(args)
+	args = normalized.Args
+	if normalized.Name == "web" {
 		opts, err := parseCLIOptions(args[0], args[1:], false)
 		if err != nil {
 			return err
@@ -70,27 +82,14 @@ func runCLI(args []string) error {
 		return runWebServer()
 	}
 
-	command := "summary"
-	commandArgs := args
+	command := normalized.Name
+	commandArgs := normalized.Args
 	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
 		command = args[0]
 		commandArgs = args[1:]
 	}
-	if command == "help" || command == "-h" || command == "--help" {
-		printCLIHelp(os.Stdout)
-		return nil
-	}
-	if command != "summary" && command != "failures" && command != "cost" && command != "inspect" {
+	if command != "sum" && command != "err" && command != "why" && command != "tok" {
 		return fmt.Errorf("未知命令 %q，运行 cc-insights help 查看用法", command)
-	}
-	if command == "inspect" {
-		if len(commandArgs) == 0 {
-			return fmt.Errorf("inspect 需要子命令，目前支持: failures")
-		}
-		if commandArgs[0] != "failures" {
-			return fmt.Errorf("未知 inspect 子命令 %q，目前支持: failures", commandArgs[0])
-		}
-		commandArgs = commandArgs[1:]
 	}
 
 	opts, err := parseCLIOptions(command, commandArgs, true)
@@ -115,35 +114,56 @@ func runCLI(args []string) error {
 	}
 
 	switch command {
-	case "summary":
+	case "sum":
 		return outputCLI(buildCLISummary(data), opts.Format, os.Stdout)
-	case "failures":
+	case "err":
 		return outputCLI(buildCLIFailureReport(data, opts.Limit), opts.Format, os.Stdout)
-	case "cost":
+	case "tok":
 		return outputCLI(buildCLICostReport(data, opts.Limit), opts.Format, os.Stdout)
-	case "inspect":
+	case "why":
 		return outputCLI(buildCLIInspectFailuresReport(data, opts), opts.Format, os.Stdout)
 	}
 	return nil
 }
 
+func normalizeCLICommand(args []string) normalizedCommand {
+	if len(args) == 0 || strings.HasPrefix(args[0], "-") {
+		return normalizedCommand{Name: "sum", Args: args}
+	}
+
+	switch args[0] {
+	case "sum", "err", "why", "tok", "web":
+		return normalizedCommand{Name: args[0], Args: args}
+	default:
+		return normalizedCommand{Name: args[0], Args: args}
+	}
+}
+
 func parseCLIOptions(command string, args []string, analysisCommand bool) (cliOptions, error) {
 	opts := cliOptions{
-		Config: defaultConfig(),
-		Preset: "30d",
-		Format: "table",
-		Limit:  10,
+		Config:  defaultConfig(),
+		Preset:  "30d",
+		Format:  "table",
+		Limit:   10,
+		Samples: -1,
 	}
 	fs := flag.NewFlagSet(command, flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	registerConfigFlags(fs, &opts.Config)
+	var jsonOutput *bool
+	var markdownOutput *bool
 	if analysisCommand {
 		fs.StringVar(&opts.Preset, "preset", opts.Preset, "时间范围: 24h|7d|30d|90d|all")
+		fs.StringVar(&opts.Preset, "p", opts.Preset, "短参数: --preset")
 		fs.StringVar(&opts.Start, "start", "", "自定义开始日期 YYYY-MM-DD")
 		fs.StringVar(&opts.End, "end", "", "自定义结束日期 YYYY-MM-DD")
 		fs.StringVar(&opts.Format, "format", opts.Format, "输出格式: table|json|markdown")
+		fs.StringVar(&opts.Format, "f", opts.Format, "短参数: --format")
+		jsonOutput = fs.Bool("j", false, "输出 JSON")
+		markdownOutput = fs.Bool("m", false, "输出 Markdown")
 		fs.IntVar(&opts.Limit, "limit", opts.Limit, "Top N 结果数量")
-		fs.IntVar(&opts.Samples, "samples", opts.Limit, "失败样例数量")
+		fs.IntVar(&opts.Limit, "n", opts.Limit, "Top N / 样例数量")
+		fs.IntVar(&opts.Samples, "samples", opts.Samples, "失败样例数量")
 		fs.StringVar(&opts.Reason, "reason", "", "按失败 reason 过滤")
 		fs.StringVar(&opts.Category, "category", "", "按失败 category 过滤")
 		fs.StringVar(&opts.Tool, "tool", "", "按工具名过滤")
@@ -153,6 +173,17 @@ func parseCLIOptions(command string, args []string, analysisCommand bool) (cliOp
 	}
 	if err := fs.Parse(args); err != nil {
 		return opts, err
+	}
+	if analysisCommand {
+		if *jsonOutput {
+			opts.Format = "json"
+		}
+		if *markdownOutput {
+			opts.Format = "markdown"
+		}
+		if command == "why" && opts.Samples <= 0 {
+			opts.Samples = opts.Limit
+		}
 	}
 	opts.Format = strings.ToLower(strings.TrimSpace(opts.Format))
 	if opts.Format == "" {
@@ -344,19 +375,30 @@ func printCLIHelp(w io.Writer) {
 	fmt.Fprintln(w, `cc-insights analyzes Claude Code usage data.
 
 Usage:
-  cc-insights [summary] [--preset 30d] [--format table|json|markdown]
-  cc-insights failures [--preset 7d] [--limit 10] [--format json]
-  cc-insights cost [--preset 30d] [--limit 10] [--format json]
-  cc-insights inspect failures [--reason error_text] [--samples 20] [--format json]
+  cc-insights
+  cc-insights err -p 7d -j
+  cc-insights tok -p 30d -j
+  cc-insights why -p 7d --reason error_text -n 20 -j
   cc-insights web [--addr :8932]
+
+Commands:
+  sum   usage summary
+  err   failure breakdown
+  why   failure samples with filters
+  tok   token and cost breakdown
+  web   dashboard server
 
 Global flags:
   --data PATH    Claude Code data directory, default ~/.claude
   --cache PATH   cache directory, default ~/.cc-insights/cache
 
 Time flags:
-  --preset 24h|7d|30d|90d|all
+  -p, --preset 24h|7d|30d|90d|all
   --start YYYY-MM-DD --end YYYY-MM-DD
+  -j              output JSON
+  -m              output Markdown
+  -f, --format    table|json|markdown
+  -n              Top N / sample count
 
 Inspect failure filters:
   --reason VALUE --category VALUE --tool VALUE --model VALUE
