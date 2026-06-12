@@ -1,0 +1,163 @@
+version: 1
+
+families:
+  - name: shell
+    commands:
+      - cd
+      - pwd
+      - echo
+      - printf
+      - env
+      - export
+      - source
+      - sh
+      - bash
+      - zsh
+      - "true"
+      - "false"
+      - time
+      - nice
+      - timeout
+      - for
+      - while
+      - if
+      - case
+      - do
+      - done
+
+  - name: wrapper
+    commands:
+      - brun
+
+  - name: test
+    contains:
+      - go test
+      - npm test
+      - pnpm test
+      - bun test
+      - pytest
+      - vitest
+      - jest
+      - cargo test
+      - playwright
+
+  - name: build
+    contains:
+      - go build
+      - cargo build
+      - make
+      - npm run build
+      - pnpm build
+      - build
+
+  - name: dependency
+    commands:
+      - uv
+      - uvx
+      - pip
+      - pipx
+      - poetry
+      - conda
+    contains:
+      - npm install
+      - pnpm install
+      - yarn install
+      - bun install
+      - uv sync
+      - uv pip
+      - pip install
+      - poetry install
+      - go mod
+      - install
+      - sync
+
+  - name: git
+    commands:
+      - git
+      - gh
+    command_contains:
+      - git
+    contains:
+      - " git "
+
+  - name: network
+    commands:
+      - curl
+      - wget
+    contains:
+      - http://
+      - https://
+
+  - name: python
+    commands:
+      - python
+      - python3
+    contains:
+      - python -c
+      - python3 -c
+
+  - name: go
+    commands:
+      - go
+
+  - name: rust
+    commands:
+      - cargo
+    contains:
+      - cargo run
+
+  - name: javascript
+    commands:
+      - node
+      - npm
+      - pnpm
+      - bun
+      - yarn
+      - npx
+      - pnpx
+      - bunx
+      - corepack
+      - tsc
+      - eslint
+      - vite
+      - next
+
+  - name: container
+    commands:
+      - docker
+      - docker-compose
+      - podman
+      - kubectl
+      - helm
+
+  - name: file/text
+    commands:
+      - ls
+      - cat
+      - sed
+      - grep
+      - rg
+      - find
+      - head
+      - tail
+      - awk
+      - xargs
+      - sort
+      - wc
+      - cut
+      - tr
+      - uniq
+      - tee
+      - join
+
+  - name: process
+    commands:
+      - ps
+      - kill
+      - sleep
+
+  - name: cleanup
+    commands:
+      - rm
+    contains:
+      - "rm "

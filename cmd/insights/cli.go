@@ -65,6 +65,16 @@ type cliCostReport struct {
 	Insights  []string            `json:"insights"`
 }
 
+type cliCommandReport struct {
+	TimeRange     TimeRangeInfo           `json:"time_range"`
+	TotalCommands int                     `json:"total_commands"`
+	TotalCalls    int                     `json:"total_calls"`
+	ByFamily      []BashCommandFamilyStat `json:"by_family"`
+	ByCommand     []BashCommandStat       `json:"by_command"`
+	RiskyCommands []BashCommandStat       `json:"risky_commands"`
+	Insights      []string                `json:"insights"`
+}
+
 func runCLI(args []string) error {
 	if len(args) > 0 && (args[0] == "help" || args[0] == "-h" || args[0] == "--help") {
 		printCLIHelp(os.Stdout)
@@ -88,7 +98,7 @@ func runCLI(args []string) error {
 		command = args[0]
 		commandArgs = args[1:]
 	}
-	if command != "sum" && command != "err" && command != "why" && command != "tok" {
+	if command != "sum" && command != "err" && command != "why" && command != "tok" && command != "cmd" {
 		return fmt.Errorf("未知命令 %q，运行 cc-insights help 查看用法", command)
 	}
 
@@ -122,6 +132,8 @@ func runCLI(args []string) error {
 		return outputCLI(buildCLICostReport(data, opts.Limit), opts.Format, os.Stdout)
 	case "why":
 		return outputCLI(buildCLIInspectFailuresReport(data, opts), opts.Format, os.Stdout)
+	case "cmd":
+		return outputCLI(buildCLICommandReport(data, opts.Limit), opts.Format, os.Stdout)
 	}
 	return nil
 }
@@ -132,7 +144,7 @@ func normalizeCLICommand(args []string) normalizedCommand {
 	}
 
 	switch args[0] {
-	case "sum", "err", "why", "tok", "web":
+	case "sum", "err", "why", "tok", "cmd", "web":
 		return normalizedCommand{Name: args[0], Args: args}
 	default:
 		return normalizedCommand{Name: args[0], Args: args}
@@ -379,6 +391,7 @@ Usage:
   cc-insights err -p 7d -j
   cc-insights tok -p 30d -j
   cc-insights why -p 7d --reason error_text -n 20 -j
+  cc-insights cmd -p 30d -j
   cc-insights web [--addr :8932]
 
 Commands:
@@ -386,6 +399,7 @@ Commands:
   err   failure breakdown
   why   failure samples with filters
   tok   token and cost breakdown
+  cmd   bash command families
   web   dashboard server
 
 Global flags:

@@ -157,6 +157,28 @@ func TestGracefulDegradation_PartialFailureAPI(t *testing.T) {
 	t.Logf("✅ API 在部分数据源缺失时仍返回 200, commands=%d", len(cmds))
 }
 
+func TestHandleDataAPIRejectsUnknownPreset(t *testing.T) {
+	req := httptest.NewRequest("GET", "/api/data?preset=bogus", nil)
+	w := httptest.NewRecorder()
+
+	handleDataAPI(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("状态码 = %d, want %d; body=%s", w.Code, http.StatusBadRequest, w.Body.String())
+	}
+
+	var resp APIResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("无法解析响应 JSON: %v", err)
+	}
+	if resp.Success {
+		t.Fatal("未知 preset 不应返回 success=true")
+	}
+	if resp.Error == "" {
+		t.Fatal("未知 preset 应返回明确错误信息")
+	}
+}
+
 // TestSafeParseHistoryConcurrent 测试 history 解析的容错包装
 // P0 错误隔离: 文件不存在/损坏时不 panic
 func TestSafeParseHistoryConcurrent(t *testing.T) {

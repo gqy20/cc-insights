@@ -41,6 +41,23 @@ func writeTable(value any, w io.Writer) error {
 			fmt.Fprintf(w, "  %-28s %8s  %s requests\n", item.Model, formatCompactInt(item.TotalTokens), formatInt(item.RequestCount))
 		}
 		writeInsights(w, v.Insights)
+	case cliCommandReport:
+		fmt.Fprintf(w, "Claude Code Commands · %s\n\n", formatRange(v.TimeRange))
+		fmt.Fprintf(w, "命令族: %s  具体命令: %s  调用: %s\n\n", formatInt(len(v.ByFamily)), formatInt(v.TotalCommands), formatInt(v.TotalCalls))
+		fmt.Fprintln(w, "Top 命令族:")
+		for _, item := range v.ByFamily {
+			fmt.Fprintf(w, "  %-16s %8s  %s%%  top=%s\n", item.Family, formatInt(item.CallCount), formatFailureRate(item.FailureRate), item.TopCommand)
+			if item.SampleCommand != "" {
+				fmt.Fprintf(w, "    %s\n", item.SampleCommand)
+			}
+		}
+		if len(v.RiskyCommands) > 0 {
+			fmt.Fprintln(w, "\n高风险命令:")
+			for _, item := range v.RiskyCommands {
+				fmt.Fprintf(w, "  %-20s %-6s %s%%  %s\n", item.CommandName, item.RiskLevel, formatFailureRate(item.FailureRate), item.RiskReason)
+			}
+		}
+		writeInsights(w, v.Insights)
 	case cliInspectFailuresReport:
 		fmt.Fprintf(w, "Claude Code Failure Inspection · %s\n\n", formatRange(v.TimeRange))
 		writeFailureFilter(w, v.Filter)
@@ -84,6 +101,25 @@ func writeMarkdown(value any, w io.Writer) error {
 		fmt.Fprintln(w)
 		for _, item := range v.ByModel {
 			fmt.Fprintf(w, "- `%s`: %s (%s requests)\n", item.Model, formatCompactInt(item.TotalTokens), formatInt(item.RequestCount))
+		}
+		writeMarkdownInsights(w, v.Insights)
+	case cliCommandReport:
+		fmt.Fprintf(w, "# Claude Code Commands\n\n范围: %s\n\n", formatRange(v.TimeRange))
+		fmt.Fprintf(w, "- 命令族: %s\n- 具体命令: %s\n- 调用: %s\n\n", formatInt(len(v.ByFamily)), formatInt(v.TotalCommands), formatInt(v.TotalCalls))
+		fmt.Fprintln(w, "## Top 命令族")
+		fmt.Fprintln(w)
+		for _, item := range v.ByFamily {
+			fmt.Fprintf(w, "- `%s`: %s, 失败率 %s%%, top `%s`\n", item.Family, formatInt(item.CallCount), formatFailureRate(item.FailureRate), item.TopCommand)
+			if item.SampleCommand != "" {
+				fmt.Fprintf(w, "  - %s\n", item.SampleCommand)
+			}
+		}
+		if len(v.RiskyCommands) > 0 {
+			fmt.Fprintln(w, "\n## 高风险命令")
+			fmt.Fprintln(w)
+			for _, item := range v.RiskyCommands {
+				fmt.Fprintf(w, "- `%s`: %s, 失败率 %s%%, %s\n", item.CommandName, item.RiskLevel, formatFailureRate(item.FailureRate), item.RiskReason)
+			}
 		}
 		writeMarkdownInsights(w, v.Insights)
 	case cliInspectFailuresReport:
@@ -222,4 +258,8 @@ func formatCompactInt(value int) string {
 	default:
 		return fmt.Sprintf("%d", value)
 	}
+}
+
+func formatFailureRate(value float64) string {
+	return strconv.FormatFloat(value, 'f', 1, 64)
 }

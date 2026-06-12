@@ -330,15 +330,32 @@ func (agg *ProjectAggregate) finalizeAgentAnalysis() {
 func (agg *ProjectAggregate) finalizeCommandAnalysis() {
 	analysis := &CommandAnalysisData{
 		BashCommands:   make([]BashCommandStat, 0, len(agg.BashCommandStats)),
+		BashFamilies:   make([]BashCommandFamilyStat, 0),
 		RiskyCommands:  make([]BashCommandStat, 0),
 		FileOperations: make([]FileOperationStat, 0, len(agg.FileOperationStats)),
 	}
+	familyStats := make(map[string]*BashCommandFamilyStat)
 	for _, stat := range agg.BashCommandStats {
 		statCopy := *stat
 		if statCopy.CallCount > 0 {
 			statCopy.FailureRate = float64(statCopy.FailureCount) / float64(statCopy.CallCount) * 100
 		}
 		analysis.BashCommands = append(analysis.BashCommands, statCopy)
+		familyName := classifyBashCommandFamily(statCopy)
+		family := familyStats[familyName]
+		if family == nil {
+			family = &BashCommandFamilyStat{Family: familyName}
+			familyStats[familyName] = family
+		}
+		family.CallCount += statCopy.CallCount
+		family.SuccessCount += statCopy.SuccessCount
+		family.FailureCount += statCopy.FailureCount
+		family.MissingResultCount += statCopy.MissingResultCount
+		if statCopy.CallCount > family.TopCommandCalls || (statCopy.CallCount == family.TopCommandCalls && statCopy.CommandName < family.TopCommand) {
+			family.TopCommand = statCopy.CommandName
+			family.TopCommandCalls = statCopy.CallCount
+			family.SampleCommand = statCopy.SampleCommand
+		}
 		if statCopy.RiskLevel != "" {
 			analysis.RiskyCommands = append(analysis.RiskyCommands, statCopy)
 		}
@@ -354,6 +371,22 @@ func (agg *ProjectAggregate) finalizeCommandAnalysis() {
 			return analysis.RiskyCommands[i].CallCount > analysis.RiskyCommands[j].CallCount
 		}
 		return riskRank(analysis.RiskyCommands[i].RiskLevel) > riskRank(analysis.RiskyCommands[j].RiskLevel)
+	})
+	for _, stat := range familyStats {
+		familyCopy := *stat
+		if familyCopy.CallCount > 0 {
+			familyCopy.FailureRate = float64(familyCopy.FailureCount) / float64(familyCopy.CallCount) * 100
+		}
+		analysis.BashFamilies = append(analysis.BashFamilies, familyCopy)
+	}
+	sort.Slice(analysis.BashFamilies, func(i, j int) bool {
+		if analysis.BashFamilies[i].CallCount == analysis.BashFamilies[j].CallCount {
+			if analysis.BashFamilies[i].FailureCount == analysis.BashFamilies[j].FailureCount {
+				return analysis.BashFamilies[i].Family < analysis.BashFamilies[j].Family
+			}
+			return analysis.BashFamilies[i].FailureCount > analysis.BashFamilies[j].FailureCount
+		}
+		return analysis.BashFamilies[i].CallCount > analysis.BashFamilies[j].CallCount
 	})
 
 	for _, stat := range agg.FileOperationStats {

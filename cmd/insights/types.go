@@ -266,9 +266,23 @@ type AgentStatItem struct {
 
 // CommandAnalysisData Bash 与文件操作分析结果
 type CommandAnalysisData struct {
-	BashCommands   []BashCommandStat   `json:"bash_commands"`
-	RiskyCommands  []BashCommandStat   `json:"risky_commands"`
-	FileOperations []FileOperationStat `json:"file_operations"`
+	BashCommands   []BashCommandStat       `json:"bash_commands"`
+	BashFamilies   []BashCommandFamilyStat `json:"bash_families"`
+	RiskyCommands  []BashCommandStat       `json:"risky_commands"`
+	FileOperations []FileOperationStat     `json:"file_operations"`
+}
+
+// BashCommandFamilyStat Bash 命令族统计
+type BashCommandFamilyStat struct {
+	Family             string  `json:"family"`
+	CallCount          int     `json:"call_count"`
+	SuccessCount       int     `json:"success_count"`
+	FailureCount       int     `json:"failure_count"`
+	MissingResultCount int     `json:"missing_result_count"`
+	FailureRate        float64 `json:"failure_rate"`
+	TopCommand         string  `json:"top_command,omitempty"`
+	TopCommandCalls    int     `json:"top_command_calls,omitempty"`
+	SampleCommand      string  `json:"sample_command,omitempty"`
 }
 
 // BashCommandStat Bash 命令统计

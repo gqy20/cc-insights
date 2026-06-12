@@ -124,6 +124,58 @@ func TestCacheBuilderBuildFullCacheDailyProjectAndModelCounts(t *testing.T) {
 	}
 }
 
+func TestCacheBuilderBuildFullCacheUsesBuilderDataDirForTasks(t *testing.T) {
+	tmpDir := t.TempDir()
+	dataDir := createTestDataDir(t, filepath.Join(tmpDir, "builder"))
+	globalDataDir := createTestDataDir(t, filepath.Join(tmpDir, "global"))
+
+	writeTaskFixture(t, dataDir, "builder-session", "completed")
+	writeTaskFixture(t, globalDataDir, "global-session", "pending")
+	writeTaskFixture(t, globalDataDir, "global-session", "in_progress")
+
+	origDataDir := cfg.DataDir
+	cfg.DataDir = globalDataDir
+	defer func() { cfg.DataDir = origDataDir }()
+
+	cachePath := filepath.Join(tmpDir, "cache.db")
+	builder := &CacheBuilder{CachePath: cachePath, DataDir: dataDir}
+	if err := builder.BuildFullCache(); err != nil {
+		t.Fatalf("BuildFullCache() failed: %v", err)
+	}
+
+	cache, err := LoadCacheFile(cachePath)
+	if err != nil {
+		t.Fatalf("LoadCacheFile() failed: %v", err)
+	}
+	if cache.TaskPlanAnalysis == nil {
+		t.Fatal("TaskPlanAnalysis is nil")
+	}
+	tasks := cache.TaskPlanAnalysis.Tasks
+	if tasks.TotalTasks != 1 {
+		t.Fatalf("TotalTasks = %d, want 1; status=%+v", tasks.TotalTasks, tasks.StatusDistribution)
+	}
+	if tasks.TotalSessions != 1 {
+		t.Fatalf("TotalSessions = %d, want 1", tasks.TotalSessions)
+	}
+	if len(tasks.StatusDistribution) != 1 || tasks.StatusDistribution[0].Status != "completed" {
+		t.Fatalf("StatusDistribution = %+v, want only completed from builder data dir", tasks.StatusDistribution)
+	}
+}
+
+func writeTaskFixture(t *testing.T, dataDir, sessionID, status string) {
+	t.Helper()
+
+	taskDir := filepath.Join(dataDir, "tasks", sessionID)
+	if err := os.MkdirAll(taskDir, 0755); err != nil {
+		t.Fatalf("Create task dir failed: %v", err)
+	}
+	taskPath := filepath.Join(taskDir, status+".json")
+	content := `{"id":"` + status + `","subject":"test","status":"` + status + `"}`
+	if err := os.WriteFile(taskPath, []byte(content), 0644); err != nil {
+		t.Fatalf("Write task fixture failed: %v", err)
+	}
+}
+
 func TestCacheQueryByTimeRangeScopesRuntimeAnalysis(t *testing.T) {
 	tmpDir := t.TempDir()
 	dataDir := filepath.Join(tmpDir, "data")
@@ -291,6 +343,7 @@ func TestCacheBuilderNeedsRebuild(t *testing.T) {
 		name             string
 		cacheLastUpdate  time.Time
 		dataLastModified time.Time
+		cacheRulesHash   string
 		wantNeedsRebuild bool
 	}{
 		{
@@ -298,6 +351,13 @@ func TestCacheBuilderNeedsRebuild(t *testing.T) {
 			cacheLastUpdate:  time.Now().Add(-1 * time.Hour),
 			dataLastModified: time.Now().Add(-2 * time.Hour),
 			wantNeedsRebuild: false,
+		},
+		{
+			name:             "规则变更，需要重建",
+			cacheLastUpdate:  time.Now().Add(-1 * time.Hour),
+			dataLastModified: time.Now().Add(-2 * time.Hour),
+			cacheRulesHash:   "stale",
+			wantNeedsRebuild: true,
 		},
 		{
 			name:             "数据更新过，需要重建",
@@ -320,9 +380,17 @@ func TestCacheBuilderNeedsRebuild(t *testing.T) {
 			cachePath := filepath.Join(tmpDir, "cache.db")
 
 			// 创建缓存文件
+			rulesHash, err := currentBashRulesHash()
+			if err != nil {
+				t.Fatalf("Setup: load rules hash failed: %v", err)
+			}
 			cache := &CacheFile{
-				Version:    CacheVersion,
-				LastUpdate: tt.cacheLastUpdate,
+				Version:       CacheVersion,
+				LastUpdate:    tt.cacheLastUpdate,
+				BashRulesHash: rulesHash,
+			}
+			if tt.cacheRulesHash != "" {
+				cache.BashRulesHash = tt.cacheRulesHash
 			}
 			if tt.name == "缓存版本过旧，需要重建" {
 				cache.Version = "1.0"

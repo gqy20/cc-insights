@@ -86,7 +86,11 @@ func handleDataAPI(w http.ResponseWriter, r *http.Request) {
 		}
 	} else if preset != "" {
 		// 预设时间范围
-		tf = NewTimeFilterFromPreset(RangePreset(preset))
+		tf, err = timeFilterFromAPIPreset(preset)
+		if err != nil {
+			sendError(w, err.Error())
+			return
+		}
 	} else {
 		// 默认全部数据
 		tf = TimeFilter{Start: nil, End: nil}
@@ -124,6 +128,19 @@ func handleDataAPI(w http.ResponseWriter, r *http.Request) {
 			Success: true,
 			Data:    res.data,
 		})
+	}
+}
+
+func timeFilterFromAPIPreset(preset string) (TimeFilter, error) {
+	preset = strings.TrimSpace(preset)
+	if preset == "" || preset == string(RangeAll) {
+		return TimeFilter{Start: nil, End: nil}, nil
+	}
+	switch RangePreset(preset) {
+	case Range24Hours, Range7Days, Range30Days, Range90Days:
+		return NewTimeFilterFromPreset(RangePreset(preset)), nil
+	default:
+		return TimeFilter{}, fmt.Errorf("不支持的 preset %q，支持 24h|7d|30d|90d|all", preset)
 	}
 }
 

@@ -33,6 +33,7 @@ cc-insights 是一个 Claude Code 使用数据分析 CLI，默认输出可读摘
   - `err` - 输出失败原因、失败工具和模型组合
   - `why` - 按原因、工具、模型、项目或 Session 下钻失败样例
   - `tok` - 输出 Token、模型、项目和会话消耗
+  - `cmd` - 输出 Bash 命令族、具体命令和高风险命令
   - `web` - 启动 Web Dashboard
   - 支持 `--format json|markdown|table`
 
@@ -69,6 +70,7 @@ go build -trimpath -tags=prod -o cc-insights.exe ./cmd/insights
 ./cc-insights err -p 7d -j
 ./cc-insights why -p 7d --reason error_text -n 20 -j
 ./cc-insights tok -p 30d -j
+./cc-insights cmd -p 30d -j
 ```
 
 ### 3. 访问
@@ -166,6 +168,7 @@ cc-insights
 cc-insights err -p 7d -j
 cc-insights why -p 7d --reason error_text -n 20 -j
 cc-insights tok -p 30d -j
+cc-insights cmd -p 30d -j
 cc-insights web [--addr :8932]
 
 命令：
@@ -173,10 +176,12 @@ sum  总览
 err  失败来源
 why  失败样例下钻
 tok  Token 与成本
+cmd  Bash 命令分析
 web  Web Dashboard
 
 --data <path>     数据目录路径（默认: ~/.claude）
 --cache <path>    缓存目录路径（默认: ~/.cc-insights/cache）
+--rules <path>    Bash 命令分类规则（默认内置 rules/bash.yml；也会读取 ~/.cc-insights/bash.yml）
 -p, --preset      时间范围：24h、7d、30d、90d、all
 --start <date>    自定义开始日期（YYYY-MM-DD）
 --end <date>      自定义结束日期（YYYY-MM-DD）

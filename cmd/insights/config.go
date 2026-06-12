@@ -12,6 +12,7 @@ type Config struct {
 	CacheDir   string
 	ListenAddr string
 	BaseURL    string
+	RulesPath  string
 }
 
 var cfg Config
@@ -31,6 +32,7 @@ func defaultConfig() Config {
 		CacheDir:   defaultCacheDir,
 		ListenAddr: ":8932",
 		BaseURL:    "",
+		RulesPath:  "",
 	}
 }
 
@@ -44,6 +46,7 @@ func registerConfigFlags(fs *flag.FlagSet, target *Config) {
 	fs.StringVar(&target.CacheDir, "cache", target.CacheDir, "缓存目录路径 (默认: ~/.cc-insights/cache/)")
 	fs.StringVar(&target.ListenAddr, "addr", target.ListenAddr, "监听地址")
 	fs.StringVar(&target.BaseURL, "base", target.BaseURL, "基础URL（用于反向代理）")
+	fs.StringVar(&target.RulesPath, "rules", target.RulesPath, "Bash 命令分类规则 YAML 路径")
 }
 
 // GetDataPath 获取数据文件路径

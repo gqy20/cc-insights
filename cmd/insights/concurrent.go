@@ -140,6 +140,9 @@ func ParseDebugLogsConcurrentFromDir(tf TimeFilter, dataDir string) ([]MCPToolSt
 	debugDir := filepath.Join(dataDir, "debug")
 	entries, err := os.ReadDir(debugDir)
 	if err != nil {
+		if os.IsNotExist(err) {
+			return []MCPToolStats{}, nil
+		}
 		return nil, err
 	}
 

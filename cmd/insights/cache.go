@@ -12,9 +12,10 @@ const CacheVersion = "2.9"
 
 // CacheFile 缓存文件结构
 type CacheFile struct {
-	Version    string    // 缓存格式版本
-	LastUpdate time.Time // 最后缓存时间戳
-	TimeRange  TimeRange // 缓存覆盖的时间范围
+	Version       string    // 缓存格式版本
+	LastUpdate    time.Time // 最后缓存时间戳
+	TimeRange     TimeRange // 缓存覆盖的时间范围
+	BashRulesHash string    `json:"bash_rules_hash,omitempty"`
 
 	// 预聚合数据
 	DailyStats  map[string]*DayAggregate // "2026-01-08" -> 当天所有统计
@@ -385,6 +386,7 @@ func cloneCommandAnalysis(source *CommandAnalysisData) *CommandAnalysisData {
 	}
 	copyValue := *source
 	copyValue.BashCommands = append([]BashCommandStat(nil), source.BashCommands...)
+	copyValue.BashFamilies = append([]BashCommandFamilyStat(nil), source.BashFamilies...)
 	copyValue.RiskyCommands = append([]BashCommandStat(nil), source.RiskyCommands...)
 	copyValue.FileOperations = append([]FileOperationStat(nil), source.FileOperations...)
 	return &copyValue

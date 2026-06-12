@@ -42,9 +42,13 @@ func (cb *CacheBuilder) BuildFullCache() error {
 	if dataDir == "" {
 		dataDir = cfg.DataDir
 	}
+	rulesHash, err := currentBashRulesHash()
+	if err != nil {
+		return fmt.Errorf("加载 Bash 规则失败: %w", err)
+	}
 
 	previous, _ := LoadCacheFile(cb.CachePath)
-	if previous != nil && previous.Version != CacheVersion {
+	if previous != nil && (previous.Version != CacheVersion || previous.BashRulesHash != rulesHash) {
 		previous = nil
 	}
 
@@ -70,6 +74,7 @@ func (cb *CacheBuilder) BuildFullCache() error {
 		Version:          CacheVersion,
 		LastUpdate:       time.Now(),
 		TimeRange:        TimeRange{},
+		BashRulesHash:    rulesHash,
 		DailyStats:       make(map[string]*DayAggregate),
 		TotalMessages:    totalMessages,
 		TotalSessions:    sessionStats.TotalSessions,
@@ -204,7 +209,7 @@ func (cb *CacheBuilder) buildProjectAggregateIncremental(dataDir string, previou
 	aggregate.finalize()
 
 	// task_plan_analysis (M4): 扫描 tasks/ 目录
-	taskAnalysis, taskErr := ParseTasksConcurrent(TimeFilter{})
+	taskAnalysis, taskErr := ParseTasksConcurrentFromDir(TimeFilter{}, dataDir)
 	if taskErr != nil {
 		Warn("tasks/ 目录扫描失败", "error", taskErr.Error())
 	}
@@ -345,6 +350,13 @@ func (cb *CacheBuilder) NeedsRebuild() bool {
 		return true // 缓存损坏，需要重建
 	}
 	if cache.Version != CacheVersion {
+		return true
+	}
+	rulesHash, err := currentBashRulesHash()
+	if err != nil {
+		return true
+	}
+	if cache.BashRulesHash != rulesHash {
 		return true
 	}
 
