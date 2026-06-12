@@ -247,7 +247,19 @@ function normalizeChartOption(option) {
             : { ...option.title, show: false };
     }
 
+    normalizeAxes(option.xAxis);
+    normalizeAxes(option.yAxis);
+
     return option;
+}
+
+function normalizeAxes(axes) {
+    if (!axes) return;
+    const axisList = Array.isArray(axes) ? axes : [axes];
+    axisList.forEach(axis => {
+        if (!axis || typeof axis !== 'object') return;
+        axis.splitLine = { ...(axis.splitLine || {}), show: false };
+    });
 }
 
 function disposeCharts() {

@@ -99,23 +99,21 @@ function initFailureReasonChart(failureAnalysis) {
     }
 
     const chart = echarts.init(document.getElementById('failureReasonChart'), 'wonderland');
-    const reasons = failureAnalysis.by_reason.slice(0, 12);
-    const toolReasons = (failureAnalysis.by_tool_reason || []).slice(0, 12);
+    const reasons = failureAnalysis.by_reason.slice(0, 8);
+    const toolReasons = (failureAnalysis.by_tool_reason || []).slice(0, 8);
     const reasonLabels = reasons.map(item => `${item.category}/${item.reason}`);
     const toolReasonLabels = toolReasons.map(item => `${shortToolName(item.tool)} / ${item.reason}`);
 
     chart.setOption({
-        title: {
-            text: '失败原因细分',
-            subtext: '全局统计: 按原因、工具+原因排序',
-            left: 'center'
-        },
         tooltip: {
             trigger: 'axis',
-            axisPointer: { type: 'shadow' },
+            axisPointer: {
+                type: 'shadow',
+                shadowStyle: { color: 'rgba(47, 128, 209, 0.08)' }
+            },
             formatter: function(params) {
                 const first = params[0];
-                if (first.axisIndex === 0) {
+                if (first.seriesIndex === 0) {
                     const item = reasons[first.dataIndex];
                     return `${escapeHtml(item.category)} / ${escapeHtml(item.reason)}<br/>` +
                         `次数: ${formatNumber(item.count)}`;
@@ -127,31 +125,66 @@ function initFailureReasonChart(failureAnalysis) {
             }
         },
         legend: {
-            data: ['原因次数', '工具原因次数', '工具原因占比'],
-            top: 55
+            data: ['原因次数', '工具原因次数'],
+            top: 0,
+            left: 0,
+            itemWidth: 10,
+            itemHeight: 10,
+            textStyle: { color: '#596579' }
         },
         grid: [
-            { top: 95, left: 70, right: 70, height: 180, containLabel: true },
-            { top: 370, left: 70, right: 70, height: 170, containLabel: true }
+            { top: 48, left: 150, right: 52, height: 190, containLabel: false },
+            { top: 322, left: 150, right: 52, height: 210, containLabel: false }
         ],
         xAxis: [
+            {
+                type: 'value',
+                gridIndex: 0,
+                splitNumber: 4,
+                axisLine: { show: false },
+                axisTick: { show: false },
+                axisLabel: { color: '#8a95a3' },
+                splitLine: { lineStyle: { color: '#edf2f7', type: 'dashed' } }
+            },
+            {
+                type: 'value',
+                gridIndex: 1,
+                splitNumber: 4,
+                axisLine: { show: false },
+                axisTick: { show: false },
+                axisLabel: { color: '#8a95a3' },
+                splitLine: { lineStyle: { color: '#edf2f7', type: 'dashed' } }
+            }
+        ],
+        yAxis: [
             {
                 type: 'category',
                 gridIndex: 0,
                 data: reasonLabels,
-                axisLabel: { interval: 0, rotate: 30 }
+                inverse: true,
+                axisLine: { show: false },
+                axisTick: { show: false },
+                axisLabel: {
+                    color: '#4b5563',
+                    width: 138,
+                    overflow: 'truncate',
+                    interval: 0
+                }
             },
             {
                 type: 'category',
                 gridIndex: 1,
                 data: toolReasonLabels,
-                axisLabel: { interval: 0, rotate: 30 }
+                inverse: true,
+                axisLine: { show: false },
+                axisTick: { show: false },
+                axisLabel: {
+                    color: '#4b5563',
+                    width: 138,
+                    overflow: 'truncate',
+                    interval: 0
+                }
             }
-        ],
-        yAxis: [
-            { type: 'value', gridIndex: 0, name: '失败次数' },
-            { type: 'value', gridIndex: 1, name: '工具失败次数' },
-            { type: 'value', gridIndex: 1, name: '占比 %', max: 100 }
         ],
         series: [
             {
@@ -160,7 +193,18 @@ function initFailureReasonChart(failureAnalysis) {
                 xAxisIndex: 0,
                 yAxisIndex: 0,
                 data: reasons.map(item => item.count),
-                itemStyle: { color: '#e74c3c' }
+                barMaxWidth: 18,
+                label: {
+                    show: true,
+                    position: 'right',
+                    color: '#596579',
+                    fontSize: 11,
+                    formatter: value => formatNumber(value.value)
+                },
+                itemStyle: {
+                    color: '#c93838',
+                    borderRadius: [0, 4, 4, 0]
+                }
             },
             {
                 name: '工具原因次数',
@@ -168,16 +212,42 @@ function initFailureReasonChart(failureAnalysis) {
                 xAxisIndex: 1,
                 yAxisIndex: 1,
                 data: toolReasons.map(item => item.count),
-                itemStyle: { color: '#f39c12' }
+                barMaxWidth: 18,
+                label: {
+                    show: true,
+                    position: 'right',
+                    color: '#596579',
+                    fontSize: 11,
+                    formatter: value => formatNumber(value.value)
+                },
+                itemStyle: {
+                    color: '#d97706',
+                    borderRadius: [0, 4, 4, 0]
+                }
+            }
+        ],
+        graphic: [
+            {
+                type: 'text',
+                left: 0,
+                top: 28,
+                style: {
+                    text: '全局原因 Top 8',
+                    fill: '#1f2933',
+                    fontSize: 12,
+                    fontWeight: 650
+                }
             },
             {
-                name: '工具原因占比',
-                type: 'line',
-                xAxisIndex: 1,
-                yAxisIndex: 2,
-                data: toolReasons.map(item => Number(Number(item.rate || 0).toFixed(1))),
-                smooth: true,
-                itemStyle: { color: '#2c3e50' }
+                type: 'text',
+                left: 0,
+                top: 300,
+                style: {
+                    text: '工具 + 原因 Top 8',
+                    fill: '#1f2933',
+                    fontSize: 12,
+                    fontWeight: 650
+                }
             }
         ]
     });
@@ -214,7 +284,12 @@ function initEventHookChart(eventAnalysis) {
         },
         tooltip: {
             trigger: 'axis',
-            axisPointer: { type: 'shadow' }
+            axisPointer: { type: 'shadow' },
+            formatter: function(params) {
+                return params.map(item =>
+                    `${escapeHtml(item.seriesName)}: ${formatTokenCount(item.value)}`
+                ).join('<br/>');
+            }
         },
         legend: {
             data: ['事件数', 'Hook 成功', 'Hook 取消', 'Hook 错误'],
@@ -527,9 +602,9 @@ function initCostAnalysisChart(costAnalysis) {
             { type: 'category', gridIndex: 2, data: sessionLabels, axisLabel: { interval: 0, rotate: 25 } }
         ],
         yAxis: [
-            { type: 'value', gridIndex: 0, name: '模型 Token' },
-            { type: 'value', gridIndex: 1, name: '项目 Token' },
-            { type: 'value', gridIndex: 2, name: '会话 Token' }
+            { type: 'value', gridIndex: 0, name: '模型 Token', axisLabel: { formatter: value => formatTokenCount(value) } },
+            { type: 'value', gridIndex: 1, name: '项目 Token', axisLabel: { formatter: value => formatTokenCount(value) } },
+            { type: 'value', gridIndex: 2, name: '会话 Token', axisLabel: { formatter: value => formatTokenCount(value) } }
         ],
         series: [
             {
@@ -598,7 +673,7 @@ function initCostAnalysisChart(costAnalysis) {
 
     insight.innerHTML =
         `<strong>数据洞察:</strong> 共 <strong>${formatNumber(totals.request_count)}</strong> 次模型请求，` +
-        `总 Token <strong>${formatNumber(totals.total_tokens)}</strong>，输出 Token <strong>${formatNumber(totals.output_tokens)}</strong>。` +
+        `总 Token <strong>${formatTokenCount(totals.total_tokens)}</strong>，输出 Token <strong>${formatTokenCount(totals.output_tokens)}</strong>。` +
         `缓存读取占输入侧 <strong>${cacheReadRatio}%</strong>。` +
         `最高模型 <strong>${escapeHtml(topModel ? topModel.model : '-')}</strong>，` +
         `最高项目 <strong>${escapeHtml(topProject ? topProject.project : '-')}</strong>，` +
@@ -621,21 +696,19 @@ function initSessionAnalysisChart(sessionAnalysis) {
     const outcomeLabels = outcomes.map(item => item.outcome);
 
     chart.setOption({
-        title: {
-            text: 'Session 生命周期复盘',
-            subtext: '高失败、高耗时与结果状态',
-            left: 'center'
-        },
         tooltip: {
             trigger: 'axis',
-            axisPointer: { type: 'shadow' },
+            axisPointer: {
+                type: 'shadow',
+                shadowStyle: { color: 'rgba(47, 128, 209, 0.08)' }
+            },
             formatter: function(params) {
                 const first = params[0];
-                if (first.axisIndex === 0) {
+                if (first.axisIndex === 0 || first.seriesIndex <= 1) {
                     const item = failures[first.dataIndex];
                     return sessionTooltip(item);
                 }
-                if (first.axisIndex === 1) {
+                if (first.axisIndex === 1 || first.seriesIndex === 2) {
                     const item = longRunning[first.dataIndex];
                     return sessionTooltip(item);
                 }
@@ -645,22 +718,26 @@ function initSessionAnalysisChart(sessionAnalysis) {
         },
         legend: {
             data: ['工具失败', 'Missing', '耗时分钟', 'Outcome'],
-            top: 55
+            top: 0,
+            left: 0,
+            itemWidth: 10,
+            itemHeight: 10,
+            textStyle: { color: '#596579' }
         },
         grid: [
-            { top: 95, left: 70, right: 70, height: 145, containLabel: true },
-            { top: 315, left: 70, right: 70, height: 120, containLabel: true },
-            { top: 500, left: 70, right: 70, height: 75, containLabel: true }
+            { top: 48, left: 170, right: 58, height: 160, containLabel: false },
+            { top: 282, left: 170, right: 58, height: 145, containLabel: false },
+            { top: 500, left: 110, right: 58, height: 86, containLabel: false }
         ],
         xAxis: [
-            { type: 'category', gridIndex: 0, data: failureLabels, axisLabel: { interval: 0, rotate: 25 } },
-            { type: 'category', gridIndex: 1, data: durationLabels, axisLabel: { interval: 0, rotate: 25 } },
-            { type: 'category', gridIndex: 2, data: outcomeLabels, axisLabel: { interval: 0 } }
+            makeTaskPlanValueAxis(0),
+            makeTaskPlanValueAxis(1),
+            makeTaskPlanValueAxis(2)
         ],
         yAxis: [
-            { type: 'value', gridIndex: 0, name: '失败次数' },
-            { type: 'value', gridIndex: 1, name: '分钟' },
-            { type: 'value', gridIndex: 2, name: 'Session' }
+            makeTaskPlanCategoryAxis(0, failureLabels, 150),
+            makeTaskPlanCategoryAxis(1, durationLabels, 150),
+            makeTaskPlanCategoryAxis(2, outcomeLabels, 92)
         ],
         series: [
             {
@@ -670,7 +747,8 @@ function initSessionAnalysisChart(sessionAnalysis) {
                 xAxisIndex: 0,
                 yAxisIndex: 0,
                 data: failures.map(item => item.tool_failure_count),
-                itemStyle: { color: '#e74c3c' }
+                barMaxWidth: 18,
+                itemStyle: { color: '#c93838' }
             },
             {
                 name: 'Missing',
@@ -679,7 +757,8 @@ function initSessionAnalysisChart(sessionAnalysis) {
                 xAxisIndex: 0,
                 yAxisIndex: 0,
                 data: failures.map(item => item.missing_result_count),
-                itemStyle: { color: '#f39c12' }
+                barMaxWidth: 18,
+                itemStyle: { color: '#d97706' }
             },
             {
                 name: '耗时分钟',
@@ -687,7 +766,18 @@ function initSessionAnalysisChart(sessionAnalysis) {
                 xAxisIndex: 1,
                 yAxisIndex: 1,
                 data: longRunning.map(item => Number(((item.duration_ms || 0) / 60000).toFixed(1))),
-                itemStyle: { color: '#5470c6' }
+                barMaxWidth: 18,
+                label: {
+                    show: true,
+                    position: 'right',
+                    color: '#596579',
+                    fontSize: 11,
+                    formatter: value => formatNumber(Math.round(value.value))
+                },
+                itemStyle: {
+                    color: '#4f6ec8',
+                    borderRadius: [0, 4, 4, 0]
+                }
             },
             {
                 name: 'Outcome',
@@ -695,8 +785,24 @@ function initSessionAnalysisChart(sessionAnalysis) {
                 xAxisIndex: 2,
                 yAxisIndex: 2,
                 data: outcomes.map(item => item.count),
-                itemStyle: { color: '#3ba272' }
+                barMaxWidth: 18,
+                label: {
+                    show: true,
+                    position: 'right',
+                    color: '#596579',
+                    fontSize: 11,
+                    formatter: value => formatNumber(value.value)
+                },
+                itemStyle: {
+                    color: '#3ba272',
+                    borderRadius: [0, 4, 4, 0]
+                }
             }
+        ],
+        graphic: [
+            makeChartSectionLabel('失败最多的 Session', 0, 24),
+            makeChartSectionLabel('耗时最长的 Session', 0, 258),
+            makeChartSectionLabel('Outcome 分布', 0, 476)
         ]
     });
 
@@ -724,7 +830,7 @@ function sessionTooltip(item) {
         `工具调用: ${formatNumber(item.tool_call_count)}<br/>` +
         `失败: ${formatNumber(item.tool_failure_count)}<br/>` +
         `Missing: ${formatNumber(item.missing_result_count)}<br/>` +
-        `Token: ${formatNumber(item.total_tokens)}<br/>` +
+        `Token: ${formatTokenCount(item.total_tokens)}<br/>` +
         `耗时: ${formatNumber(Math.round((item.duration_ms || 0) / 60000))} 分钟`;
 }
 
@@ -827,93 +933,99 @@ function initTaskPlanChart(tpa) {
     const tasks = tpa.tasks || {};
     const reminder = tpa.reminder_summary || {};
 
-    // Grid 1: Plan Lifecycle (左上)
-    const lifecycleLabels = ['进入', '退出', '重入'];
-    const lifecycleData = [lc.entry_count || 0, lc.exit_count || 0, lc.reentry_count || 0];
+    // Grid 1: Plan lifecycle and task status
+    const overviewRows = [
+        { label: 'Plan 进入', value: lc.entry_count || 0, color: '#21875a' },
+        { label: 'Plan 退出', value: lc.exit_count || 0, color: '#c93838' },
+        { label: 'Plan 重入', value: lc.reentry_count || 0, color: '#d97706' }
+    ];
 
-    // Grid 2: Plan Files Top (右上)
-    const fileLabels = planFiles.map(f => shortPath(f.file_path || f.file_name));
-    const fileRefCounts = planFiles.map(f => f.ref_count);
-
-    // Grid 3: Task Status Distribution (左下)
     const statusDist = tasks.status_distribution || [];
-    const statusLabels = statusDist.map(s => s.status);
-    const completedData = statusDist.find(s => s.status === 'completed') || { count: 0 };
-    const pendingData = statusDist.find(s => s.status === 'pending') || { count: 0 };
-    const inProgressData = statusDist.find(s => s.status === 'in_progress') || { count: 0 };
+    const statusLabels = {
+        completed: '任务完成',
+        pending: '任务待办',
+        in_progress: '任务进行中'
+    };
+    statusDist
+        .filter(item => Number(item.count || 0) > 0)
+        .forEach(item => {
+            overviewRows.push({
+                label: statusLabels[item.status] || item.status,
+                value: item.count || 0,
+                color: item.status === 'completed' ? '#21875a' : item.status === 'pending' ? '#d97706' : '#2f80d1'
+            });
+        });
 
-    // Grid 4: Reminder Frequency (右下)
+    // Grid 2: Plan Files Top
+    const fileRows = planFiles
+        .filter(f => Number(f.ref_count || 0) > 0)
+        .map(f => ({
+            label: shortPath(f.file_path || f.file_name),
+            value: f.ref_count || 0
+        }));
+
+    // Grid 3: Reminder Frequency
     const taskSessions = (reminder.top_task_sessions || []).slice(0, 8);
     const todoSessions = (reminder.top_todo_sessions || []).slice(0, 8);
-    const reminderLabels = [...new Set([
-        ...taskSessions.map(s => shortAgentID(s.session_id)),
-        ...todoSessions.map(s => shortAgentID(s.session_id))
-    ])].slice(0, 8);
-
-    // Grid 5: Per-session Task Counts (底部全宽)
-    const sessionTasks = (tasks.session_task_counts || []).slice(0, 10);
-    const sessionTaskLabels = sessionTasks.map(s => shortAgentID(s.session_id));
+    const reminderBySession = new Map();
+    taskSessions.forEach(item => {
+        const session = item.session_id || 'unknown';
+        const row = reminderBySession.get(session) || { session, label: shortAgentID(session), task: 0, todo: 0 };
+        row.task = item.count || 0;
+        reminderBySession.set(session, row);
+    });
+    todoSessions.forEach(item => {
+        const session = item.session_id || 'unknown';
+        const row = reminderBySession.get(session) || { session, label: shortAgentID(session), task: 0, todo: 0 };
+        row.todo = item.count || 0;
+        reminderBySession.set(session, row);
+    });
+    const reminderRows = Array.from(reminderBySession.values())
+        .sort((a, b) => (b.task + b.todo) - (a.task + a.todo))
+        .slice(0, 8);
 
     chart.setOption({
-        title: {
-            text: 'Task / Plan 结构分析',
-            subtext: 'Plan Mode 生命周期 · 计划文件引用 · 任务状态分布 · 提醒频率',
-            left: 'center'
-        },
-        tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
-        legend: {
-            data: ['进入', '退出', '重入', '引用次数', 'Completed', 'Pending', 'InProgress', 'Task Reminder', 'Todo Reminder'],
-            top: 50,
-            textStyle: { fontSize: 10 }
+        tooltip: {
+            trigger: 'axis',
+            axisPointer: {
+                type: 'shadow',
+                shadowStyle: { color: 'rgba(47, 128, 209, 0.08)' }
+            },
+            formatter: function(params) {
+                return params
+                    .filter(item => Number(item.value || 0) > 0)
+                    .map(item => `${escapeHtml(item.seriesName)}: ${formatNumber(item.value)}`)
+                    .join('<br/>') || '暂无数据';
+            }
         },
         grid: [
-            { top: 95, left: 55, right: 55, height: 140, containLabel: true },
-            { top: 95, left: 420, right: 30, height: 140, containLabel: true },
-            { top: 280, left: 55, right: 55, height: 160, containLabel: true },
-            { top: 280, left: 420, right: 30, height: 160, containLabel: true },
-            { top: 480, left: 55, right: 30, height: 180, containLabel: true }
+            { top: 44, left: 140, right: 58, height: 150, containLabel: false },
+            { top: 260, left: 180, right: 58, height: 190, containLabel: false },
+            { top: 520, left: 150, right: 58, height: 150, containLabel: false }
         ],
         xAxis: [
-            { type: 'category', gridIndex: 0, data: lifecycleLabels },
-            { type: 'value', gridIndex: 1, name: '引用次数' },
-            { type: 'category', gridIndex: 2, data: statusLabels.length > 0 ? statusLabels : ['completed', 'pending', 'in_progress'] },
-            { type: 'category', gridIndex: 3, data: reminderLabels.length > 0 ? reminderLabels : ['-'] },
-            { type: 'value', gridIndex: 4, name: '任务数' }
+            makeTaskPlanValueAxis(0),
+            makeTaskPlanValueAxis(1),
+            makeTaskPlanValueAxis(2)
         ],
         yAxis: [
-            { type: 'value', gridIndex: 0, name: '次数' },
-            { type: 'category', gridIndex: 1, data: fileLabels, inverse: true, axisLabel: { fontSize: 9 } },
-            { type: 'value', gridIndex: 2, name: '任务数' },
-            { type: 'value', gridIndex: 3, name: '次数' },
-            { type: 'category', gridIndex: 4, data: sessionTaskLabels, inverse: true, axisLabel: { fontSize: 9 } }
+            makeTaskPlanCategoryAxis(0, overviewRows.map(row => row.label), 122),
+            makeTaskPlanCategoryAxis(1, fileRows.map(row => row.label), 162),
+            makeTaskPlanCategoryAxis(2, reminderRows.map(row => row.label), 132)
         ],
         series: [
-            { name: '进入', type: 'bar', xAxisIndex: 0, yAxisIndex: 0, data: [lifecycleData[0], 0, 0], itemStyle: { color: '#27ae60' }, barMaxWidth: 40 },
-            { name: '退出', type: 'bar', xAxisIndex: 0, yAxisIndex: 0, data: [0, lifecycleData[1], 0], itemStyle: { color: '#e74c3c' }, barMaxWidth: 40 },
-            { name: '重入', type: 'bar', xAxisIndex: 0, yAxisIndex: 0, data: [0, 0, lifecycleData[2]], itemStyle: { color: '#f39c12' }, barMaxWidth: 40 },
-            { name: '引用次数', type: 'bar', xAxisIndex: 1, yAxisIndex: 1, data: fileRefCounts, itemStyle: { color: '#8e44ad' }, barMaxWidth: 20 },
-            { name: 'Completed', type: 'bar', stack: 'status', xAxisIndex: 2, yAxisIndex: 2,
-              data: statusLabels.map(l => l === 'completed' ? (completedData.count || 0) : 0), itemStyle: { color: '#27ae60' } },
-            { name: 'Pending', type: 'bar', stack: 'status', xAxisIndex: 2, yAxisIndex: 2,
-              data: statusLabels.map(l => l === 'pending' ? (pendingData.count || 0) : 0), itemStyle: { color: '#f39c12' } },
-            { name: 'InProgress', type: 'bar', stack: 'status', xAxisIndex: 2, yAxisIndex: 2,
-              data: statusLabels.map(l => l === 'in_progress' ? (inProgressData.count || 0) : 0), itemStyle: { color: '#3498db' } },
-            { name: 'Task Reminder', type: 'bar', xAxisIndex: 3, yAxisIndex: 3,
-              data: reminderLabels.map(sid => {
-                  const found = taskSessions.find(s => s.session_id === sid);
-                  return found ? found.count : 0;
-              }), itemStyle: { color: '#e67e22' } },
-            { name: 'Todo Reminder', type: 'bar', xAxisIndex: 3, yAxisIndex: 3,
-              data: reminderLabels.map(sid => {
-                  const found = todoSessions.find(s => s.session_id === sid);
-                  return found ? found.count : 0;
-              }), itemStyle: { color: '#16a085' } },
-            { name: 'Completed', type: 'bar', stack: 'sessionTasks', xAxisIndex: 4, yAxisIndex: 4,
-              data: sessionTasks.map(s => s.completed_count), itemStyle: { color: '#27ae60' }, barMaxWidth: 18 },
-            { name: 'Pending', type: 'bar', stack: 'sessionTasks', xAxisIndex: 4, yAxisIndex: 4,
-              data: sessionTasks.map(s => s.pending_count), itemStyle: { color: '#f39c12' }, barMaxWidth: 18 },
-            { name: 'InProgress', type: 'bar', stack: 'sessionTasks', xAxisIndex: 4, yAxisIndex: 4,
-              data: sessionTasks.map(s => s.in_progress_count), itemStyle: { color: '#3498db' }, barMaxWidth: 18 }
+            makeTaskPlanBarSeries('次数', 0, overviewRows.map(row => ({
+                value: row.value,
+                itemStyle: { color: row.color }
+            }))),
+            makeTaskPlanBarSeries('引用次数', 1, fileRows.map(row => row.value), '#7c3aed'),
+            makeTaskPlanBarSeries('Task Reminder', 2, reminderRows.map(row => row.task), '#d97706', 'reminder'),
+            makeTaskPlanBarSeries('Todo Reminder', 2, reminderRows.map(row => row.todo), '#0f9f77', 'reminder')
+        ],
+        graphic: [
+            makeChartSectionLabel('生命周期与任务状态', 0, 18),
+            makeChartSectionLabel('计划文件引用 Top', 0, 234),
+            makeChartSectionLabel('提醒频率 Top', 0, 494)
         ]
     });
 
@@ -931,6 +1043,74 @@ function initTaskPlanChart(tpa) {
         '平均每 Session <strong>' + (tasks.avg_tasks_per_session || 0).toFixed(1) + '</strong> 个任务。' +
         '提醒总次数 <strong>' + formatNumber((reminder.task_reminder_count || 0) + (reminder.todo_reminder_count || 0)) + '</strong> 次。' +
         (goalCount > 0 ? '目标达成事件 <strong>' + goalCount + '</strong> 条。' : '');
+}
+
+function makeTaskPlanValueAxis(gridIndex) {
+    return {
+        type: 'value',
+        gridIndex,
+        axisLine: { show: false },
+        axisTick: { show: false },
+        axisLabel: {
+            color: '#8a95a3',
+            formatter: value => formatNumber(value)
+        },
+        splitLine: { lineStyle: { color: '#edf2f7', type: 'dashed' } }
+    };
+}
+
+function makeTaskPlanCategoryAxis(gridIndex, labels, width) {
+    return {
+        type: 'category',
+        gridIndex,
+        data: labels.length > 0 ? labels : ['暂无数据'],
+        inverse: true,
+        axisLine: { show: false },
+        axisTick: { show: false },
+        axisLabel: {
+            color: '#4b5563',
+            interval: 0,
+            overflow: 'truncate',
+            width
+        }
+    };
+}
+
+function makeTaskPlanBarSeries(name, axisIndex, data, color, stack) {
+    return {
+        name,
+        type: 'bar',
+        stack,
+        xAxisIndex: axisIndex,
+        yAxisIndex: axisIndex,
+        data,
+        barMaxWidth: 18,
+        label: {
+            show: true,
+            position: 'right',
+            color: '#596579',
+            fontSize: 11,
+            formatter: value => Number(value.value || 0) > 0 ? formatNumber(value.value) : ''
+        },
+        itemStyle: {
+            color,
+            borderRadius: [0, 4, 4, 0]
+        }
+    };
+}
+
+function makeChartSectionLabel(text, left, top) {
+    return {
+        type: 'text',
+        left,
+        top,
+        style: {
+            text,
+            fill: '#1f2933',
+            fontSize: 12,
+            fontWeight: 650
+        }
+    };
 }
 
 // === M5: Tool Performance & Quality Analysis ===

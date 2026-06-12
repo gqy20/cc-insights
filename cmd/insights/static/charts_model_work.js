@@ -28,6 +28,14 @@ function initModelChart(modelData) {
             trigger: 'axis',
             axisPointer: {
                 type: 'cross'
+            },
+            formatter: function(params) {
+                return params.map(item => {
+                    const value = item.seriesName === 'Token数'
+                        ? formatTokenCount(item.value)
+                        : formatNumber(item.value);
+                    return `${escapeHtml(item.seriesName)}: ${value}`;
+                }).join('<br/>');
             }
         },
         legend: {
@@ -63,7 +71,10 @@ function initModelChart(modelData) {
             {
                 type: 'value',
                 name: 'Token数',
-                position: 'right'
+                position: 'right',
+                axisLabel: {
+                    formatter: value => formatTokenCount(value)
+                }
             }
         ],
         series: [
@@ -106,8 +117,8 @@ function initModelChart(modelData) {
     document.getElementById('modelChart-insight').innerHTML =
         `<strong>💡 数据洞察:</strong> 最常用的是 <strong>${escapeHtml(topModel.model)}</strong>（${topModel.count.toLocaleString()} 次请求，占比 ${topModelShare}%），` +
         `总计 <strong>${totalRequests.toLocaleString()}</strong> 次请求，` +
-        `消耗 <strong>${(totalTokens / 1000000).toFixed(1)}M</strong> Tokens，` +
-        `平均每次请求 <strong>${avgTokensPerRequest.toLocaleString()}</strong> Tokens。`;
+        `消耗 <strong>${formatTokenCount(totalTokens)}</strong> Tokens，` +
+        `平均每次请求 <strong>${formatTokenCount(avgTokensPerRequest)}</strong> Tokens。`;
 }
 
 // 初始化工作时段热力图

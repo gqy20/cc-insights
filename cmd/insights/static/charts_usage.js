@@ -366,6 +366,7 @@ function initWeekdayChart(weekdayData) {
     const weekdays = weekdayData.weekday_data;
     const maxCount = Math.max(...weekdays.map(w => w.message_count));
     const maxWeekday = weekdays.find(w => w.message_count === maxCount);
+    const totalMessages = weekdays.reduce((sum, w) => sum + w.message_count, 0);
 
     const option = {
         title: {
@@ -374,7 +375,13 @@ function initWeekdayChart(weekdayData) {
             left: 'center'
         },
         tooltip: {
-            trigger: 'axis'
+            trigger: 'axis',
+            formatter: function(params) {
+                const item = params[0];
+                const count = Number(item.value || 0);
+                const share = totalMessages > 0 ? (count / totalMessages * 100).toFixed(1) : '0.0';
+                return `${escapeHtml(item.axisValue)}<br/>消息数: ${formatNumber(count)}<br/>占当前范围: ${share}%`;
+            }
         },
         xAxis: {
             type: 'category',
@@ -393,7 +400,7 @@ function initWeekdayChart(weekdayData) {
                 show: true,
                 position: 'top',
                 formatter: function(v) {
-                    return v.data.toLocaleString();
+                    return formatNumber(v.data);
                 }
             },
             itemStyle: {
@@ -409,15 +416,15 @@ function initWeekdayChart(weekdayData) {
     chart.setOption(option);
 
     // 生成数据洞察
-    const totalMessages = weekdays.reduce((sum, w) => sum + w.message_count, 0);
     const avgMessages = Math.round(totalMessages / 7);
     const workdayTotal = weekdays.slice(0, 5).reduce((sum, w) => sum + w.message_count, 0);
     const weekendTotal = weekdays.slice(5).reduce((sum, w) => sum + w.message_count, 0);
 
     document.getElementById('weekdayChart-insight').innerHTML =
-        `<strong>💡 数据洞察:</strong> 最活跃的是 <strong>${escapeHtml(maxWeekday.weekday_name)}</strong>（${maxCount.toLocaleString()} 条消息），` +
-        `日均 <strong>${avgMessages.toLocaleString()}</strong> 条。` +
-        `工作日共 <strong>${workdayTotal.toLocaleString()}</strong> 条，周末 <strong>${weekendTotal.toLocaleString()}</strong> 条。`;
+        `<strong>💡 数据洞察:</strong> 当前范围共 <strong>${formatNumber(totalMessages)}</strong> 条消息。` +
+        `最活跃的是 <strong>${escapeHtml(maxWeekday.weekday_name)}</strong>（${formatNumber(maxCount)} 条），` +
+        `日均 <strong>${formatNumber(avgMessages)}</strong> 条。` +
+        `工作日 <strong>${formatNumber(workdayTotal)}</strong> 条，周末 <strong>${formatNumber(weekendTotal)}</strong> 条。`;
 }
 
 // 初始化模型使用分析图

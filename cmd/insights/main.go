@@ -220,7 +220,7 @@ func dashboardPageHandler(w http.ResponseWriter, r *http.Request) {
             </div>
         </main>
     </div>
-    <script src="https://go-echarts.github.io/go-echarts-assets/assets/echarts.min.js" defer></script>
+    <script src="/static/echarts.min.js" defer></script>
     <script src="/static/app.js" defer></script>
 </body>
 </html>`

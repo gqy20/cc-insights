@@ -4,10 +4,14 @@ function formatNumber(value) {
 
 function compactNumber(value) {
     const number = Number(value || 0);
-    if (number >= 1000000000) return `${(number / 1000000000).toFixed(1)}B`;
+    if (number >= 1000000000) return `${(number / 1000000000).toFixed(1)}G`;
     if (number >= 1000000) return `${(number / 1000000).toFixed(1)}M`;
-    if (number >= 1000) return `${(number / 1000).toFixed(1)}K`;
+    if (number >= 1000) return `${(number / 1000).toFixed(1)}k`;
     return number.toLocaleString();
+}
+
+function formatTokenCount(value) {
+    return compactNumber(value);
 }
 
 function shortModelName(value) {

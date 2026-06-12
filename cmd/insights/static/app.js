@@ -21,6 +21,10 @@
     }
 
     async function loadDashboard() {
+        if (!window.echarts) {
+            throw new Error('图表资源加载失败，请确认 /static/echarts.min.js 可访问');
+        }
+
         for (const script of scripts) {
             await loadScript(script);
         }
