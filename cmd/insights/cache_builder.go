@@ -36,7 +36,7 @@ type projectFileResult struct {
 
 // BuildFullCache 构建完整缓存
 func (cb *CacheBuilder) BuildFullCache() error {
-	fmt.Println("🔨 开始构建完整缓存...")
+	Info("开始构建完整缓存")
 
 	dataDir := cb.DataDir
 	if dataDir == "" {
@@ -308,7 +308,7 @@ func (cb *CacheBuilder) IncrementalUpdate() error {
 	cache, err := LoadCacheFile(cb.CachePath)
 	if err != nil {
 		// 缓存不存在，构建完整缓存
-		fmt.Println("📝 缓存不存在，开始构建完整缓存...")
+		Info("缓存不存在，开始构建完整缓存")
 		return cb.BuildFullCache()
 	}
 
@@ -321,14 +321,14 @@ func (cb *CacheBuilder) IncrementalUpdate() error {
 	}
 
 	if !lastDataMod.After(cache.LastUpdate) {
-		fmt.Println("✅ 缓存已是最新，无需更新")
+		Info("缓存已是最新，无需更新")
 		return nil
 	}
 
 	// 3. 增量解析新数据
 	// 重新解析（简化实现：完整重建）
 	// TODO: 实现真正的增量解析
-	fmt.Println("🔄 数据已更新，重新构建缓存...")
+	Info("数据已更新，重新构建缓存")
 	return cb.BuildFullCache()
 }
 

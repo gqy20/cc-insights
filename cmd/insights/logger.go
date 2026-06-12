@@ -27,7 +27,7 @@ var levelNames = map[LogLevel]string{
 	LogLevelError: "ERROR",
 }
 
-// Logger 结构化日志器，同时输出到 stdout 和日志文件
+// Logger 结构化日志器，同时输出到 stderr 和日志文件
 type Logger struct {
 	level      LogLevel
 	mu         sync.Mutex
@@ -39,11 +39,11 @@ type Logger struct {
 // 全局日志实例
 var appLogger *Logger
 
-// InitLogger 初始化日志系统，输出到 stdout + ~/.cc-insights/logs/ 目录
+// InitLogger 初始化日志系统，输出到 stderr + ~/.cc-insights/logs/ 目录
 func InitLogger(logDir string) error {
 	appLogger = &Logger{
 		level:     LogLevelInfo,
-		outLogger: log.New(os.Stdout, "", 0),
+		outLogger: log.New(os.Stderr, "", 0),
 	}
 
 	// 确保日志目录存在
@@ -61,7 +61,7 @@ func InitLogger(logDir string) error {
 	}
 	appLogger.file = f
 
-	// 文件日志只写文件；stdout 由 outLogger 单独负责。
+	// 文件日志只写文件；stderr 由 outLogger 单独负责。
 	appLogger.fileLogger = log.New(f, "", 0)
 
 	Info("日志系统初始化完成", "log_file", logFile)

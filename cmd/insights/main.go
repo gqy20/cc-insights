@@ -5,7 +5,6 @@ package main
 import (
 	"embed"
 	"encoding/json"
-	"flag"
 	"fmt"
 	"io"
 	"io/fs"
@@ -24,8 +23,13 @@ var commit = "unknown"
 var buildDate = ""
 
 func main() {
-	flag.Parse()
+	if err := runCLI(os.Args[1:]); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+}
 
+func runWebServer() error {
 	// 初始化日志系统（在所有操作之前）
 	logDir := filepath.Join(filepath.Dir(cfg.CacheDir), "logs")
 	if err := InitLogger(logDir); err != nil {
@@ -42,7 +46,7 @@ func main() {
 	if _, err := os.Stat(cfg.DataDir); os.IsNotExist(err) {
 		Error("数据目录不存在", "path", cfg.DataDir)
 		Info("提示: 使用 -data 参数指定数据目录")
-		os.Exit(1)
+		return fmt.Errorf("数据目录不存在: %s", cfg.DataDir)
 	}
 
 	Info("配置信息",
@@ -77,8 +81,9 @@ func main() {
 	)
 	if err := http.ListenAndServe(cfg.ListenAddr, handler); err != nil {
 		Error("启动失败", "error", err.Error())
-		os.Exit(1)
+		return err
 	}
+	return nil
 }
 
 // indexHandler 首页
