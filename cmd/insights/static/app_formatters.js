@@ -2,6 +2,14 @@ function formatNumber(value) {
     return Number(value || 0).toLocaleString();
 }
 
+function compactNumber(value) {
+    const number = Number(value || 0);
+    if (number >= 1000000000) return `${(number / 1000000000).toFixed(1)}B`;
+    if (number >= 1000000) return `${(number / 1000000).toFixed(1)}M`;
+    if (number >= 1000) return `${(number / 1000).toFixed(1)}K`;
+    return number.toLocaleString();
+}
+
 function shortModelName(value) {
     if (!value) return 'unknown';
     return value.length > 22 ? value.slice(0, 22) + '...' : value;

@@ -1,25 +1,179 @@
 const chartInstances = new Set();
 let resizeTimer = null;
 
+const chartGroups = [
+    { id: 'usage', title: '使用', description: '命令、工具、模型和工作时段分布。' },
+    { id: 'quality', title: '质量', description: '失败、缺失结果、文件编辑质量和工具健康度。' },
+    { id: 'cost', title: '成本', description: 'Token、模型、项目和会话级成本信号。' },
+    { id: 'runtime', title: '运行时', description: 'Session 生命周期、Agent、Task/Plan 和运行事件。' }
+];
+
 const chartDefinitions = [
-    { id: 'dailyTrend', height: 400, layout: 'wide', render: data => initDailyTrendChart(data.daily_trend) },
-    { id: 'commands', height: 500, layout: 'compact', render: data => initCommandsChart(data.commands) },
-    { id: 'mcpTools', height: 700, layout: 'compact', render: data => initMCPToolsChart(data.mcp_tools) },
-    { id: 'sessionChart', height: 400, layout: 'wide', render: data => initSessionChart(data.sessions) },
-    { id: 'projectChart', height: 500, layout: 'compact', render: data => initProjectChart(data.project_stats) },
-    { id: 'weekdayChart', height: 400, layout: 'compact', render: data => initWeekdayChart(data.weekday_stats) },
-    { id: 'modelChart', height: 500, layout: 'compact', render: data => initModelChart(data.model_usage) },
-    { id: 'workHoursChart', height: 450, layout: 'compact', render: data => initWorkHoursChart(data.work_hours_stats) },
-    { id: 'toolModelFailureChart', height: 560, layout: 'wide', render: data => initToolModelFailureChart(data.tool_analysis) },
-    { id: 'failureReasonChart', height: 620, layout: 'wide', render: data => initFailureReasonChart(data.failure_analysis) },
-    { id: 'eventHookChart', height: 560, layout: 'compact', render: data => initEventHookChart(data.event_analysis) },
-    { id: 'agentChart', height: 560, layout: 'compact', render: data => initAgentChart(data.agent_analysis) },
-    { id: 'commandFileChart', height: 620, layout: 'wide', render: data => initCommandFileChart(data.command_analysis) },
-    { id: 'costAnalysisChart', height: 620, layout: 'wide', render: data => initCostAnalysisChart(data.cost_analysis) },
-    { id: 'sessionAnalysisChart', height: 620, layout: 'wide', render: data => initSessionAnalysisChart(data.session_analysis) },
-    { id: 'fileAnalysisChart', height: 700, layout: 'wide', render: data => initFileAnalysisChart(data.file_analysis) },
-    { id: 'taskPlanChart', height: 750, layout: 'wide', render: data => initTaskPlanChart(data.task_plan_analysis) },
-    { id: 'toolPerformanceChart', height: 800, layout: 'wide', render: data => initToolPerformanceChart(data.tool_performance) }
+    {
+        id: 'dailyTrend',
+        group: 'usage',
+        height: 400,
+        layout: 'wide',
+        hasData: data => hasArrayData(data.daily_trend && data.daily_trend.counts),
+        emptyText: '该时间范围内没有活动消息。',
+        render: data => initDailyTrendChart(data.daily_trend)
+    },
+    {
+        id: 'commands',
+        group: 'usage',
+        height: 500,
+        layout: 'compact',
+        hasData: data => hasArrayData(data.commands),
+        emptyText: '该时间范围内没有 Slash Command 调用。',
+        render: data => initCommandsChart(data.commands)
+    },
+    {
+        id: 'mcpTools',
+        group: 'usage',
+        height: 700,
+        layout: 'compact',
+        hasData: data => hasArrayData(data.mcp_tools),
+        emptyText: '该时间范围内没有 MCP 工具调用。',
+        render: data => initMCPToolsChart(data.mcp_tools)
+    },
+    {
+        id: 'projectChart',
+        group: 'usage',
+        height: 500,
+        layout: 'compact',
+        hasData: data => hasArrayData(data.project_stats && data.project_stats.projects),
+        emptyText: '该时间范围内没有项目活跃数据。',
+        render: data => initProjectChart(data.project_stats)
+    },
+    {
+        id: 'weekdayChart',
+        group: 'usage',
+        height: 400,
+        layout: 'compact',
+        hasData: data => sumBy(data.weekday_stats && data.weekday_stats.weekday_data, 'message_count') > 0,
+        emptyText: '该时间范围内没有可展示的星期分布。',
+        render: data => initWeekdayChart(data.weekday_stats)
+    },
+    {
+        id: 'modelChart',
+        group: 'usage',
+        height: 500,
+        layout: 'compact',
+        hasData: data => hasArrayData(data.model_usage),
+        emptyText: '该时间范围内没有模型使用数据。',
+        render: data => initModelChart(data.model_usage)
+    },
+    {
+        id: 'workHoursChart',
+        group: 'usage',
+        height: 450,
+        layout: 'compact',
+        hasData: data => sumBy(data.work_hours_stats && data.work_hours_stats.hourly_data, 'count') > 0,
+        emptyText: '该时间范围内没有可展示的工作时段分布。',
+        render: data => initWorkHoursChart(data.work_hours_stats)
+    },
+    {
+        id: 'toolModelFailureChart',
+        group: 'quality',
+        height: 560,
+        layout: 'wide',
+        hasData: data => hasArrayData(data.tool_analysis && data.tool_analysis.by_model),
+        emptyText: '该时间范围内没有工具失败或缺失结果关联。',
+        state: 'healthy',
+        render: data => initToolModelFailureChart(data.tool_analysis)
+    },
+    {
+        id: 'failureReasonChart',
+        group: 'quality',
+        height: 620,
+        layout: 'wide',
+        hasData: data => hasArrayData(data.failure_analysis && data.failure_analysis.by_reason),
+        emptyText: '该时间范围内没有失败原因细分数据。',
+        state: 'healthy',
+        render: data => initFailureReasonChart(data.failure_analysis)
+    },
+    {
+        id: 'commandFileChart',
+        group: 'quality',
+        height: 620,
+        layout: 'wide',
+        hasData: data => hasArrayData(data.command_analysis && data.command_analysis.bash_commands) || hasArrayData(data.command_analysis && data.command_analysis.file_operations),
+        emptyText: '该时间范围内没有 Bash 或文件操作异常。',
+        state: 'healthy',
+        render: data => initCommandFileChart(data.command_analysis)
+    },
+    {
+        id: 'fileAnalysisChart',
+        group: 'quality',
+        height: 700,
+        layout: 'wide',
+        hasData: data => Boolean(data.file_analysis && data.file_analysis.totals && data.file_analysis.totals.unique_files > 0),
+        emptyText: '该时间范围内没有文件编辑质量数据。',
+        render: data => initFileAnalysisChart(data.file_analysis)
+    },
+    {
+        id: 'toolPerformanceChart',
+        group: 'quality',
+        height: 800,
+        layout: 'wide',
+        hasData: data => hasArrayData(data.tool_performance && data.tool_performance.by_category),
+        emptyText: '该时间范围内没有工具性能数据。',
+        render: data => initToolPerformanceChart(data.tool_performance)
+    },
+    {
+        id: 'costAnalysisChart',
+        group: 'cost',
+        height: 620,
+        layout: 'wide',
+        hasData: data => Boolean(data.cost_analysis && data.cost_analysis.totals && data.cost_analysis.totals.total_tokens > 0),
+        emptyText: '该时间范围内没有 Token 或成本数据。',
+        render: data => initCostAnalysisChart(data.cost_analysis)
+    },
+    {
+        id: 'sessionChart',
+        group: 'runtime',
+        height: 400,
+        layout: 'wide',
+        hasData: data => Boolean(data.sessions && data.sessions.total_sessions > 0),
+        emptyText: '该时间范围内没有会话数据。',
+        render: data => initSessionChart(data.sessions)
+    },
+    {
+        id: 'eventHookChart',
+        group: 'runtime',
+        height: 560,
+        layout: 'compact',
+        hasData: data => hasArrayData(data.event_analysis && data.event_analysis.by_type),
+        emptyText: '该时间范围内没有运行事件数据。',
+        render: data => initEventHookChart(data.event_analysis)
+    },
+    {
+        id: 'agentChart',
+        group: 'runtime',
+        height: 560,
+        layout: 'compact',
+        hasData: data => hasArrayData(data.agent_analysis && data.agent_analysis.agents),
+        emptyText: '该时间范围内没有 agent/subagent 数据。',
+        render: data => initAgentChart(data.agent_analysis)
+    },
+    {
+        id: 'sessionAnalysisChart',
+        group: 'runtime',
+        height: 620,
+        layout: 'wide',
+        hasData: data => hasArrayData(data.session_analysis && data.session_analysis.sessions),
+        emptyText: '该时间范围内没有 Session 生命周期数据。',
+        render: data => initSessionAnalysisChart(data.session_analysis)
+    },
+    {
+        id: 'taskPlanChart',
+        group: 'runtime',
+        height: 750,
+        layout: 'wide',
+        hasData: data => hasTaskPlanData(data.task_plan_analysis),
+        emptyText: '该时间范围内没有 Task / Plan 结构数据。',
+        render: data => initTaskPlanChart(data.task_plan_analysis)
+    }
 ];
 
 function installChartTracking() {
@@ -189,8 +343,9 @@ function updateStatsInfo(data) {
         rangeText = '最近 90 天';
     }
     document.getElementById('rangeInfo').textContent = rangeText;
+    document.getElementById('summaryRange').textContent = rangeText;
 
-    const totalRecords = data.commands.reduce((sum, cmd) => sum + cmd.count, 0);
+    const totalRecords = (data.commands || []).reduce((sum, cmd) => sum + cmd.count, 0);
     document.getElementById('recordCount').textContent = totalRecords.toLocaleString();
 
     // 更新会话统计信息
@@ -211,17 +366,146 @@ function renderCharts(data) {
     disposeCharts();
     container.replaceChildren();
 
-    chartDefinitions.forEach(definition => {
-        container.appendChild(createChartDiv(definition));
+    renderSummary(data);
+
+    chartGroups.forEach(group => {
+        const section = createChartSection(group);
+        const grid = section.querySelector('.chart-section-grid');
+        chartDefinitions
+            .filter(definition => definition.group === group.id)
+            .forEach(definition => {
+                grid.appendChild(createChartDiv(definition));
+            });
+        container.appendChild(section);
     });
 
     container.style.display = '';
 
     chartDefinitions.forEach(definition => {
+        if (definition.hasData && !definition.hasData(data)) {
+            renderEmptyChart(definition);
+            return;
+        }
         definition.render(data);
     });
 
+    collapseEmptyCharts();
+    updateGroupStates();
     requestAnimationFrame(resizeCharts);
+}
+
+function renderSummary(data) {
+    const summaryPanel = document.getElementById('section-overview');
+    const summaryGrid = document.getElementById('summaryGrid');
+    const totalCommands = (data.commands || []).reduce((sum, cmd) => sum + cmd.count, 0);
+    const totalMessages = data.project_stats ? data.project_stats.total_messages : (data.daily_trend || { counts: [] }).counts.reduce((sum, count) => sum + count, 0);
+    const totalSessions = data.sessions ? data.sessions.total_sessions : 0;
+    const totalTools = data.tool_analysis ? data.tool_analysis.total_calls : (data.mcp_tools || []).reduce((sum, tool) => sum + tool.count, 0);
+    const failureRate = data.tool_analysis && data.tool_analysis.total_calls > 0
+        ? `${((data.tool_analysis.total_failures / data.tool_analysis.total_calls) * 100).toFixed(1)}%`
+        : '-';
+    const totalTokens = data.cost_analysis && data.cost_analysis.totals
+        ? data.cost_analysis.totals.total_tokens
+        : (data.model_usage || []).reduce((sum, model) => sum + model.tokens, 0);
+    const topProject = data.project_stats && data.project_stats.projects && data.project_stats.projects[0]
+        ? shortPath(data.project_stats.projects[0].project)
+        : '-';
+    const topModel = data.model_usage && data.model_usage[0] ? shortModelName(data.model_usage[0].model) : '-';
+
+    const cards = [
+        { label: '消息数', value: formatNumber(totalMessages), meta: `${formatNumber(totalSessions)} 个会话` },
+        { label: '命令调用', value: formatNumber(totalCommands), meta: `${(data.commands || []).length} 种命令` },
+        { label: '工具调用', value: formatNumber(totalTools), meta: `失败率 ${failureRate}` },
+        { label: 'Token', value: compactNumber(totalTokens), meta: `Top 模型 ${topModel}` },
+        { label: '活跃项目', value: topProject, meta: data.project_stats ? `${formatNumber(data.project_stats.projects.length)} 个项目` : '-' },
+        { label: 'MCP 工具', value: formatNumber((data.mcp_tools || []).length), meta: (data.mcp_tools && data.mcp_tools[0]) ? `${data.mcp_tools[0].server} / ${shortToolName(data.mcp_tools[0].tool)}` : '-' }
+    ];
+
+    summaryGrid.replaceChildren(...cards.map(createSummaryCard));
+    summaryPanel.style.display = '';
+}
+
+function createSummaryCard(card) {
+    const item = document.createElement('article');
+    item.className = 'summary-card';
+
+    const label = document.createElement('div');
+    label.className = 'summary-label';
+    label.textContent = card.label;
+
+    const value = document.createElement('div');
+    value.className = 'summary-value';
+    value.textContent = card.value;
+
+    const meta = document.createElement('div');
+    meta.className = 'summary-meta';
+    meta.textContent = card.meta;
+
+    item.append(label, value, meta);
+    return item;
+}
+
+function createChartSection(group) {
+    const section = document.createElement('section');
+    section.className = 'chart-section';
+    section.id = `section-${group.id}`;
+
+    const heading = document.createElement('div');
+    heading.className = 'section-heading';
+
+    const title = document.createElement('h2');
+    title.textContent = group.title;
+
+    const description = document.createElement('p');
+    description.textContent = group.description;
+
+    const grid = document.createElement('div');
+    grid.className = 'chart-section-grid';
+
+    heading.append(title, description);
+    section.append(heading, grid);
+    return section;
+}
+
+function hasArrayData(items) {
+    return Array.isArray(items) && items.length > 0;
+}
+
+function sumBy(items, field) {
+    if (!Array.isArray(items)) return 0;
+    return items.reduce((sum, item) => sum + Number(item && item[field] ? item[field] : 0), 0);
+}
+
+function hasTaskPlanData(taskPlan) {
+    if (!taskPlan) return false;
+    const lifecycle = taskPlan.plan_lifecycle || {};
+    const lifecycleTotal = Number(lifecycle.entry_count || 0) + Number(lifecycle.exit_count || 0) + Number(lifecycle.reentry_count || 0);
+    const tasks = taskPlan.tasks || {};
+    return lifecycleTotal > 0 ||
+        hasArrayData(taskPlan.plan_files) ||
+        hasArrayData(tasks.status_distribution) ||
+        hasArrayData(tasks.session_task_counts);
+}
+
+function renderEmptyChart(definition) {
+    const wrapper = document.querySelector(`#${definition.id}`)?.closest('.chart-wrapper');
+    if (!wrapper) return;
+
+    const insight = wrapper.querySelector('.chart-insight');
+    wrapper.classList.add('empty-chart');
+    wrapper.classList.toggle('healthy-empty', definition.state === 'healthy');
+    if (insight) {
+        insight.textContent = definition.emptyText || '该时间范围内暂无数据。';
+    }
+}
+
+function updateGroupStates() {
+    document.querySelectorAll('.chart-section').forEach(section => {
+        const wrappers = Array.from(section.querySelectorAll('.chart-wrapper'));
+        const emptyCount = wrappers.filter(wrapper => wrapper.classList.contains('empty-chart')).length;
+        section.classList.toggle('mostly-empty', emptyCount > 0 && emptyCount === wrappers.length);
+        section.dataset.emptyCount = String(emptyCount);
+    });
 }
 
 // 创建图表容器
@@ -241,4 +525,17 @@ function createChartDiv(definition) {
     wrapper.appendChild(chartDiv);
     wrapper.appendChild(insightDiv);
     return wrapper;
+}
+
+function collapseEmptyCharts() {
+    document.querySelectorAll('.chart-wrapper').forEach(wrapper => {
+        const chart = wrapper.querySelector('.chart-canvas');
+        const insight = wrapper.querySelector('.chart-insight');
+        const hasRenderedChart = chart && chart.querySelector('canvas, svg');
+        const hasEmptyInsight = insight && insight.textContent.includes('暂无');
+
+        if (hasEmptyInsight && !hasRenderedChart) {
+            wrapper.classList.add('empty-chart');
+        }
+    });
 }

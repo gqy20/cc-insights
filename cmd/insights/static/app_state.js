@@ -1,5 +1,5 @@
 // 当前时间范围
-let currentPreset = 'all';
+let currentPreset = '30d';
 
 // 趣味加载文案
 const loadingTips = [

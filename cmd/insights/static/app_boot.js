@@ -2,7 +2,7 @@ function initDashboard() {
     installChartTracking();
     setupChartResizeListener();
     setupEventListeners();
-    loadData('preset=all');
+    loadData('preset=30d');
 }
 
 // 初始化

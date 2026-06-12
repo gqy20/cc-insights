@@ -164,10 +164,18 @@ func dashboardPageHandler(w http.ResponseWriter, r *http.Request) {
             <div class="preset-buttons">
                 <button class="preset-btn" data-preset="24h">最近 24 小时</button>
                 <button class="preset-btn" data-preset="7d">最近 7 天</button>
-                <button class="preset-btn" data-preset="30d">最近 30 天</button>
+                <button class="preset-btn active" data-preset="30d">最近 30 天</button>
                 <button class="preset-btn" data-preset="90d">最近 90 天</button>
-                <button class="preset-btn active" data-preset="all">全部数据</button>
+                <button class="preset-btn" data-preset="all">全部数据</button>
             </div>
+            <h3>分析分组</h3>
+            <nav class="section-nav" aria-label="分析分组">
+                <a href="#section-overview">概览</a>
+                <a href="#section-usage">使用</a>
+                <a href="#section-quality">质量</a>
+                <a href="#section-cost">成本</a>
+                <a href="#section-runtime">运行时</a>
+            </nav>
             <h3>自定义范围</h3>
             <div class="custom-range">
                 <label>开始日期</label>
@@ -184,7 +192,10 @@ func dashboardPageHandler(w http.ResponseWriter, r *http.Request) {
         </aside>
         <main class="main-content">
             <div class="content-inner">
-                <h1>📊 Claude Code Dashboard</h1>
+                <div class="page-header">
+                    <h1>📊 Claude Code Dashboard</h1>
+                    <p>按时间范围汇总 Claude Code 使用、成本、失败和运行时信号。</p>
+                </div>
                 <div id="errorMessage"></div>
                 <div id="loadingIndicator" class="loading">
                     <div class="loading-container">
@@ -198,6 +209,13 @@ func dashboardPageHandler(w http.ResponseWriter, r *http.Request) {
                         <div class="loading-tip" id="loadingTip">☕ 顺便喝口水吧~</div>
                     </div>
                 </div>
+                <section id="section-overview" class="summary-panel" style="display:none;">
+                    <div class="section-heading">
+                        <h2>概览</h2>
+                        <p id="summaryRange">-</p>
+                    </div>
+                    <div id="summaryGrid" class="summary-grid"></div>
+                </section>
                 <div id="chartsContainer" class="charts-container" style="display:none;"></div>
             </div>
         </main>
