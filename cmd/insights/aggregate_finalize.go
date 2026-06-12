@@ -448,8 +448,8 @@ func (agg *ProjectAggregate) finalizeFileAnalysis() {
 	// --- P0: Edit Failures per File（按文件的 Edit 失败原因分布）---
 	for path, ef := range agg.FileEditFailures {
 		item := FileEditFailureItem{
-			Path:          path,
-			TotalFailures: ef.TotalFailures,
+			Path:           path,
+			TotalFailures:  ef.TotalFailures,
 			FailureReasons: make([]FileFailureReasonDetail, 0, len(ef.ReasonCounts)),
 		}
 		totalEditFailures += ef.TotalFailures
@@ -613,13 +613,18 @@ func (agg *ProjectAggregate) finalizeTaskPlanAnalysis() {
 			SessionsWithTodo:  len(ra.TodoSessionCounts),
 		}
 		// Top task sessions
-		type sessionCount struct{ sid string; count int }
+		type sessionCount struct {
+			sid   string
+			count int
+		}
 		var taskList []sessionCount
 		for sid, cnt := range ra.TaskSessionCounts {
 			taskList = append(taskList, sessionCount{sid, cnt})
 		}
 		sort.Slice(taskList, func(i, j int) bool { return taskList[i].count > taskList[j].count })
-		if len(taskList) > 10 { taskList = taskList[:10] }
+		if len(taskList) > 10 {
+			taskList = taskList[:10]
+		}
 		for _, sc := range taskList {
 			proj := ra.TaskSessionProjects[sc.sid]
 			reminder.TopTaskSessions = append(reminder.TopTaskSessions, ReminderSessionItem{
@@ -632,7 +637,9 @@ func (agg *ProjectAggregate) finalizeTaskPlanAnalysis() {
 			todoList = append(todoList, sessionCount{sid, cnt})
 		}
 		sort.Slice(todoList, func(i, j int) bool { return todoList[i].count > todoList[j].count })
-		if len(todoList) > 10 { todoList = todoList[:10] }
+		if len(todoList) > 10 {
+			todoList = todoList[:10]
+		}
 		for _, sc := range todoList {
 			proj := ra.TodoSessionProjects[sc.sid]
 			reminder.TopTodoSessions = append(reminder.TopTodoSessions, ReminderSessionItem{
@@ -659,12 +666,12 @@ func (agg *ProjectAggregate) finalizeToolPerformance() {
 
 	// Per-BaseTool 截断配额：每种工具类型独立 Top-N（每类至少 50）
 	var perToolCap = map[string]int{
-		"Bash":       80, // 命令最多样化
-		"Read":       60, // 文件路径
-		"Edit":       60, // 文件路径
-		"Write":      50,
-		"MultiEdit":  50,
-		"default":    50, // Agent/TaskOutput/MCP 等内置工具
+		"Bash":      80, // 命令最多样化
+		"Read":      60, // 文件路径
+		"Edit":      60, // 文件路径
+		"Write":     50,
+		"MultiEdit": 50,
+		"default":   50, // Agent/TaskOutput/MCP 等内置工具
 	}
 
 	out := &ToolPerformanceData{

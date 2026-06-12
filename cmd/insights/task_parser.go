@@ -191,7 +191,7 @@ func finalizeTaskAnalysis(agg *TaskAgg) *TaskAnalysisData {
 			CompletedCount:  sa.CompletedCount,
 			PendingCount:    sa.PendingCount,
 			InProgressCount: sa.InProgressCount,
-			CompletionRate:   cr,
+			CompletionRate:  cr,
 		})
 	}
 	sort.Slice(out.SessionTaskCounts, func(i, j int) bool {
@@ -212,4 +212,3 @@ func finalizeTaskAnalysis(agg *TaskAgg) *TaskAnalysisData {
 
 	return out
 }
-
