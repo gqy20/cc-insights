@@ -99,6 +99,10 @@ func addToolResultLocked(agg *ProjectAggregate, call pendingToolCall, classifica
 	if classification.Failed {
 		stat.FailureCount++
 		modelStat.FailureCount++
+		if call.Tool == "Skill" {
+			recordSkillToolResultLocked(agg, call, true, false)
+		}
+		recordSkillToolChainResultLocked(agg, call, true, false)
 		addAgentToolResultLocked(agg, call, true, false)
 		addSessionToolResultLocked(agg, call, true, false)
 		addCommandOrFileResultLocked(agg, call, true, false)
@@ -128,6 +132,10 @@ func addToolResultLocked(agg *ProjectAggregate, call pendingToolCall, classifica
 	}
 	stat.SuccessCount++
 	modelStat.SuccessCount++
+	if call.Tool == "Skill" {
+		recordSkillToolResultLocked(agg, call, false, false)
+	}
+	recordSkillToolChainResultLocked(agg, call, false, false)
 	addAgentToolResultLocked(agg, call, false, false)
 	addSessionToolResultLocked(agg, call, false, false)
 	addCommandOrFileResultLocked(agg, call, false, false)
@@ -140,6 +148,10 @@ func addMissingToolResultLocked(agg *ProjectAggregate, call pendingToolCall) {
 	stat.MissingResultCount++
 	modelStat := ensureToolModelStat(agg, call.Tool, call.Model)
 	modelStat.MissingResultCount++
+	if call.Tool == "Skill" {
+		recordSkillToolResultLocked(agg, call, false, true)
+	}
+	recordSkillToolChainResultLocked(agg, call, false, true)
 	addAgentToolResultLocked(agg, call, false, true)
 	addSessionToolResultLocked(agg, call, false, true)
 	addCommandOrFileResultLocked(agg, call, false, true)
@@ -426,7 +438,12 @@ func recordRuntimeEventLocked(agg *ProjectAggregate, record ProjectRecord, times
 			case "invoked_skills":
 				for _, skill := range attachment.Skills {
 					recordSkillLocked(agg, skill.Name, skill.Path)
+					recordSkillAttachmentInvocationLocked(agg, skill.Name, skill.Path, projectName, "", record.AgentID, record.IsSidechain)
 				}
+			case "skill_listing":
+				recordSkillListingLocked(agg, record.Attachment)
+			case "dynamic_skill":
+				recordDynamicSkillLocked(agg, record.Attachment)
 			case "opened_file_in_ide":
 				recordOpenedFileLocked(agg, attachment.Filename)
 			case "budget_usd":

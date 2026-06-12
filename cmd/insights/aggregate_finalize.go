@@ -60,6 +60,7 @@ func (agg *ProjectAggregate) finalize() {
 	// 6. 转换工具分析
 	agg.finalizeToolAnalysis()
 	agg.finalizeFailureAnalysis()
+	finalizeSkillAnalysisLocked(agg)
 
 	// 7. 转换运行事件、agent、命令/文件分析
 	agg.finalizeEventAnalysis()

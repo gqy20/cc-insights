@@ -367,6 +367,125 @@ function initEventHookChart(eventAnalysis) {
         hookText;
 }
 
+function initSkillAnalysisChart(skillAnalysis) {
+    const insight = document.getElementById('skillAnalysisChart-insight');
+    if (!skillAnalysis) {
+        insight.innerHTML = '<strong>数据洞察:</strong> 暂无 skill 分析数据';
+        return;
+    }
+
+    const chart = echarts.init(document.getElementById('skillAnalysisChart'), 'wonderland');
+    const skills = (skillAnalysis.skills || []).slice(0, 12);
+    const chains = (skillAnalysis.tool_chains || []).slice(0, 12);
+    const skillLabels = skills.map(item => item.name);
+    const chainLabels = chains.map(item => `${item.skill_name} / ${shortToolName(item.tool)}`);
+
+    chart.setOption({
+        title: [
+            {
+                text: 'Skill 调用结果',
+                subtext: '按调用次数排序',
+                left: '25%',
+                top: 10,
+                textAlign: 'center'
+            },
+            {
+                text: 'Skill 关联工具链',
+                subtext: '按工具调用次数排序',
+                left: '75%',
+                top: 10,
+                textAlign: 'center'
+            }
+        ],
+        tooltip: {
+            trigger: 'axis',
+            axisPointer: { type: 'shadow' },
+            formatter: function(params) {
+                const first = params[0];
+                if (first.axisIndex === 0) {
+                    const item = skills[first.dataIndex];
+                    return `${escapeHtml(item.name)}<br/>` +
+                        `调用: ${formatNumber(item.invocation_count)}<br/>` +
+                        `Skill 工具: ${formatNumber(item.tool_use_count)}<br/>` +
+                        `invoked_skills: ${formatNumber(item.attachment_count)}<br/>` +
+                        `失败: ${formatNumber(item.failure_count)}<br/>` +
+                        `Missing: ${formatNumber(item.missing_result_count)}<br/>` +
+                        `失败率: ${(item.failure_rate || 0).toFixed(1)}%`;
+                }
+                const item = chains[first.dataIndex];
+                return `${escapeHtml(item.skill_name)}<br/>${escapeHtml(item.tool)}<br/>` +
+                    `工具调用: ${formatNumber(item.call_count)}<br/>` +
+                    `失败: ${formatNumber(item.failure_count)}<br/>` +
+                    `Missing: ${formatNumber(item.missing_results)}<br/>` +
+                    `失败率: ${(item.failure_rate || 0).toFixed(1)}%`;
+            }
+        },
+        legend: {
+            data: ['调用', '失败', 'Missing Result', '工具链调用'],
+            top: 58
+        },
+        grid: [
+            { top: 100, bottom: 105, left: 70, right: '55%', containLabel: true },
+            { top: 100, bottom: 105, left: '55%', right: 40, containLabel: true }
+        ],
+        xAxis: [
+            { type: 'category', gridIndex: 0, data: skillLabels, axisLabel: { interval: 0, rotate: 35 } },
+            { type: 'category', gridIndex: 1, data: chainLabels, axisLabel: { interval: 0, rotate: 35 } }
+        ],
+        yAxis: [
+            { type: 'value', gridIndex: 0, name: '次数' },
+            { type: 'value', gridIndex: 1, name: '次数' }
+        ],
+        series: [
+            {
+                name: '调用',
+                type: 'bar',
+                xAxisIndex: 0,
+                yAxisIndex: 0,
+                data: skills.map(item => item.invocation_count),
+                itemStyle: { color: '#5470c6' }
+            },
+            {
+                name: '失败',
+                type: 'bar',
+                stack: 'skillResults',
+                xAxisIndex: 0,
+                yAxisIndex: 0,
+                data: skills.map(item => item.failure_count),
+                itemStyle: { color: '#e74c3c' }
+            },
+            {
+                name: 'Missing Result',
+                type: 'bar',
+                stack: 'skillResults',
+                xAxisIndex: 0,
+                yAxisIndex: 0,
+                data: skills.map(item => item.missing_result_count),
+                itemStyle: { color: '#f39c12' }
+            },
+            {
+                name: '工具链调用',
+                type: 'bar',
+                xAxisIndex: 1,
+                yAxisIndex: 1,
+                data: chains.map(item => item.call_count),
+                itemStyle: { color: '#91cc75' }
+            }
+        ]
+    });
+
+    const topSkill = skills[0];
+    const topText = topSkill
+        ? `调用最多的是 <strong>${escapeHtml(topSkill.name)}</strong>，共 <strong>${formatNumber(topSkill.invocation_count)}</strong> 次。`
+        : '暂无 skill 调用记录。';
+    insight.innerHTML =
+        `<strong>数据洞察:</strong> 本地安装 <strong>${formatNumber(skillAnalysis.total_installed || 0)}</strong> 个 skills，` +
+        `解析到 <strong>${formatNumber(skillAnalysis.total_invocations || 0)}</strong> 次 skill 调用，` +
+        `skill_listing 事件 <strong>${formatNumber(skillAnalysis.listing_events || 0)}</strong> 次，` +
+        `失败 <strong>${formatNumber(skillAnalysis.failure_count || 0)}</strong> 次。` +
+        topText;
+}
+
 function initAgentChart(agentAnalysis) {
     const insight = document.getElementById('agentChart-insight');
     if (!agentAnalysis || !agentAnalysis.agents || agentAnalysis.agents.length === 0) {

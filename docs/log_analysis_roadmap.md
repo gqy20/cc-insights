@@ -394,13 +394,13 @@
 现状：
 
 - 已统计 `invoked_skills` 次数
+- 已统计 `skill_listing`、`dynamic_skill`、`Skill` tool_use/result
+- 已接入本地 `skills/` 安装目录扫描
 
 待实现：
 
-- skill 触发后的工具链
-- skill 关联失败率
-- skill 与 project 的关系
-- skill 与 agent/tool/model 的关系
+- skill 触发后的工具链细分
+- skill 与 project / agent / model 的更深层对比
 - skill 是否降低失败率或减少工具重试
 
 建议输出：

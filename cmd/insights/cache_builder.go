@@ -85,6 +85,7 @@ func (cb *CacheBuilder) BuildFullCache() error {
 		MCPToolStats:     make(map[string]int),
 		ToolStats:        make(map[string]*ToolStatItem),
 		ToolAnalysis:     aggregate.ToolAnalysis,
+		SkillAnalysis:    aggregate.SkillAnalysis,
 		FailureAnalysis:  aggregate.FailureAnalysis,
 		SessionAnalysis:  aggregate.SessionAnalysis,
 		EventAnalysis:    aggregate.EventAnalysis,
@@ -248,6 +249,7 @@ func (cb *CacheBuilder) buildProjectAggregateIncremental(dataDir string, previou
 		mergeProjectAggregate(aggregate, item.Aggregate)
 		projectFiles[item.Info.RelPath] = item.Cache
 	}
+	recordInstalledSkillsLocked(aggregate, dataDir)
 
 	aggregate.finalize()
 

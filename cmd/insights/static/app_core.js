@@ -178,6 +178,17 @@ const chartDefinitions = [
         render: data => initEventHookChart(data.event_analysis)
     },
     {
+        id: 'skillAnalysisChart',
+        group: 'runtime',
+        title: 'Skills',
+        description: '统计本地安装、可见性、调用结果和关联工具链。',
+        height: 620,
+        layout: 'wide',
+        hasData: data => hasArrayData(data.skill_analysis && data.skill_analysis.skills) || hasArrayData(data.skill_analysis && data.skill_analysis.installed),
+        emptyText: '该时间范围内没有 skill 调用或安装数据。',
+        render: data => initSkillAnalysisChart(data.skill_analysis)
+    },
+    {
         id: 'agentChart',
         group: 'runtime',
         title: 'Agent / Subagent',

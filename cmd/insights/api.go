@@ -36,6 +36,7 @@ type DashboardData struct {
 	ModelUsage       []ModelUsageItem      `json:"model_usage,omitempty"`
 	WorkHoursStats   *WorkHoursStats       `json:"work_hours_stats,omitempty"`
 	ToolAnalysis     *ToolAnalysisData     `json:"tool_analysis,omitempty"`
+	SkillAnalysis    *SkillAnalysisData    `json:"skill_analysis,omitempty"`
 	EventAnalysis    *EventAnalysisData    `json:"event_analysis,omitempty"`
 	AgentAnalysis    *AgentAnalysisData    `json:"agent_analysis,omitempty"`
 	CommandAnalysis  *CommandAnalysisData  `json:"command_analysis,omitempty"`
@@ -300,6 +301,7 @@ func buildDataFromCache(tf TimeFilter, preset string) (*DashboardData, error) {
 	sortModelUsage(modelUsage)
 
 	toolAnalysis := buildToolAnalysisFromCache(cached)
+	skillAnalysis := cloneSkillAnalysis(cached.SkillAnalysis)
 	eventAnalysis := cloneEventAnalysis(cached.EventAnalysis)
 	agentAnalysis := cloneAgentAnalysis(cached.AgentAnalysis)
 	commandAnalysis := cloneCommandAnalysis(cached.CommandAnalysis)
@@ -337,6 +339,7 @@ func buildDataFromCache(tf TimeFilter, preset string) (*DashboardData, error) {
 		ModelUsage:       modelUsage,
 		WorkHoursStats:   workHoursStats,
 		ToolAnalysis:     toolAnalysis,
+		SkillAnalysis:    skillAnalysis,
 		EventAnalysis:    eventAnalysis,
 		AgentAnalysis:    agentAnalysis,
 		CommandAnalysis:  commandAnalysis,
@@ -456,6 +459,7 @@ func buildDataFromParsing(tf TimeFilter, preset string) (*DashboardData, error) 
 		ModelUsage:       aggregate.ModelUsageList,
 		WorkHoursStats:   aggregate.WorkHoursStats,
 		ToolAnalysis:     aggregate.ToolAnalysis,
+		SkillAnalysis:    aggregate.SkillAnalysis,
 		EventAnalysis:    aggregate.EventAnalysis,
 		AgentAnalysis:    aggregate.AgentAnalysis,
 		CommandAnalysis:  aggregate.CommandAnalysis,
@@ -627,6 +631,13 @@ func emptyProjectAggregate() *ProjectAggregate {
 		EventTypes:          make(map[string]int),
 		HookStats:           make(map[string]*HookStatItem),
 		SkillStats:          make(map[string]*SkillStatItem),
+		InstalledSkills:     make(map[string]*InstalledSkillItem),
+		SkillUsageStats:     make(map[string]*SkillUsageStat),
+		SkillListingStats:   make(map[string]int),
+		SkillProjectStats:   make(map[string]*SkillProjectStat),
+		SkillModelStats:     make(map[string]*SkillModelStat),
+		SkillAgentStats:     make(map[string]*SkillAgentStat),
+		SkillToolChainStats: make(map[string]*SkillToolChainStat),
 		PermissionModes:     make(map[string]int),
 		OpenedFiles:         make(map[string]*FileAccessStat),
 		AgentStats:          make(map[string]*AgentStatItem),

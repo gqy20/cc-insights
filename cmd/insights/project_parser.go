@@ -81,6 +81,8 @@ func ParseProjectsConcurrentOnceFromDir(tf TimeFilter, dataDir string) (*Project
 		mergeProjectAggregate(aggregate, fileAggregate)
 	}
 
+	recordInstalledSkillsLocked(aggregate, dataDir)
+
 	// 后处理：生成输出格式数据
 	aggregate.finalize()
 
@@ -117,6 +119,7 @@ func parseProjectFileAggregate(filePath string, tf TimeFilter, agg *ProjectAggre
 	defer f.Close()
 
 	pendingTools := make(map[string]pendingToolCall)
+	sessionActiveSkills := make(map[string][]string)
 	decoder := json.NewDecoder(f)
 	for {
 		var record ProjectRecord
@@ -143,6 +146,15 @@ func parseProjectFileAggregate(filePath string, tf TimeFilter, agg *ProjectAggre
 		recordRuntimeEventLocked(agg, record, timestamp, projectName)
 		if hasTimestamp {
 			recordRuntimeEventLocked(ensureDailyRuntimeAggregate(agg, timestamp.Format("2006-01-02")), record, timestamp, projectName)
+		}
+		if record.Type == "attachment" {
+			activeNames, attachmentType := extractAttachmentSkillSignals(record.Attachment)
+			if len(activeNames) > 0 && record.SessionID != "" {
+				switch attachmentType {
+				case "invoked_skills", "dynamic_skill":
+					sessionActiveSkills[record.SessionID] = appendUniqueStrings(sessionActiveSkills[record.SessionID], activeNames...)
+				}
+			}
 		}
 
 		if record.Type == "user" {
@@ -237,15 +249,48 @@ func parseProjectFileAggregate(filePath string, tf TimeFilter, agg *ProjectAggre
 				Input:       content.Input,
 			}
 			call := pendingTools[content.ID]
+			if content.Name == "Skill" {
+				skillName, argsLen := extractSkillInvocation(content.Input)
+				call.SkillName = skillName
+				call.SkillArgsLength = argsLen
+			}
+			pendingTools[content.ID] = call
 			addToolCallLocked(agg, content.Name, msg.Model)
 			addAgentToolCallLocked(agg, call)
 			addSessionToolCallLocked(agg, call)
 			recordStructuredToolInputLocked(agg, &call)
+			if content.Name == "Skill" {
+				recordSkillToolUseLocked(agg, call, call.SkillName, call.SkillArgsLength)
+				if record.SessionID != "" && call.SkillName != "" {
+					sessionActiveSkills[record.SessionID] = appendUniqueStrings(sessionActiveSkills[record.SessionID], call.SkillName)
+				}
+			} else if record.SessionID != "" {
+				call.ChainSkills = appendUniqueStrings(call.ChainSkills, sessionActiveSkills[record.SessionID]...)
+				for _, skillName := range sessionActiveSkills[record.SessionID] {
+					recordSkillToolChainLocked(agg, skillName, content.Name, false, false)
+				}
+			}
+			if content.Name != "Skill" && record.AttributionSkill != "" {
+				call.ChainSkills = appendUniqueStrings(call.ChainSkills, record.AttributionSkill)
+				recordSkillToolChainLocked(agg, record.AttributionSkill, content.Name, false, false)
+			}
 			dailyCall := call
 			addToolCallLocked(dailyRuntimeAgg, content.Name, msg.Model)
 			addAgentToolCallLocked(dailyRuntimeAgg, dailyCall)
 			addSessionToolCallLocked(dailyRuntimeAgg, dailyCall)
 			recordStructuredToolInputLocked(dailyRuntimeAgg, &dailyCall)
+			if content.Name == "Skill" {
+				recordSkillToolUseLocked(dailyRuntimeAgg, dailyCall, dailyCall.SkillName, dailyCall.SkillArgsLength)
+			} else if record.SessionID != "" {
+				dailyCall.ChainSkills = appendUniqueStrings(dailyCall.ChainSkills, sessionActiveSkills[record.SessionID]...)
+				for _, skillName := range sessionActiveSkills[record.SessionID] {
+					recordSkillToolChainLocked(dailyRuntimeAgg, skillName, content.Name, false, false)
+				}
+			}
+			if content.Name != "Skill" && record.AttributionSkill != "" {
+				dailyCall.ChainSkills = appendUniqueStrings(dailyCall.ChainSkills, record.AttributionSkill)
+				recordSkillToolChainLocked(dailyRuntimeAgg, record.AttributionSkill, content.Name, false, false)
+			}
 			pendingTools[content.ID] = call
 		}
 	}
