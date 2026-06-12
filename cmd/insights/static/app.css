@@ -329,6 +329,33 @@ input:focus-visible {
     min-width: 0;
 }
 
+.chart-card-header {
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-bottom: 12px;
+    padding-bottom: 12px;
+}
+
+.chart-card-header h3 {
+    color: var(--ink);
+    font-size: clamp(16px, 1vw, 18px);
+    font-weight: 720;
+    line-height: 1.25;
+    margin: 0;
+    overflow-wrap: anywhere;
+}
+
+.chart-card-header p {
+    color: var(--muted);
+    font-size: 13px;
+    line-height: 1.45;
+    margin: 0;
+    max-width: 760px;
+    overflow-wrap: anywhere;
+}
+
 .chart-canvas {
     height: var(--chart-height, 480px);
     min-height: 320px;

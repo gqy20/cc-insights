@@ -12,6 +12,8 @@ const chartDefinitions = [
     {
         id: 'dailyTrend',
         group: 'usage',
+        title: '每日活动趋势',
+        description: '按日期汇总消息量，用于识别活跃峰值和最近走势。',
         height: 400,
         layout: 'wide',
         hasData: data => hasArrayData(data.daily_trend && data.daily_trend.counts),
@@ -21,6 +23,8 @@ const chartDefinitions = [
     {
         id: 'commands',
         group: 'usage',
+        title: 'Slash Commands',
+        description: '统计常用命令和调用占比，判断日常工作入口。',
         height: 500,
         layout: 'compact',
         hasData: data => hasArrayData(data.commands),
@@ -30,6 +34,8 @@ const chartDefinitions = [
     {
         id: 'mcpTools',
         group: 'usage',
+        title: 'MCP 工具调用',
+        description: '按 server 和 tool 汇总外部工具使用频率。',
         height: 700,
         layout: 'compact',
         hasData: data => hasArrayData(data.mcp_tools),
@@ -39,6 +45,8 @@ const chartDefinitions = [
     {
         id: 'projectChart',
         group: 'usage',
+        title: '项目活跃度',
+        description: '展示项目维度的消息量和会话活跃排名。',
         height: 500,
         layout: 'compact',
         hasData: data => hasArrayData(data.project_stats && data.project_stats.projects),
@@ -48,6 +56,8 @@ const chartDefinitions = [
     {
         id: 'weekdayChart',
         group: 'usage',
+        title: '星期活动分布',
+        description: '按星期聚合消息量，观察固定工作节奏。',
         height: 400,
         layout: 'compact',
         hasData: data => sumBy(data.weekday_stats && data.weekday_stats.weekday_data, 'message_count') > 0,
@@ -57,6 +67,8 @@ const chartDefinitions = [
     {
         id: 'modelChart',
         group: 'usage',
+        title: '模型使用',
+        description: '对比不同模型的请求量、Token 和使用占比。',
         height: 500,
         layout: 'compact',
         hasData: data => hasArrayData(data.model_usage),
@@ -66,6 +78,8 @@ const chartDefinitions = [
     {
         id: 'workHoursChart',
         group: 'usage',
+        title: '工作时段',
+        description: '按小时统计活动，定位高峰时段和离散工作模式。',
         height: 450,
         layout: 'compact',
         hasData: data => sumBy(data.work_hours_stats && data.work_hours_stats.hourly_data, 'count') > 0,
@@ -75,6 +89,8 @@ const chartDefinitions = [
     {
         id: 'toolModelFailureChart',
         group: 'quality',
+        title: '模型 × 工具失败',
+        description: '交叉分析模型与工具的失败、缺失结果和失败率。',
         height: 560,
         layout: 'wide',
         hasData: data => hasArrayData(data.tool_analysis && data.tool_analysis.by_model),
@@ -85,6 +101,8 @@ const chartDefinitions = [
     {
         id: 'failureReasonChart',
         group: 'quality',
+        title: '失败原因',
+        description: '按原因、工具和模型拆解失败来源。',
         height: 620,
         layout: 'wide',
         hasData: data => hasArrayData(data.failure_analysis && data.failure_analysis.by_reason),
@@ -95,6 +113,8 @@ const chartDefinitions = [
     {
         id: 'commandFileChart',
         group: 'quality',
+        title: 'Bash 与文件操作',
+        description: '查看命令、文件操作和异常退出的集中位置。',
         height: 620,
         layout: 'wide',
         hasData: data => hasArrayData(data.command_analysis && data.command_analysis.bash_commands) || hasArrayData(data.command_analysis && data.command_analysis.file_operations),
@@ -105,6 +125,8 @@ const chartDefinitions = [
     {
         id: 'fileAnalysisChart',
         group: 'quality',
+        title: '文件编辑质量',
+        description: '聚合热门文件、编辑失败和快照热点。',
         height: 700,
         layout: 'wide',
         hasData: data => Boolean(data.file_analysis && data.file_analysis.totals && data.file_analysis.totals.unique_files > 0),
@@ -114,6 +136,8 @@ const chartDefinitions = [
     {
         id: 'toolPerformanceChart',
         group: 'quality',
+        title: '工具性能',
+        description: '比较工具耗时、错误率和结果完整度。',
         height: 800,
         layout: 'wide',
         hasData: data => hasArrayData(data.tool_performance && data.tool_performance.by_category),
@@ -123,6 +147,8 @@ const chartDefinitions = [
     {
         id: 'costAnalysisChart',
         group: 'cost',
+        title: 'Token 与成本',
+        description: '从模型、项目和会话维度追踪消耗结构。',
         height: 620,
         layout: 'wide',
         hasData: data => Boolean(data.cost_analysis && data.cost_analysis.totals && data.cost_analysis.totals.total_tokens > 0),
@@ -132,6 +158,8 @@ const chartDefinitions = [
     {
         id: 'sessionChart',
         group: 'runtime',
+        title: '每日会话趋势',
+        description: '按日期展示会话数量变化和峰谷表现。',
         height: 400,
         layout: 'wide',
         hasData: data => Boolean(data.sessions && data.sessions.total_sessions > 0),
@@ -141,6 +169,8 @@ const chartDefinitions = [
     {
         id: 'eventHookChart',
         group: 'runtime',
+        title: '运行事件与 Hook',
+        description: '汇总事件类型、Hook 状态和运行时反馈。',
         height: 560,
         layout: 'compact',
         hasData: data => hasArrayData(data.event_analysis && data.event_analysis.by_type),
@@ -150,6 +180,8 @@ const chartDefinitions = [
     {
         id: 'agentChart',
         group: 'runtime',
+        title: 'Agent / Subagent',
+        description: '比较主会话和子代理的工具调用质量。',
         height: 560,
         layout: 'compact',
         hasData: data => hasArrayData(data.agent_analysis && data.agent_analysis.agents),
@@ -159,6 +191,8 @@ const chartDefinitions = [
     {
         id: 'sessionAnalysisChart',
         group: 'runtime',
+        title: 'Session 生命周期',
+        description: '跟踪会话耗时、失败和结果状态。',
         height: 620,
         layout: 'wide',
         hasData: data => hasArrayData(data.session_analysis && data.session_analysis.sessions),
@@ -168,6 +202,8 @@ const chartDefinitions = [
     {
         id: 'taskPlanChart',
         group: 'runtime',
+        title: 'Task / Plan 结构',
+        description: '分析计划模式、任务状态和提醒信号。',
         height: 750,
         layout: 'wide',
         hasData: data => hasTaskPlanData(data.task_plan_analysis),
@@ -190,10 +226,28 @@ function installChartTracking() {
         }
 
         const chart = originalInit(dom, theme, opts);
+        const originalSetOption = chart.setOption.bind(chart);
+        chart.setOption = function(option, ...args) {
+            return originalSetOption(normalizeChartOption(option), ...args);
+        };
         chartInstances.add(chart);
         return chart;
     };
     window.echarts.__ccInsightsTracked = true;
+}
+
+function normalizeChartOption(option) {
+    if (!option || typeof option !== 'object') {
+        return option;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(option, 'title')) {
+        option.title = Array.isArray(option.title)
+            ? option.title.map(title => ({ ...title, show: false }))
+            : { ...option.title, show: false };
+    }
+
+    return option;
 }
 
 function disposeCharts() {
@@ -389,6 +443,7 @@ function renderCharts(data) {
         definition.render(data);
     });
 
+    normalizeInsightBlocks();
     collapseEmptyCharts();
     updateGroupStates();
     requestAnimationFrame(resizeCharts);
@@ -513,6 +568,15 @@ function createChartDiv(definition) {
     const wrapper = document.createElement('div');
     wrapper.className = `chart-wrapper ${definition.layout === 'wide' ? 'wide' : 'compact'}`;
 
+    const header = document.createElement('div');
+    header.className = 'chart-card-header';
+
+    const title = document.createElement('h3');
+    title.textContent = definition.title || definition.id;
+
+    const description = document.createElement('p');
+    description.textContent = definition.description || '';
+
     const chartDiv = document.createElement('div');
     chartDiv.id = definition.id;
     chartDiv.className = 'chart-canvas';
@@ -522,9 +586,22 @@ function createChartDiv(definition) {
     insightDiv.id = `${definition.id}-insight`;
     insightDiv.className = 'chart-insight';
 
-    wrapper.appendChild(chartDiv);
-    wrapper.appendChild(insightDiv);
+    header.append(title, description);
+    wrapper.append(header, chartDiv, insightDiv);
     return wrapper;
+}
+
+function normalizeInsightBlocks() {
+    document.querySelectorAll('.chart-insight').forEach(insight => {
+        const text = insight.textContent
+            .replace(/^💡\s*/, '')
+            .replace(/^数据洞察[:：]\s*/, '')
+            .trim();
+
+        if (text) {
+            insight.textContent = text;
+        }
+    });
 }
 
 function collapseEmptyCharts() {
