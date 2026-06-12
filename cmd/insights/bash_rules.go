@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
+	"sort"
 	"strings"
 	"sync"
 
@@ -24,10 +26,24 @@ type bashRulesFile struct {
 }
 
 type bashFamilyRule struct {
-	Name            string   `yaml:"name"`
-	Commands        []string `yaml:"commands"`
-	CommandContains []string `yaml:"command_contains"`
-	Contains        []string `yaml:"contains"`
+	Name                   string   `yaml:"name"`
+	Priority               int      `yaml:"priority"`
+	Commands               []string `yaml:"commands"`
+	CommandContains        []string `yaml:"command_contains"`
+	Contains               []string `yaml:"contains"`
+	CommandRegex           []string `yaml:"command_regex"`
+	Regex                  []string `yaml:"regex"`
+	ExcludeCommands        []string `yaml:"exclude_commands"`
+	ExcludeCommandContains []string `yaml:"exclude_command_contains"`
+	ExcludeContains        []string `yaml:"exclude_contains"`
+	ExcludeCommandRegex    []string `yaml:"exclude_command_regex"`
+	ExcludeRegex           []string `yaml:"exclude_regex"`
+
+	order                  int
+	compiledCommandRegex   []*regexp.Regexp
+	compiledRegex          []*regexp.Regexp
+	compiledExcludeCommand []*regexp.Regexp
+	compiledExcludeRegex   []*regexp.Regexp
 }
 
 type bashRulesSet struct {
@@ -143,19 +159,37 @@ func parseBashRules(data []byte, source string) (*bashRulesSet, error) {
 	sum := sha256.Sum256(data)
 	rules.Hash = hex.EncodeToString(sum[:])
 
-	for _, family := range file.Families {
+	for idx, family := range file.Families {
 		name := strings.TrimSpace(family.Name)
 		if name == "" {
 			continue
 		}
 		rule := bashFamilyRule{
-			Name:            name,
-			Commands:        normalizeRuleList(family.Commands),
-			CommandContains: normalizeRuleList(family.CommandContains),
-			Contains:        normalizeRuleList(family.Contains),
+			Name:                   name,
+			Priority:               family.Priority,
+			Commands:               normalizeRuleList(family.Commands),
+			CommandContains:        normalizeRuleList(family.CommandContains),
+			Contains:               normalizeRuleList(family.Contains),
+			CommandRegex:           normalizeRuleList(family.CommandRegex),
+			Regex:                  normalizeRuleList(family.Regex),
+			ExcludeCommands:        normalizeRuleList(family.ExcludeCommands),
+			ExcludeCommandContains: normalizeRuleList(family.ExcludeCommandContains),
+			ExcludeContains:        normalizeRuleList(family.ExcludeContains),
+			ExcludeCommandRegex:    normalizeRuleList(family.ExcludeCommandRegex),
+			ExcludeRegex:           normalizeRuleList(family.ExcludeRegex),
+			order:                  idx,
+		}
+		if err := compileBashRuleRegex(&rule); err != nil {
+			return nil, fmt.Errorf("解析 Bash 规则失败 (%s): %w", source, err)
 		}
 		rules.Families = append(rules.Families, rule)
 	}
+	sort.SliceStable(rules.Families, func(i, j int) bool {
+		if rules.Families[i].Priority != rules.Families[j].Priority {
+			return rules.Families[i].Priority > rules.Families[j].Priority
+		}
+		return rules.Families[i].order < rules.Families[j].order
+	})
 
 	return rules, nil
 }
@@ -170,6 +204,35 @@ func normalizeRuleList(items []string) []string {
 		out = append(out, value)
 	}
 	return out
+}
+
+func compileBashRuleRegex(rule *bashFamilyRule) error {
+	var err error
+	if rule.compiledCommandRegex, err = compileRegexList(rule.CommandRegex); err != nil {
+		return fmt.Errorf("%s.command_regex: %w", rule.Name, err)
+	}
+	if rule.compiledRegex, err = compileRegexList(rule.Regex); err != nil {
+		return fmt.Errorf("%s.regex: %w", rule.Name, err)
+	}
+	if rule.compiledExcludeCommand, err = compileRegexList(rule.ExcludeCommandRegex); err != nil {
+		return fmt.Errorf("%s.exclude_command_regex: %w", rule.Name, err)
+	}
+	if rule.compiledExcludeRegex, err = compileRegexList(rule.ExcludeRegex); err != nil {
+		return fmt.Errorf("%s.exclude_regex: %w", rule.Name, err)
+	}
+	return nil
+}
+
+func compileRegexList(items []string) ([]*regexp.Regexp, error) {
+	out := make([]*regexp.Regexp, 0, len(items))
+	for _, item := range items {
+		expr, err := regexp.Compile(item)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, expr)
+	}
+	return out, nil
 }
 
 func (rules *bashRulesSet) classify(stat BashCommandStat) string {
@@ -189,6 +252,9 @@ func (rules *bashRulesSet) classify(stat BashCommandStat) string {
 }
 
 func matchesBashFamilyRule(rule bashFamilyRule, command, text string) bool {
+	if excludedByBashFamilyRule(rule, command, text) {
+		return false
+	}
 	for _, item := range rule.Commands {
 		if command == item {
 			return true
@@ -201,6 +267,45 @@ func matchesBashFamilyRule(rule bashFamilyRule, command, text string) bool {
 	}
 	for _, item := range rule.Contains {
 		if strings.Contains(text, item) {
+			return true
+		}
+	}
+	for _, expr := range rule.compiledCommandRegex {
+		if expr.MatchString(command) {
+			return true
+		}
+	}
+	for _, expr := range rule.compiledRegex {
+		if expr.MatchString(text) {
+			return true
+		}
+	}
+	return false
+}
+
+func excludedByBashFamilyRule(rule bashFamilyRule, command, text string) bool {
+	for _, item := range rule.ExcludeCommands {
+		if command == item {
+			return true
+		}
+	}
+	for _, item := range rule.ExcludeCommandContains {
+		if strings.Contains(command, item) {
+			return true
+		}
+	}
+	for _, item := range rule.ExcludeContains {
+		if strings.Contains(text, item) {
+			return true
+		}
+	}
+	for _, expr := range rule.compiledExcludeCommand {
+		if expr.MatchString(command) {
+			return true
+		}
+	}
+	for _, expr := range rule.compiledExcludeRegex {
+		if expr.MatchString(text) {
 			return true
 		}
 	}

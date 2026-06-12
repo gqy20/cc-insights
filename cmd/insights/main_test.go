@@ -154,3 +154,50 @@ func TestAPIFallbackWhenNoCache(t *testing.T) {
 		t.Errorf("Success = false, error = %s", response.Error)
 	}
 }
+
+// TestReloadHandlerForcesCacheRefresh 测试 reload 接口会刷新缓存
+func TestReloadHandlerForcesCacheRefresh(t *testing.T) {
+	tmpDir := t.TempDir()
+	dataDir := createTestDataDir(t, tmpDir)
+	cacheDir := t.TempDir()
+	rulesPath := filepath.Join(tmpDir, "bash.yml")
+
+	if err := os.WriteFile(rulesPath, []byte("version: 1\nfamilies:\n  - name: custom\n    commands:\n      - foo\n"), 0644); err != nil {
+		t.Fatalf("创建规则文件失败: %v", err)
+	}
+
+	originalDataDir := cfg.DataDir
+	originalCacheDir := cfg.CacheDir
+	originalRulesPath := cfg.RulesPath
+	originalGlobalCache := globalCache
+	cfg.DataDir = dataDir
+	cfg.CacheDir = cacheDir
+	cfg.RulesPath = ""
+	defer func() {
+		cfg.DataDir = originalDataDir
+		cfg.CacheDir = originalCacheDir
+		cfg.RulesPath = originalRulesPath
+		globalCache = originalGlobalCache
+	}()
+
+	if err := refreshGlobalCache(false); err != nil {
+		t.Fatalf("初始化缓存失败: %v", err)
+	}
+	oldHash := globalCache.BashRulesHash
+
+	cfg.RulesPath = rulesPath
+	req := httptest.NewRequest(http.MethodPost, "/api/reload?force=1", nil)
+	w := httptest.NewRecorder()
+
+	reloadHandler(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("状态码 = %d, want %d", w.Code, http.StatusOK)
+	}
+	if globalCache == nil {
+		t.Fatal("globalCache should not be nil")
+	}
+	if globalCache.BashRulesHash == oldHash {
+		t.Fatalf("BashRulesHash did not change after reload")
+	}
+}

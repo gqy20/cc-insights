@@ -57,6 +57,51 @@ func TestClassifyBashCommandFamilyFromCustomRules(t *testing.T) {
 	}
 }
 
+func TestBashRulesPriorityExcludeAndRegex(t *testing.T) {
+	rules, err := parseBashRules([]byte(`
+version: 1
+families:
+  - name: text
+    priority: 100
+    commands:
+      - grep
+    exclude_contains:
+      - --help
+  - name: test
+    priority: 50
+    contains:
+      - pytest
+  - name: help
+    priority: 10
+    contains:
+      - --help
+  - name: generated
+    priority: 80
+    command_regex:
+      - "^foo[0-9]+$"
+`), "test")
+	if err != nil {
+		t.Fatalf("parseBashRules failed: %v", err)
+	}
+
+	tests := []struct {
+		name string
+		stat BashCommandStat
+		want string
+	}{
+		{name: "priority beats contains", stat: BashCommandStat{CommandName: "grep", SampleCommand: "grep pytest ."}, want: "text"},
+		{name: "exclude allows lower rule", stat: BashCommandStat{CommandName: "grep", SampleCommand: "grep --help"}, want: "help"},
+		{name: "command regex", stat: BashCommandStat{CommandName: "foo12", SampleCommand: "foo12 run"}, want: "generated"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := rules.classify(tt.stat); got != tt.want {
+				t.Fatalf("classify() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestFinalizeCommandAnalysisBuildsFamilies(t *testing.T) {
 	agg := newProjectAggregate()
 	agg.BashCommandStats["python3"] = &BashCommandStat{

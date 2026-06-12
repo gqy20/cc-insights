@@ -21,6 +21,8 @@ type CacheBuilder struct {
 	DataDir   string // 数据目录路径
 }
 
+var cacheRefreshMu sync.Mutex
+
 type projectFileInfo struct {
 	RelPath string
 	AbsPath string
@@ -159,6 +161,47 @@ func (cb *CacheBuilder) BuildFullCache() error {
 	}
 
 	Info("缓存构建完成", "messages", cache.TotalMessages, "sessions", cache.TotalSessions)
+	return nil
+}
+
+func refreshGlobalCache(force bool) error {
+	cacheRefreshMu.Lock()
+	defer cacheRefreshMu.Unlock()
+
+	if err := os.MkdirAll(cfg.CacheDir, 0755); err != nil {
+		return fmt.Errorf("创建缓存目录失败: %w", err)
+	}
+
+	cachePath := filepath.Join(cfg.CacheDir, "cache.db")
+	builder := &CacheBuilder{
+		CachePath: cachePath,
+		DataDir:   cfg.DataDir,
+	}
+
+	if force || builder.NeedsRebuild() {
+		Info("正在构建缓存...", "cache_path", cachePath, "force", force)
+		start := time.Now()
+		if err := builder.BuildFullCache(); err != nil {
+			Error("缓存构建失败", "error", err.Error())
+			return fmt.Errorf("构建缓存失败: %w", err)
+		}
+		elapsed := time.Since(start)
+		Info("缓存构建完成", "duration_sec", elapsed.Seconds())
+	} else {
+		Info("使用现有缓存", "cache_path", cachePath)
+	}
+
+	cache, err := LoadCacheFile(cachePath)
+	if err != nil {
+		Error("加载缓存失败", "error", err.Error())
+		return fmt.Errorf("加载缓存失败: %w", err)
+	}
+
+	globalCache = cache
+	Info("缓存已加载",
+		"messages", globalCache.TotalMessages,
+		"sessions", globalCache.TotalSessions,
+	)
 	return nil
 }
 

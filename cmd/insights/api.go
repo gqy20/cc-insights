@@ -562,6 +562,9 @@ func dashboardValidationEnabled() bool {
 
 func buildDashboardData(tf TimeFilter, preset string) (*DashboardData, string, error) {
 	if globalCache != nil {
+		if err := refreshGlobalCacheIfRulesChanged(); err != nil {
+			Warn("Bash 规则刷新失败，继续尝试现有缓存", "error", err.Error())
+		}
 		data, err := buildDataFromCache(tf, preset)
 		if err == nil {
 			return data, "cache", nil
@@ -574,6 +577,21 @@ func buildDashboardData(tf TimeFilter, preset string) (*DashboardData, string, e
 		return nil, "parsing", err
 	}
 	return data, "parsing", nil
+}
+
+func refreshGlobalCacheIfRulesChanged() error {
+	if globalCache == nil {
+		return nil
+	}
+	rulesHash, err := currentBashRulesHash()
+	if err != nil {
+		return err
+	}
+	if globalCache.BashRulesHash == rulesHash {
+		return nil
+	}
+	Info("Bash 命令规则已变更，刷新缓存")
+	return refreshGlobalCache(false)
 }
 
 // sendJSON 发送 JSON 响应

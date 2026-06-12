@@ -265,7 +265,34 @@ func statsAPIHandler(w http.ResponseWriter, r *http.Request) {
 // reloadHandler 重新加载数据
 func reloadHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	io.WriteString(w, `{"status": "ok", "message": "数据已刷新"}`)
+	if r.Method != http.MethodGet && r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		io.WriteString(w, `{"status":"error","message":"method not allowed"}`)
+		return
+	}
+
+	start := time.Now()
+	force := r.URL.Query().Get("force") == "1" || r.URL.Query().Get("force") == "true"
+	if err := refreshGlobalCache(force); err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		fmt.Fprintf(w, `{"status":"error","message":%q}`, err.Error())
+		return
+	}
+
+	messages, sessions, rulesHash := 0, 0, ""
+	if globalCache != nil {
+		messages = globalCache.TotalMessages
+		sessions = globalCache.TotalSessions
+		rulesHash = globalCache.BashRulesHash
+	}
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":       "ok",
+		"message":      "数据已刷新",
+		"duration_sec": time.Since(start).Seconds(),
+		"messages":     messages,
+		"sessions":     sessions,
+		"rules_hash":   rulesHash,
+	})
 }
 
 // toJSON 简单的 JSON 序列化
@@ -276,45 +303,5 @@ func toJSON(v interface{}) string {
 
 // initializeCache 初始化缓存系统
 func initializeCache() error {
-	// 确保缓存目录存在
-	if err := os.MkdirAll(cfg.CacheDir, 0755); err != nil {
-		return fmt.Errorf("创建缓存目录失败: %w", err)
-	}
-
-	cachePath := filepath.Join(cfg.CacheDir, "cache.db")
-	builder := &CacheBuilder{
-		CachePath: cachePath,
-		DataDir:   cfg.DataDir,
-	}
-
-	// 检查是否需要重建缓存
-	if builder.NeedsRebuild() {
-		Info("正在构建缓存...", "cache_path", cachePath)
-		start := time.Now()
-
-		if err := builder.BuildFullCache(); err != nil {
-			Error("缓存构建失败", "error", err.Error())
-			return fmt.Errorf("构建缓存失败: %w", err)
-		}
-
-		elapsed := time.Since(start)
-		Info("缓存构建完成", "duration_sec", elapsed.Seconds())
-	} else {
-		Info("使用现有缓存", "cache_path", cachePath)
-	}
-
-	// 加载缓存到全局变量
-	cache, err := LoadCacheFile(cachePath)
-	if err != nil {
-		Error("加载缓存失败", "error", err.Error())
-		return fmt.Errorf("加载缓存失败: %w", err)
-	}
-
-	globalCache = cache
-	Info("缓存已加载",
-		"messages", globalCache.TotalMessages,
-		"sessions", globalCache.TotalSessions,
-	)
-
-	return nil
+	return refreshGlobalCache(false)
 }
