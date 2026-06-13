@@ -1,5 +1,7 @@
 # Codex 本地日志分析实现方案
 
+> 归档说明：本文是未来多数据源 provider 的调研材料，不属于当前 Claude Code 诊断主线。当前项目优先完善 `rec` 诊断体系、证据下钻和 Web 展示。
+
 本文档基于当前机器的 `~/.codex` 实际目录与 `cc-insights` 现有 Claude Code 解析架构整理，目标是为后续实现 Codex 数据源支持提供可执行的设计依据。
 
 结论：Codex 可以分析，且能复用当前大部分 dashboard、API、缓存、聚合与图表逻辑。主要工作不在前端，而在新增一个 Codex provider/parser，把 `~/.codex/sessions/**/*.jsonl` 映射到现有 `ProjectAggregate`。

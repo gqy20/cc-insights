@@ -111,11 +111,20 @@ go build -trimpath -tags=prod -o cc-insights.exe ./cmd/insights
 
 ```
 ~/.claude/
-├── history.jsonl        # 命令历史 (2.5MB, 10K+条)
-├── stats-cache.json     # 统计缓存 (12.5KB)
+├── history.jsonl        # 命令历史
+├── stats-cache.json     # 统计缓存
 ├── projects/            # Claude Code 项目会话 JSONL
-└── debug/               # Debug 日志目录 (1.1GB, 2848个文件)
+├── tasks/               # Task 数据
+└── debug/               # 旧版 Debug 日志目录
 ```
+
+## 📚 项目文档
+
+- [架构说明](docs/architecture.md)
+- [诊断体系](docs/diagnostics.md)
+- [路线图](docs/roadmap.md)
+- [容错与降级策略](docs/fallbacks.md)
+- [Codex 数据源调研](docs/archive/codex.md)
 
 ## 🎨 Dashboard 预览
 
