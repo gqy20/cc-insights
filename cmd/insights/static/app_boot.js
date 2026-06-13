@@ -2,7 +2,11 @@ function initDashboard() {
     installChartTracking();
     setupChartResizeListener();
     setupEventListeners();
-    loadData('preset=30d');
+    syncFilterControls();
+    loadTimelineIndex().catch(error => {
+        console.warn('时间轴加载失败', error);
+    });
+    loadData();
 }
 
 // 初始化

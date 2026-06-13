@@ -1,5 +1,25 @@
-// 当前时间范围
+// 全局工作台状态。所有图表、诊断和下钻请求都从同一组 filters 生成。
 let currentPreset = '30d';
+let dashboardAbortController = null;
+let filterDebounceTimer = null;
+
+const dashboardState = {
+    filters: {
+        preset: '30d',
+        start: '',
+        end: '',
+        project: '',
+        tool: '',
+        model: '',
+        reason: '',
+        limit: 12,
+        samples: 8,
+        detail: true
+    },
+    data: {},
+    timelineDays: [],
+    selectedDiagnosticID: ''
+};
 
 // 趣味加载文案
 const loadingTips = [
@@ -17,10 +37,10 @@ const loadingTips = [
 
 // 加载阶段提示
 const loadingStages = [
-    "正在读取数据文件...",
-    "正在解析历史记录...",
-    "正在分析 MCP 工具调用...",
-    "正在生成图表...",
+    "正在读取聚合缓存...",
+    "正在刷新交互式 API...",
+    "正在同步诊断和下钻数据...",
+    "正在更新图表...",
     "即将完成..."
 ];
 

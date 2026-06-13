@@ -197,6 +197,24 @@ GET /api/data?preset=custom&start=2025-12-01&end=2026-01-08
 
 旧版 API（保持兼容），返回全部数据。
 
+### 交互式分析 API
+
+用于大屏联动和局部下钻：
+
+```
+GET /api/overview?preset=7d
+GET /api/diagnostics?preset=7d&detail=true
+GET /api/diagnostics?preset=7d&id=performance.slowest_call
+GET /api/detail/failures?preset=7d&reason=timeout
+GET /api/detail/commands?preset=7d&family=test
+GET /api/detail/tokens?preset=7d&project=cc-insights
+GET /api/detail/sessions?preset=7d&session=<id>
+GET /api/detail/tools?preset=7d&tool=Bash
+GET /api/timeline?preset=all
+```
+
+这些接口返回统一 `meta`，包含数据源、缓存版本、时间范围、过滤条件和运行耗时。
+
 ## 🔧 CLI 用法
 
 ```

@@ -65,6 +65,14 @@ func runWebServer() error {
 	mux.HandleFunc("/", indexHandler)
 	mux.HandleFunc("/dashboard", dashboardPageHandler)
 	mux.HandleFunc("/api/data", handleDataAPI)
+	mux.HandleFunc("/api/overview", handleOverviewAPI)
+	mux.HandleFunc("/api/diagnostics", handleDiagnosticsAPI)
+	mux.HandleFunc("/api/detail/failures", handleDetailFailuresAPI)
+	mux.HandleFunc("/api/detail/commands", handleDetailCommandsAPI)
+	mux.HandleFunc("/api/detail/tokens", handleDetailTokensAPI)
+	mux.HandleFunc("/api/detail/sessions", handleDetailSessionsAPI)
+	mux.HandleFunc("/api/detail/tools", handleDetailToolsAPI)
+	mux.HandleFunc("/api/timeline", handleTimelineAPI)
 	mux.HandleFunc("/api/stats", statsAPIHandler)
 	mux.HandleFunc("/api/reload", reloadHandler)
 
@@ -159,48 +167,72 @@ func dashboardPageHandler(w http.ResponseWriter, r *http.Request) {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Claude Code Dashboard</title>
-    <link rel="stylesheet" href="/static/app.css">
+    <link rel="stylesheet" href="/static/app.css?v=interactive">
 </head>
 <body>
     <div class="container">
-        <aside class="sidebar">
-            <h2>⏱️ 时间范围</h2>
-            <h3>快捷选择</h3>
-            <div class="preset-buttons">
-                <button class="preset-btn" data-preset="24h">最近 24 小时</button>
-                <button class="preset-btn" data-preset="7d">最近 7 天</button>
-                <button class="preset-btn active" data-preset="30d">最近 30 天</button>
-                <button class="preset-btn" data-preset="90d">最近 90 天</button>
-                <button class="preset-btn" data-preset="all">全部数据</button>
-            </div>
-            <h3>分析分组</h3>
-            <nav class="section-nav" aria-label="分析分组">
-                <a href="#section-overview">概览</a>
-                <a href="#section-usage">使用</a>
-                <a href="#section-quality">质量</a>
-                <a href="#section-cost">成本</a>
-                <a href="#section-runtime">运行时</a>
-            </nav>
-            <h3>自定义范围</h3>
-            <div class="custom-range">
-                <label>开始日期</label>
-                <input type="date" id="startDate">
-                <label>结束日期</label>
-                <input type="date" id="endDate">
-                <button onclick="applyCustomRange()">应用范围</button>
-            </div>
-            <div class="stats-info" id="statsInfo">
-                <p><strong>最后更新:</strong> <span id="lastUpdate">-</span></p>
-                <p><strong>时间范围:</strong> <span id="rangeInfo">全部</span></p>
-                <p><strong>记录数:</strong> <span id="recordCount">-</span></p>
-            </div>
-        </aside>
         <main class="main-content">
             <div class="content-inner">
-                <div class="page-header">
-                    <h1>📊 Claude Code Dashboard</h1>
-                    <p>按时间范围汇总 Claude Code 使用、成本、失败和运行时信号。</p>
-                </div>
+                <header class="dashboard-header">
+                    <div class="page-header">
+                        <p class="eyebrow">Claude Code 使用诊断</p>
+                        <h1>把历史会话变成可下钻的优化证据</h1>
+                        <p>统一时间范围驱动概览、失败、命令、Token、工具和 session 分析。</p>
+                    </div>
+                    <div class="status-strip" aria-live="polite">
+                        <div><span>最后更新</span><strong id="lastUpdate">-</strong></div>
+                        <div><span>数据来源</span><strong id="dataSource">-</strong></div>
+                        <div><span>耗时</span><strong id="runtimeInfo">-</strong></div>
+                    </div>
+                </header>
+
+                <section class="control-panel" aria-label="全局筛选">
+                    <div class="control-row">
+                        <div class="preset-buttons" role="group" aria-label="快捷时间范围">
+                            <button class="preset-btn" data-preset="24h">24h</button>
+                            <button class="preset-btn" data-preset="7d">7d</button>
+                            <button class="preset-btn active" data-preset="30d">30d</button>
+                            <button class="preset-btn" data-preset="90d">90d</button>
+                            <button class="preset-btn" data-preset="all">All</button>
+                        </div>
+                        <div class="custom-range">
+                            <label for="startDate">开始</label>
+                            <input type="date" id="startDate">
+                            <label for="endDate">结束</label>
+                            <input type="date" id="endDate">
+                            <button id="applyRangeBtn" type="button">应用</button>
+                        </div>
+                    </div>
+                    <div class="timeline-control">
+                        <div>
+                            <label for="timelineSlider">时间轴</label>
+                            <p id="timelineLabel">正在加载时间轴</p>
+                        </div>
+                        <input type="range" id="timelineSlider" min="0" max="0" value="0" disabled>
+                        <select id="windowSize" aria-label="滑动窗口大小">
+                            <option value="1">1 天</option>
+                            <option value="7" selected>7 天</option>
+                            <option value="30">30 天</option>
+                            <option value="90">90 天</option>
+                        </select>
+                    </div>
+                    <div class="filter-row">
+                        <input id="projectFilter" type="search" placeholder="项目过滤">
+                        <input id="toolFilter" type="search" placeholder="工具过滤">
+                        <input id="modelFilter" type="search" placeholder="模型过滤">
+                        <input id="reasonFilter" type="search" placeholder="失败原因过滤">
+                        <button id="clearFiltersBtn" type="button">清空过滤</button>
+                    </div>
+                    <nav class="section-nav" aria-label="分析分组">
+                        <a href="#section-overview">概览</a>
+                        <a href="#section-diagnostics">诊断</a>
+                        <a href="#section-details">下钻</a>
+                        <a href="#section-usage">使用</a>
+                        <a href="#section-quality">质量</a>
+                        <a href="#section-cost">成本</a>
+                        <a href="#section-runtime">运行时</a>
+                    </nav>
+                </section>
                 <div id="errorMessage"></div>
                 <div id="loadingIndicator" class="loading">
                     <div class="loading-container">
@@ -221,12 +253,26 @@ func dashboardPageHandler(w http.ResponseWriter, r *http.Request) {
                     </div>
                     <div id="summaryGrid" class="summary-grid"></div>
                 </section>
+                <section id="section-diagnostics" class="diagnostics-panel" style="display:none;">
+                    <div class="section-heading">
+                        <h2>诊断建议</h2>
+                        <p>点击建议可以把下钻条件同步到详情面板。</p>
+                    </div>
+                    <div id="diagnosticList" class="diagnostic-list"></div>
+                </section>
+                <section id="section-details" class="details-panel" style="display:none;">
+                    <div class="section-heading">
+                        <h2>证据下钻</h2>
+                        <p id="detailContext">跟随当前时间和过滤条件。</p>
+                    </div>
+                    <div id="detailGrid" class="detail-grid"></div>
+                </section>
                 <div id="chartsContainer" class="charts-container" style="display:none;"></div>
             </div>
         </main>
     </div>
-    <script src="/static/echarts.min.js" defer></script>
-    <script src="/static/app.js" defer></script>
+    <script src="/static/echarts.min.js?v=interactive" defer></script>
+    <script src="/static/app.js?v=interactive" defer></script>
 </body>
 </html>`
 

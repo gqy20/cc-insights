@@ -64,3 +64,18 @@ CLI 下钻命令优先复用诊断缓存，避免因为当前 Claude Code 会话
 ## Web Dashboard
 
 Web Dashboard 负责可视化趋势、运行时统计和分析结果。当前主线是让 Web 后续承载 `rec` 的结构化诊断，而不是继续堆孤立图表。
+
+## 交互式 API
+
+为大屏联动新增的后端接口按“概览、诊断、详情、时间轴”分层：
+
+- `/api/overview`：轻量汇总，服务顶部指标、趋势和 Top 列表。
+- `/api/diagnostics`：结构化 `rec` 诊断，支持 `detail`、`id`、`severity`、`target` 等过滤。
+- `/api/detail/failures`：失败样例和原因下钻。
+- `/api/detail/commands`：Bash 命令和命令族下钻。
+- `/api/detail/tokens`：Token、模型、项目和 Session 成本下钻。
+- `/api/detail/sessions`：Session 生命周期下钻。
+- `/api/detail/tools`：工具性能和慢调用下钻。
+- `/api/timeline`：全局时间轴数据，服务 slider / brush。
+
+这些接口复用现有缓存和聚合结构，先采用时间范围查询后内存过滤。若后续大屏滑动出现性能瓶颈，再增加 project/session/tool/reason 维度索引或响应 LRU。

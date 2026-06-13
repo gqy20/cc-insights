@@ -297,102 +297,247 @@ function setupChartResizeListener() {
     });
 }
 
-// 设置事件监听
 function setupEventListeners() {
-    // 预设按钮点击
     document.querySelectorAll('.preset-btn').forEach(btn => {
-        btn.addEventListener('click', function() {
-            const preset = this.dataset.preset;
-            setActivePreset(preset);
-            loadData(`preset=${preset}`);
+        btn.addEventListener('click', () => {
+            setFilter({ preset: btn.dataset.preset, start: '', end: '' }, { immediate: true });
         });
     });
 
-    // 设置默认日期
     const today = new Date().toISOString().split('T')[0];
-    const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-    document.getElementById('endDate').value = today;
-    document.getElementById('startDate').value = weekAgo;
+    const weekAgo = dateOffset(today, -6);
+    setInputValue('endDate', today);
+    setInputValue('startDate', weekAgo);
+
+    bindClick('applyRangeBtn', applyCustomRange);
+    bindClick('clearFiltersBtn', clearSecondaryFilters);
+    bindInputFilter('projectFilter', 'project');
+    bindInputFilter('toolFilter', 'tool');
+    bindInputFilter('modelFilter', 'model');
+    bindInputFilter('reasonFilter', 'reason');
+
+    const slider = document.getElementById('timelineSlider');
+    if (slider) {
+        slider.addEventListener('input', () => applyTimelineWindow(Number(slider.value)));
+    }
+    const windowSize = document.getElementById('windowSize');
+    if (windowSize) {
+        windowSize.addEventListener('change', () => {
+            const currentIndex = Number(document.getElementById('timelineSlider')?.value || 0);
+            applyTimelineWindow(currentIndex);
+        });
+    }
 }
 
-// 设置当前激活的预设
-function setActivePreset(preset) {
-    currentPreset = preset;
-    document.querySelectorAll('.preset-btn').forEach(btn => {
-        btn.classList.remove('active');
-        if (btn.dataset.preset === preset) {
-            btn.classList.add('active');
-        }
+function bindClick(id, handler) {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('click', handler);
+}
+
+function bindInputFilter(id, key) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener('input', () => {
+        setFilter({ [key]: el.value.trim() }, { immediate: false });
     });
 }
 
-// 应用自定义范围
-function applyCustomRange() {
-    const startDate = document.getElementById('startDate').value;
-    const endDate = document.getElementById('endDate').value;
+function setFilter(next, options = {}) {
+    dashboardState.filters = { ...dashboardState.filters, ...next };
+    currentPreset = dashboardState.filters.preset || 'custom';
+    syncFilterControls();
+    scheduleLoad(Boolean(options.immediate));
+}
 
+function setActivePreset(preset) {
+    currentPreset = preset;
+    dashboardState.filters.preset = preset;
+    syncFilterControls();
+}
+
+function syncFilterControls() {
+    document.querySelectorAll('.preset-btn').forEach(btn => {
+        btn.classList.toggle('active', dashboardState.filters.preset === btn.dataset.preset && !dashboardState.filters.start && !dashboardState.filters.end);
+    });
+    setInputValue('startDate', dashboardState.filters.start);
+    setInputValue('endDate', dashboardState.filters.end);
+    setInputValue('projectFilter', dashboardState.filters.project);
+    setInputValue('toolFilter', dashboardState.filters.tool);
+    setInputValue('modelFilter', dashboardState.filters.model);
+    setInputValue('reasonFilter', dashboardState.filters.reason);
+}
+
+function setInputValue(id, value) {
+    const input = document.getElementById(id);
+    if (input && input.value !== value) input.value = value || '';
+}
+
+function applyCustomRange() {
+    const startDate = document.getElementById('startDate')?.value || '';
+    const endDate = document.getElementById('endDate')?.value || '';
     if (!startDate || !endDate) {
         showError('请选择开始和结束日期');
         return;
     }
-
     if (new Date(startDate) > new Date(endDate)) {
         showError('开始日期不能晚于结束日期');
         return;
     }
-
-    // 清除预设按钮的激活状态
-    document.querySelectorAll('.preset-btn').forEach(btn => {
-        btn.classList.remove('active');
-    });
-
-    loadData(`preset=custom&start=${startDate}&end=${endDate}`);
+    setFilter({ preset: 'custom', start: startDate, end: endDate }, { immediate: true });
 }
 
-// 加载数据
-async function loadData(params) {
-    // 从参数中解析预设
-    const urlParams = new URLSearchParams(params);
-    const preset = urlParams.get('preset') || 'all';
+function clearSecondaryFilters() {
+    dashboardState.selectedDiagnosticID = '';
+    setFilter({ project: '', tool: '', model: '', reason: '' }, { immediate: true });
+}
 
+function scheduleLoad(immediate) {
+    clearTimeout(filterDebounceTimer);
+    filterDebounceTimer = setTimeout(() => loadData(), immediate ? 0 : 350);
+}
+
+async function loadTimelineIndex() {
+    const result = await fetchInteractive('/api/timeline', { preset: 'all', limit: 5000 }, null);
+    dashboardState.timelineDays = (result.data && result.data.days) || [];
+    renderTimelineControl();
+}
+
+async function loadData(params) {
+    if (params) {
+        const parsed = Object.fromEntries(new URLSearchParams(params).entries());
+        dashboardState.filters = { ...dashboardState.filters, ...parsed };
+    }
+    const preset = dashboardState.filters.preset || '30d';
     showLoading(true, preset);
     hideError();
 
-    // 分阶段更新加载提示
+    if (dashboardAbortController) {
+        dashboardAbortController.abort();
+    }
+    dashboardAbortController = new AbortController();
+    const signal = dashboardAbortController.signal;
+
     let stageIndex = 0;
     const stageInterval = setInterval(() => {
         if (stageIndex < loadingStages.length) {
             updateLoadingProgress(loadingStages[stageIndex]);
             stageIndex++;
         }
-    }, 800); // 每800毫秒更新一次阶段
+    }, 500);
 
     try {
-        const response = await fetch(`/api/data?${params}`);
-        const result = await response.json();
+        const filterParams = buildQueryParams();
+        const legacyParams = buildQueryParams({ legacy: true });
+        const [legacy, overview, diagnostics, failures, commands, tokens, sessions, tools] = await Promise.all([
+            fetchLegacyData(legacyParams, signal),
+            fetchInteractive('/api/overview', filterParams, signal),
+            fetchInteractive('/api/diagnostics', { ...filterParams, detail: 'true' }, signal),
+            fetchInteractive('/api/detail/failures', filterParams, signal),
+            fetchInteractive('/api/detail/commands', filterParams, signal),
+            fetchInteractive('/api/detail/tokens', filterParams, signal),
+            fetchInteractive('/api/detail/sessions', filterParams, signal),
+            fetchInteractive('/api/detail/tools', filterParams, signal)
+        ]);
 
-        // 停止阶段更新
         clearInterval(stageInterval);
-
-        // 显示最后阶段
         updateLoadingProgress(loadingStages[loadingStages.length - 1]);
 
-        if (!result.success) {
-            throw new Error(result.error);
-        }
-
-        // 短暂延迟以显示"即将完成"
-        await new Promise(resolve => setTimeout(resolve, 300));
-
-        updateStatsInfo(result.data);
-        renderCharts(result.data);
-
+        dashboardState.data = { legacy, overview, diagnostics, failures, commands, tokens, sessions, tools };
+        updateStatsInfo(legacy.data, overview.meta);
+        renderSummary(legacy.data, overview.data);
+        renderDiagnostics(diagnostics.data);
+        renderDetails({ failures: failures.data, commands: commands.data, tokens: tokens.data, sessions: sessions.data, tools: tools.data });
+        renderCharts(legacy.data, { skipSummary: true });
     } catch (error) {
         clearInterval(stageInterval);
-        showError('加载数据失败: ' + error.message);
+        if (error.name !== 'AbortError') {
+            showError('加载数据失败: ' + error.message);
+        }
     } finally {
-        showLoading(false);
+        if (!signal.aborted) {
+            showLoading(false);
+        }
     }
+}
+
+function buildQueryParams(options = {}) {
+    const params = {};
+    const filter = dashboardState.filters;
+    const add = (key, value) => {
+        if (value !== undefined && value !== null && String(value).trim() !== '') {
+            params[key] = String(value).trim();
+        }
+    };
+    add('preset', filter.preset || '30d');
+    add('start', filter.start);
+    add('end', filter.end);
+    if (!options.legacy) {
+        add('limit', filter.limit);
+        add('samples', filter.samples);
+        add('project', filter.project);
+        add('tool', filter.tool);
+        add('model', filter.model);
+        add('reason', filter.reason);
+        if (filter.detail) add('detail', 'true');
+        if (dashboardState.selectedDiagnosticID) add('id', dashboardState.selectedDiagnosticID);
+    }
+    return params;
+}
+
+function toQueryString(params) {
+    return new URLSearchParams(params).toString();
+}
+
+async function fetchLegacyData(params, signal) {
+    const response = await fetch(`/api/data?${toQueryString(params)}`, { signal });
+    const result = await response.json();
+    if (!result.success) throw new Error(result.error || '旧版数据接口返回失败');
+    return result;
+}
+
+async function fetchInteractive(endpoint, params, signal) {
+    const response = await fetch(`${endpoint}?${toQueryString(params)}`, signal ? { signal } : undefined);
+    const result = await response.json();
+    if (!result.success) throw new Error(result.error || `${endpoint} 返回失败`);
+    return result;
+}
+
+function renderTimelineControl() {
+    const slider = document.getElementById('timelineSlider');
+    const label = document.getElementById('timelineLabel');
+    const days = dashboardState.timelineDays;
+    if (!slider || !label) return;
+    if (!days.length) {
+        slider.disabled = true;
+        label.textContent = '没有可滑动的历史日期';
+        return;
+    }
+    slider.disabled = false;
+    slider.min = '0';
+    slider.max = String(days.length - 1);
+    slider.value = String(days.length - 1);
+    label.textContent = `${days[0].date} 至 ${days[days.length - 1].date}`;
+}
+
+function applyTimelineWindow(index) {
+    const days = dashboardState.timelineDays;
+    if (!days.length || !days[index]) return;
+    const size = Number(document.getElementById('windowSize')?.value || 7);
+    const end = days[index].date;
+    const startIndex = Math.max(0, index - size + 1);
+    const start = days[startIndex].date;
+    const label = document.getElementById('timelineLabel');
+    if (label) {
+        const day = days[index];
+        label.textContent = `${start} 至 ${end}，消息 ${formatNumber(day.messages)}，Token ${compactNumber(day.tokens)}`;
+    }
+    setFilter({ preset: 'custom', start, end }, { immediate: false });
+}
+
+function dateOffset(dateString, offset) {
+    const date = new Date(`${dateString}T00:00:00`);
+    date.setDate(date.getDate() + offset);
+    return date.toISOString().split('T')[0];
 }
 
 // 更新加载进度文本
@@ -404,8 +549,12 @@ function updateLoadingProgress(text) {
 }
 
 // 更新统计信息
-function updateStatsInfo(data) {
-    document.getElementById('lastUpdate').textContent = data.timestamp;
+function updateStatsInfo(data, meta) {
+    document.getElementById('lastUpdate').textContent = data.timestamp || (meta && meta.generated_at) || '-';
+    const sourceEl = document.getElementById('dataSource');
+    if (sourceEl) sourceEl.textContent = meta && meta.source ? meta.source : '-';
+    const runtimeEl = document.getElementById('runtimeInfo');
+    if (runtimeEl) runtimeEl.textContent = meta && Number.isFinite(meta.runtime_ms) ? `${meta.runtime_ms} ms` : '-';
 
     let rangeText = '全部';
     if (data.time_range.preset === 'custom') {
@@ -419,31 +568,22 @@ function updateStatsInfo(data) {
     } else if (data.time_range.preset === '90d') {
         rangeText = '最近 90 天';
     }
-    document.getElementById('rangeInfo').textContent = rangeText;
     document.getElementById('summaryRange').textContent = rangeText;
 
     const totalRecords = (data.commands || []).reduce((sum, cmd) => sum + cmd.count, 0);
-    document.getElementById('recordCount').textContent = totalRecords.toLocaleString();
-
-    // 更新会话统计信息
-    if (data.sessions) {
-        const sessionInfo = document.getElementById('sessionInfo');
-        if (sessionInfo) {
-            sessionInfo.textContent =
-                `总会话数: ${data.sessions.total_sessions.toLocaleString()} | ` +
-                `峰值: ${data.sessions.peak_date} (${data.sessions.peak_count}) | ` +
-                `谷值: ${data.sessions.valley_date} (${data.sessions.valley_count})`;
-        }
-    }
+    const context = document.getElementById('detailContext');
+    if (context) context.textContent = `${rangeText}，Slash 命令 ${totalRecords.toLocaleString()} 次。`;
 }
 
 // 渲染图表
-function renderCharts(data) {
+function renderCharts(data, options = {}) {
     const container = document.getElementById('chartsContainer');
     disposeCharts();
     container.replaceChildren();
 
-    renderSummary(data);
+    if (!options.skipSummary) {
+        renderSummary(data);
+    }
 
     chartGroups.forEach(group => {
         const section = createChartSection(group);
@@ -472,35 +612,202 @@ function renderCharts(data) {
     requestAnimationFrame(resizeCharts);
 }
 
-function renderSummary(data) {
+function renderSummary(data, overview) {
     const summaryPanel = document.getElementById('section-overview');
     const summaryGrid = document.getElementById('summaryGrid');
-    const totalCommands = (data.commands || []).reduce((sum, cmd) => sum + cmd.count, 0);
-    const totalMessages = data.project_stats ? data.project_stats.total_messages : (data.daily_trend || { counts: [] }).counts.reduce((sum, count) => sum + count, 0);
-    const totalSessions = data.sessions ? data.sessions.total_sessions : 0;
-    const totalTools = data.tool_analysis ? data.tool_analysis.total_calls : (data.mcp_tools || []).reduce((sum, tool) => sum + tool.count, 0);
-    const failureRate = data.tool_analysis && data.tool_analysis.total_calls > 0
+    const summary = overview && overview.summary ? overview.summary : {};
+    const top = overview && overview.top ? overview.top : {};
+    const totalCommands = summary.commands || (data.commands || []).reduce((sum, cmd) => sum + cmd.count, 0);
+    const totalMessages = summary.messages || (data.project_stats ? data.project_stats.total_messages : (data.daily_trend || { counts: [] }).counts.reduce((sum, count) => sum + count, 0));
+    const totalSessions = summary.sessions || (data.sessions ? data.sessions.total_sessions : 0);
+    const totalTools = summary.tool_calls || (data.tool_analysis ? data.tool_analysis.total_calls : (data.mcp_tools || []).reduce((sum, tool) => sum + tool.count, 0));
+    const failureRate = Number(summary.failure_rate) > 0
+        ? `${summary.failure_rate.toFixed(1)}%`
+        : data.tool_analysis && data.tool_analysis.total_calls > 0
         ? `${((data.tool_analysis.total_failures / data.tool_analysis.total_calls) * 100).toFixed(1)}%`
         : '-';
-    const totalTokens = data.cost_analysis && data.cost_analysis.totals
+    const totalTokens = summary.tokens || (data.cost_analysis && data.cost_analysis.totals
         ? data.cost_analysis.totals.total_tokens
-        : (data.model_usage || []).reduce((sum, model) => sum + model.tokens, 0);
-    const topProject = data.project_stats && data.project_stats.projects && data.project_stats.projects[0]
+        : (data.model_usage || []).reduce((sum, model) => sum + model.tokens, 0));
+    const topProject = top.projects && top.projects[0]
+        ? shortPath(top.projects[0].project)
+        : data.project_stats && data.project_stats.projects && data.project_stats.projects[0]
         ? shortPath(data.project_stats.projects[0].project)
         : '-';
-    const topModel = data.model_usage && data.model_usage[0] ? shortModelName(data.model_usage[0].model) : '-';
+    const topModel = top.models && top.models[0]
+        ? shortModelName(top.models[0].model)
+        : data.model_usage && data.model_usage[0] ? shortModelName(data.model_usage[0].model) : '-';
 
     const cards = [
         { label: '消息数', value: formatNumber(totalMessages), meta: `${formatNumber(totalSessions)} 个会话` },
         { label: '命令调用', value: formatNumber(totalCommands), meta: `${(data.commands || []).length} 种命令` },
         { label: '工具调用', value: formatNumber(totalTools), meta: `失败率 ${failureRate}` },
         { label: 'Token', value: compactNumber(totalTokens), meta: `Top 模型 ${topModel}` },
-        { label: '活跃项目', value: topProject, meta: data.project_stats ? `${formatNumber(data.project_stats.projects.length)} 个项目` : '-' },
-        { label: 'MCP 工具', value: formatNumber((data.mcp_tools || []).length), meta: (data.mcp_tools && data.mcp_tools[0]) ? `${data.mcp_tools[0].server} / ${shortToolName(data.mcp_tools[0].tool)}` : '-' }
+        { label: '活跃项目', value: topProject, meta: `${formatNumber(summary.projects || (data.project_stats ? data.project_stats.projects.length : 0))} 个项目` },
+        { label: '诊断项', value: formatNumber((overview && overview.diagnostics && overview.diagnostics.total) || 0), meta: '可点击查看证据' }
     ];
 
     summaryGrid.replaceChildren(...cards.map(createSummaryCard));
     summaryPanel.style.display = '';
+}
+
+function renderDiagnostics(report) {
+    const panel = document.getElementById('section-diagnostics');
+    const list = document.getElementById('diagnosticList');
+    if (!panel || !list) return;
+
+    const items = report && Array.isArray(report.recommendations) ? report.recommendations : [];
+    if (items.length === 0) {
+        list.replaceChildren(createEmptyBlock('当前过滤条件下没有触发诊断建议。'));
+        panel.style.display = '';
+        return;
+    }
+
+    list.replaceChildren(...items.map(item => {
+        const card = document.createElement('button');
+        card.type = 'button';
+        card.className = 'diagnostic-card';
+        card.classList.toggle('active', dashboardState.selectedDiagnosticID === item.id);
+        card.addEventListener('click', () => {
+            dashboardState.selectedDiagnosticID = dashboardState.selectedDiagnosticID === item.id ? '' : item.id;
+            loadData();
+        });
+
+        const head = document.createElement('div');
+        head.className = 'diagnostic-card-head';
+        const title = document.createElement('strong');
+        title.textContent = item.title || item.id || '未命名诊断';
+        const badge = document.createElement('span');
+        badge.className = `severity-badge severity-${(item.severity || 'info').toLowerCase()}`;
+        badge.textContent = item.severity || 'info';
+        head.append(title, badge);
+
+        const desc = document.createElement('p');
+        desc.textContent = item.summary || item.description || '暂无说明';
+
+        const evidence = document.createElement('div');
+        evidence.className = 'diagnostic-evidence';
+        (item.evidence || []).slice(0, 3).forEach(ev => {
+            const chip = document.createElement('span');
+            chip.textContent = `${ev.label || ev.name || '证据'}: ${ev.value || '-'}`;
+            evidence.appendChild(chip);
+        });
+
+        card.append(head, desc, evidence);
+        return card;
+    }));
+    panel.style.display = '';
+}
+
+function renderDetails(details) {
+    const panel = document.getElementById('section-details');
+    const grid = document.getElementById('detailGrid');
+    if (!panel || !grid) return;
+
+    const blocks = [
+        createFailureDetail(details.failures),
+        createCommandDetail(details.commands),
+        createTokenDetail(details.tokens),
+        createSessionDetail(details.sessions),
+        createToolDetail(details.tools)
+    ].filter(Boolean);
+
+    grid.replaceChildren(...blocks);
+    panel.style.display = '';
+}
+
+function createFailureDetail(report) {
+    const summary = report && report.summary ? report.summary : {};
+    const samples = Array.isArray(report && report.samples) ? report.samples : [];
+    const items = [
+        metricLine('匹配样例', formatNumber(summary.matched_samples || samples.length)),
+        metricLine('可用样例', formatNumber(summary.available_samples || 0)),
+        listLine('主要原因', (summary.top_reasons || []).map(item => `${item.name} (${item.count})`))
+    ];
+    return createDetailCard('失败来源', 'reason 过滤会直接作用到失败样例。', items, samples.slice(0, 3).map(sample => sample.error || sample.message || sample.reason || sample.tool).filter(Boolean));
+}
+
+function createCommandDetail(report) {
+    const families = Array.isArray(report && report.by_family) ? report.by_family : [];
+    const risky = Array.isArray(report && report.risky_commands) ? report.risky_commands : [];
+    const items = [
+        metricLine('Bash 调用', formatNumber(report && report.total_calls)),
+        metricLine('命令数量', formatNumber(report && report.total_commands)),
+        listLine('高频命令族', families.slice(0, 3).map(item => `${item.family} (${item.call_count})`))
+    ];
+    return createDetailCard('Bash 命令', '用于判断是否需要封装 hooks 或稳定工具。', items, risky.slice(0, 3).map(item => `${item.command_name || item.command}: ${item.risk_level || '-'}`));
+}
+
+function createTokenDetail(report) {
+    const projects = Array.isArray(report && report.by_project) ? report.by_project : [];
+    const sessions = Array.isArray(report && report.by_session) ? report.by_session : [];
+    const models = Array.isArray(report && report.by_model) ? report.by_model : [];
+    const items = [
+        listLine('模型消耗', models.slice(0, 3).map(item => `${shortModelName(item.model)} ${compactNumber(item.total_tokens || item.tokens)}`)),
+        listLine('项目消耗', projects.slice(0, 3).map(item => `${shortPath(item.project)} ${compactNumber(item.total_tokens || item.tokens)}`))
+    ];
+    return createDetailCard('Token 与成本', '优先定位大头项目、模型和 session。', items, sessions.slice(0, 3).map(item => `${shortAgentID(item.session_id)} ${compactNumber(item.total_tokens || item.tokens)}`));
+}
+
+function createSessionDetail(report) {
+    const longRunning = Array.isArray(report && report.long_running) ? report.long_running : [];
+    const failures = Array.isArray(report && report.top_failures) ? report.top_failures : [];
+    const items = [
+        metricLine('匹配 Session', formatNumber(report && report.total_sessions)),
+        listLine('长会话', longRunning.slice(0, 3).map(item => `${shortAgentID(item.session_id)} ${formatDuration(item.duration_ms || 0)}`)),
+        listLine('失败会话', failures.slice(0, 3).map(item => `${shortAgentID(item.session_id)} ${item.tool_failure_count || 0} 次`))
+    ];
+    return createDetailCard('Session 生命周期', '用于观察任务拆分、长会话和失败集中度。', items, report && report.insights ? report.insights.slice(0, 3) : []);
+}
+
+function createToolDetail(report) {
+    const categories = Array.isArray(report && report.by_category) ? report.by_category : [];
+    const slowest = Array.isArray(report && report.slowest_calls) ? report.slowest_calls : [];
+    const items = [
+        listLine('工具耗时', categories.slice(0, 3).map(item => `${item.category || item.base_tool} ${formatDuration(item.total_duration_ms || 0)}`)),
+        listLine('最慢调用', slowest.slice(0, 3).map(item => `${item.category || item.tool} ${formatDuration(item.duration_ms || 0)}`))
+    ];
+    return createDetailCard('工具性能', '用于定位慢工具、错误率和缺失结果。', items, report && report.insights ? report.insights.slice(0, 3) : []);
+}
+
+function createDetailCard(title, description, metrics, notes) {
+    const card = document.createElement('article');
+    card.className = 'detail-card';
+    const h3 = document.createElement('h3');
+    h3.textContent = title;
+    const desc = document.createElement('p');
+    desc.textContent = description;
+    const body = document.createElement('div');
+    body.className = 'detail-lines';
+    metrics.forEach(line => body.appendChild(line));
+    const noteList = document.createElement('ul');
+    noteList.className = 'detail-notes';
+    (notes || []).forEach(note => {
+        const li = document.createElement('li');
+        li.textContent = note;
+        noteList.appendChild(li);
+    });
+    card.append(h3, desc, body);
+    if (noteList.children.length > 0) card.appendChild(noteList);
+    return card;
+}
+
+function metricLine(label, value) {
+    const row = document.createElement('div');
+    row.className = 'detail-line';
+    row.innerHTML = `<span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong>`;
+    return row;
+}
+
+function listLine(label, values) {
+    return metricLine(label, values && values.length ? values.join(' / ') : '-');
+}
+
+function createEmptyBlock(text) {
+    const block = document.createElement('div');
+    block.className = 'empty-block';
+    block.textContent = text;
+    return block;
 }
 
 function createSummaryCard(card) {

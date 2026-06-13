@@ -47,6 +47,7 @@
 - 在 Dashboard 中展示 `rec` finding。
 - 支持按 category、severity、target 过滤。
 - 为每条 finding 展示 trigger、root causes、examples、actions 和 drilldown command。
+- 使用 `/api/overview`、`/api/diagnostics`、`/api/detail/*` 和 `/api/timeline` 支撑大屏联动。
 
 ### P1: 规则配置沉淀
 
@@ -59,6 +60,7 @@
 - 关联失败样例与后续重试是否成功。
 - 识别“重复失败 -> 修正 -> 成功”的模式。
 - 为 `CLAUDE.md`、hook、MCP、tool 给出更具体的改进模板。
+- 逐步把恢复结果、重复失败和建议动作优先级纳入 `rec`。
 
 ## 暂缓方向
 
