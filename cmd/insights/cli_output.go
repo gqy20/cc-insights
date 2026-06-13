@@ -58,6 +58,33 @@ func writeTable(value any, w io.Writer) error {
 			}
 		}
 		writeInsights(w, v.Insights)
+	case cliRecommendationReport:
+		fmt.Fprintf(w, "Claude Code Diagnostics · %s\n\n", formatRange(v.TimeRange))
+		fmt.Fprintf(w, "诊断项: %s\n\n", formatInt(v.TotalFindings))
+		for _, item := range v.Recommendations {
+			fmt.Fprintf(w, "[%s] %s · %s\n", strings.ToUpper(item.Severity), item.Category, item.Title)
+			if item.Summary != "" {
+				fmt.Fprintf(w, "  %s\n", item.Summary)
+			}
+			if len(item.Evidence) > 0 {
+				fmt.Fprint(w, "  证据:")
+				for _, ev := range item.Evidence {
+					if ev.Value == "" {
+						continue
+					}
+					fmt.Fprintf(w, " %s=%s;", ev.Label, ev.Value)
+				}
+				fmt.Fprintln(w)
+			}
+			if item.Interpretation != "" {
+				fmt.Fprintf(w, "  解释: %s\n", item.Interpretation)
+			}
+			if len(item.NextSteps) > 0 {
+				fmt.Fprintf(w, "  排查: %s\n", strings.Join(item.NextSteps, " / "))
+			}
+			fmt.Fprintln(w)
+		}
+		writeInsights(w, v.Insights)
 	case cliInspectFailuresReport:
 		fmt.Fprintf(w, "Claude Code Failure Inspection · %s\n\n", formatRange(v.TimeRange))
 		writeFailureFilter(w, v.Filter)
@@ -120,6 +147,36 @@ func writeMarkdown(value any, w io.Writer) error {
 			for _, item := range v.RiskyCommands {
 				fmt.Fprintf(w, "- `%s`: %s, 失败率 %s%%, %s\n", item.CommandName, item.RiskLevel, formatFailureRate(item.FailureRate), item.RiskReason)
 			}
+		}
+		writeMarkdownInsights(w, v.Insights)
+	case cliRecommendationReport:
+		fmt.Fprintf(w, "# Claude Code Diagnostics\n\n范围: %s\n\n", formatRange(v.TimeRange))
+		fmt.Fprintf(w, "- 诊断项: %s\n\n", formatInt(v.TotalFindings))
+		for _, item := range v.Recommendations {
+			fmt.Fprintf(w, "## %s\n\n", item.Title)
+			fmt.Fprintf(w, "- 分类: `%s`\n- 严重度: `%s`\n- 置信度: `%s`\n", item.Category, item.Severity, item.Confidence)
+			if item.Summary != "" {
+				fmt.Fprintf(w, "- 摘要: %s\n", item.Summary)
+			}
+			if len(item.Evidence) > 0 {
+				fmt.Fprintln(w, "\n证据:")
+				for _, ev := range item.Evidence {
+					if ev.Value == "" {
+						continue
+					}
+					fmt.Fprintf(w, "- %s: %s\n", ev.Label, ev.Value)
+				}
+			}
+			if item.Interpretation != "" {
+				fmt.Fprintf(w, "\n解释:\n%s\n", item.Interpretation)
+			}
+			if len(item.NextSteps) > 0 {
+				fmt.Fprintln(w, "\n下一步:")
+				for _, step := range item.NextSteps {
+					fmt.Fprintf(w, "- %s\n", step)
+				}
+			}
+			fmt.Fprintln(w)
 		}
 		writeMarkdownInsights(w, v.Insights)
 	case cliInspectFailuresReport:

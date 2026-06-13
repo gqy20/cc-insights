@@ -75,6 +75,31 @@ type cliCommandReport struct {
 	Insights      []string                `json:"insights"`
 }
 
+type cliRecommendationReport struct {
+	TimeRange       TimeRangeInfo       `json:"time_range"`
+	TotalFindings   int                 `json:"total_findings"`
+	ByCategory      []nameCount         `json:"by_category"`
+	Recommendations []diagnosticFinding `json:"recommendations"`
+	Insights        []string            `json:"insights"`
+}
+
+type diagnosticFinding struct {
+	ID             string               `json:"id"`
+	Category       string               `json:"category"`
+	Severity       string               `json:"severity"`
+	Title          string               `json:"title"`
+	Summary        string               `json:"summary"`
+	Evidence       []diagnosticEvidence `json:"evidence"`
+	Interpretation string               `json:"interpretation"`
+	NextSteps      []string             `json:"next_steps"`
+	Confidence     string               `json:"confidence"`
+}
+
+type diagnosticEvidence struct {
+	Label string `json:"label"`
+	Value string `json:"value"`
+}
+
 func runCLI(args []string) error {
 	if len(args) > 0 && (args[0] == "help" || args[0] == "-h" || args[0] == "--help") {
 		printCLIHelp(os.Stdout)
@@ -98,7 +123,7 @@ func runCLI(args []string) error {
 		command = args[0]
 		commandArgs = args[1:]
 	}
-	if command != "sum" && command != "err" && command != "why" && command != "tok" && command != "cmd" {
+	if command != "sum" && command != "err" && command != "why" && command != "tok" && command != "cmd" && command != "rec" {
 		return fmt.Errorf("未知命令 %q，运行 cc-insights help 查看用法", command)
 	}
 
@@ -134,6 +159,8 @@ func runCLI(args []string) error {
 		return outputCLI(buildCLIInspectFailuresReport(data, opts), opts.Format, os.Stdout)
 	case "cmd":
 		return outputCLI(buildCLICommandReport(data, opts.Limit), opts.Format, os.Stdout)
+	case "rec":
+		return outputCLI(buildCLIRecommendationReport(data, opts.Limit), opts.Format, os.Stdout)
 	}
 	return nil
 }
@@ -144,7 +171,7 @@ func normalizeCLICommand(args []string) normalizedCommand {
 	}
 
 	switch args[0] {
-	case "sum", "err", "why", "tok", "cmd", "web":
+	case "sum", "err", "why", "tok", "cmd", "rec", "web":
 		return normalizedCommand{Name: args[0], Args: args}
 	default:
 		return normalizedCommand{Name: args[0], Args: args}
@@ -392,6 +419,7 @@ Usage:
   cc-insights tok -p 30d -j
   cc-insights why -p 7d --reason error_text -n 20 -j
   cc-insights cmd -p 30d -j
+  cc-insights rec -p 30d -j
   cc-insights web [--addr :8932]
 
 Commands:
@@ -400,6 +428,7 @@ Commands:
   why   failure samples with filters
   tok   token and cost breakdown
   cmd   bash command families
+  rec   diagnostic recommendations
   web   dashboard server
 
 Global flags:
