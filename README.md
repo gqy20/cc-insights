@@ -1,8 +1,28 @@
 # cc-insights
 
-> AI 驱动的 Claude Code 使用数据分析工具 - 可视化数据、发现模式、获取智能推荐
+> 面向 Claude Code 的使用诊断工具：把历史数据变成可解释的证据、判断和改进方向
 
-cc-insights 是一个 Claude Code 使用数据分析 CLI，默认输出可读摘要，也提供本地 Web Dashboard 展示使用统计，并支持时间范围筛选、缓存预聚合和并发解析优化。
+cc-insights 是一个 Claude Code 使用诊断 CLI，默认输出可读摘要，也提供本地 Web Dashboard 展示使用统计，并支持时间范围筛选、缓存预聚合和并发解析优化。
+
+## 核心理念
+
+cc-insights 的目标不是简单展示“用了多少 token、跑了多少命令”，而是帮助人和 AI 看懂 Claude Code 的真实工作方式，并据此优化项目协作方式。
+
+核心问题是：
+
+- Claude Code 经常失败在什么地方？
+- 是环境、路径、依赖、权限、网络、工具参数，还是任务拆分方式的问题？
+- 哪些项目、session、命令族和工具调用消耗了最多时间与 token？
+- 应该优化 `CLAUDE.md`、hooks、MCP 配置，还是应该把高频动作封装成更稳定的工具？
+
+因此 CLI 命令保持收敛：
+
+- `rec` 负责诊断、解释和给出下一步方向。
+- `why`、`cmd`、`tok`、`ses` 负责证据下钻。
+- `sum` 负责全局概览。
+- `web` 负责本地可视化。
+
+不会为每一种解释继续增加新命令。新的分析能力优先进入 `rec` 的诊断解释层，原始证据则通过少量稳定的下钻命令查看。这样既方便人阅读，也方便 AI 用 JSON / Markdown 输出继续分析。
 
 **核心特点：**
 - **单文件部署** - 静态资源嵌入二进制，完全便携
@@ -10,6 +30,7 @@ cc-insights 是一个 Claude Code 使用数据分析 CLI，默认输出可读摘
 - **跨平台兼容** - 静态链接构建，无外部依赖
 - **缓存加速** - 启动时构建 `~/.cc-insights/cache/cache.db`，API 优先读取预聚合数据
 - **AI 友好** - 支持 JSON / Markdown / Table 输出，便于 AI 直接调用分析结果
+- **诊断优先** - `rec` 输出异常、证据、解释、排查方向和可执行下钻命令
 
 ## ✨ 功能特性
 
@@ -34,7 +55,8 @@ cc-insights 是一个 Claude Code 使用数据分析 CLI，默认输出可读摘
   - `why` - 按原因、工具、模型、项目或 Session 下钻失败样例
   - `tok` - 输出 Token、模型、项目和会话消耗
   - `cmd` - 输出 Bash 命令族、具体命令和高风险命令
-  - `rec` - 输出诊断结论、证据和下一步排查方向
+  - `ses` - 输出 Session 生命周期、长会话、高失败会话和 Plan/Task 信号
+  - `rec` - 输出诊断结论、证据、解释、下一步排查方向和下钻命令
   - `web` - 启动 Web Dashboard
   - 支持 `--format json|markdown|table`
 
@@ -72,6 +94,7 @@ go build -trimpath -tags=prod -o cc-insights.exe ./cmd/insights
 ./cc-insights why -p 7d --reason error_text -n 20 -j
 ./cc-insights tok -p 30d -j
 ./cc-insights cmd -p 30d -j
+./cc-insights ses -p 30d -j
 ./cc-insights rec -p 30d -j
 ```
 
@@ -171,6 +194,7 @@ cc-insights err -p 7d -j
 cc-insights why -p 7d --reason error_text -n 20 -j
 cc-insights tok -p 30d -j
 cc-insights cmd -p 30d -j
+cc-insights ses -p 30d --session SESSION_ID -j
 cc-insights rec -p 30d -j
 cc-insights web [--addr :8932]
 
@@ -180,7 +204,8 @@ err  失败来源
 why  失败样例下钻
 tok  Token 与成本
 cmd  Bash 命令分析
-rec  诊断建议
+ses  Session 生命周期
+rec  诊断、解释与下钻命令
 web  Web Dashboard
 
 --data <path>     数据目录路径（默认: ~/.claude）
