@@ -63,6 +63,9 @@ func TestBuildCLIRecommendationReport(t *testing.T) {
 	if !hasFindingCategory(report.Recommendations, "workflow") {
 		t.Fatalf("expected workflow finding: %+v", report.Recommendations)
 	}
+	if !hasFindingWithDrilldown(report.Recommendations) {
+		t.Fatalf("expected drilldown commands: %+v", report.Recommendations)
+	}
 }
 
 func TestNormalizeCLICommandRecognizesRec(t *testing.T) {
@@ -75,6 +78,15 @@ func TestNormalizeCLICommandRecognizesRec(t *testing.T) {
 func hasFindingCategory(items []diagnosticFinding, category string) bool {
 	for _, item := range items {
 		if item.Category == category {
+			return true
+		}
+	}
+	return false
+}
+
+func hasFindingWithDrilldown(items []diagnosticFinding) bool {
+	for _, item := range items {
+		if len(item.Drilldowns) > 0 && item.Drilldowns[0].Command != "" {
 			return true
 		}
 	}

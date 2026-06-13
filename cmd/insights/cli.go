@@ -85,6 +85,27 @@ type cliRecommendationReport struct {
 	Insights        []string            `json:"insights"`
 }
 
+type cliSessionReport struct {
+	TimeRange       TimeRangeInfo          `json:"time_range"`
+	TotalSessions   int                    `json:"total_sessions"`
+	LongRunning     []SessionAnalysisItem  `json:"long_running"`
+	TopFailures     []SessionAnalysisItem  `json:"top_failures"`
+	Outcomes        []SessionOutcomeStat   `json:"outcomes"`
+	QueueOperations []QueueOperationStat   `json:"queue_operations"`
+	PlanLifecycle   PlanLifecycleData      `json:"plan_lifecycle"`
+	ReminderSummary ReminderSummaryData    `json:"reminder_summary"`
+	TopTaskSessions []ReminderSessionItem  `json:"top_task_sessions"`
+	TopTodoSessions []ReminderSessionItem  `json:"top_todo_sessions"`
+	FailureSamples  []ToolFailureSample    `json:"failure_samples"`
+	Filter          cliSessionReportFilter `json:"filter"`
+	Insights        []string               `json:"insights"`
+}
+
+type cliSessionReportFilter struct {
+	Session string `json:"session,omitempty"`
+	Project string `json:"project,omitempty"`
+}
+
 type cliRuntimeInfo struct {
 	Source                   string `json:"source"`
 	PrepareDurationMs        int64  `json:"prepare_duration_ms"`
@@ -102,12 +123,18 @@ type diagnosticFinding struct {
 	Evidence       []diagnosticEvidence `json:"evidence"`
 	Interpretation string               `json:"interpretation"`
 	NextSteps      []string             `json:"next_steps"`
+	Drilldowns     []diagnosticCommand  `json:"drilldown_commands,omitempty"`
 	Confidence     string               `json:"confidence"`
 }
 
 type diagnosticEvidence struct {
 	Label string `json:"label"`
 	Value string `json:"value"`
+}
+
+type diagnosticCommand struct {
+	Label   string `json:"label"`
+	Command string `json:"command"`
 }
 
 func runCLI(args []string) error {
@@ -133,7 +160,7 @@ func runCLI(args []string) error {
 		command = args[0]
 		commandArgs = args[1:]
 	}
-	if command != "sum" && command != "err" && command != "why" && command != "tok" && command != "cmd" && command != "rec" {
+	if command != "sum" && command != "err" && command != "why" && command != "tok" && command != "cmd" && command != "rec" && command != "ses" {
 		return fmt.Errorf("未知命令 %q，运行 cc-insights help 查看用法", command)
 	}
 
@@ -175,6 +202,10 @@ func runCLI(args []string) error {
 		return outputCLI(report, opts.Format, os.Stdout)
 	}
 
+	if isFastAnalysisCommand(command) {
+		return runFastAnalysisCommand(command, opts, tf, preset)
+	}
+
 	if err := prepareCLIData(); err != nil {
 		return err
 	}
@@ -196,8 +227,44 @@ func runCLI(args []string) error {
 		return outputCLI(buildCLIInspectFailuresReport(data, opts), opts.Format, os.Stdout)
 	case "cmd":
 		return outputCLI(buildCLICommandReport(data, opts.Limit), opts.Format, os.Stdout)
+	case "ses":
+		return outputCLI(buildCLISessionReport(data, opts), opts.Format, os.Stdout)
 	}
 	return nil
+}
+
+func isFastAnalysisCommand(command string) bool {
+	switch command {
+	case "err", "why", "tok", "cmd", "ses":
+		return true
+	default:
+		return false
+	}
+}
+
+func runFastAnalysisCommand(command string, opts cliOptions, tf TimeFilter, preset string) error {
+	if err := prepareCLIDataForRecommendations(); err != nil {
+		return err
+	}
+	defer CloseLogger()
+	data, _, err := buildRecommendationDashboardData(tf, preset)
+	if err != nil {
+		return err
+	}
+	switch command {
+	case "err":
+		return outputCLI(buildCLIFailureReport(data, opts.Limit), opts.Format, os.Stdout)
+	case "tok":
+		return outputCLI(buildCLICostReport(data, opts.Limit), opts.Format, os.Stdout)
+	case "why":
+		return outputCLI(buildCLIInspectFailuresReport(data, opts), opts.Format, os.Stdout)
+	case "cmd":
+		return outputCLI(buildCLICommandReport(data, opts.Limit), opts.Format, os.Stdout)
+	case "ses":
+		return outputCLI(buildCLISessionReport(data, opts), opts.Format, os.Stdout)
+	default:
+		return fmt.Errorf("不支持快速分析命令 %q", command)
+	}
 }
 
 func normalizeCLICommand(args []string) normalizedCommand {
@@ -206,7 +273,7 @@ func normalizeCLICommand(args []string) normalizedCommand {
 	}
 
 	switch args[0] {
-	case "sum", "err", "why", "tok", "cmd", "rec", "web":
+	case "sum", "err", "why", "tok", "cmd", "rec", "ses", "web":
 		return normalizedCommand{Name: args[0], Args: args}
 	default:
 		return normalizedCommand{Name: args[0], Args: args}
@@ -493,6 +560,7 @@ Usage:
   cc-insights tok -p 30d -j
   cc-insights why -p 7d --reason error_text -n 20 -j
   cc-insights cmd -p 30d -j
+  cc-insights ses -p 30d --session SESSION_ID -j
   cc-insights rec -p 30d -j
   cc-insights web [--addr :8932]
 
@@ -502,6 +570,7 @@ Commands:
   why   failure samples with filters
   tok   token and cost breakdown
   cmd   bash command families
+  ses   session lifecycle summary
   rec   diagnostic recommendations
   web   dashboard server
 

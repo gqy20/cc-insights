@@ -41,6 +41,7 @@ func buildRecommendationDashboardData(tf TimeFilter, preset string) (*DashboardD
 
 	return &DashboardData{
 		TimeRange:        rangeInfo,
+		ToolAnalysis:     cloneToolAnalysis(cached.ToolAnalysis),
 		CommandAnalysis:  cloneCommandAnalysis(cached.CommandAnalysis),
 		FailureAnalysis:  cloneFailureAnalysis(cached.FailureAnalysis),
 		ToolPerformance:  cloneToolPerformance(cached.ToolPerformance),
@@ -71,12 +72,74 @@ func buildCLIRecommendationReport(data *DashboardData, limit int) cliRecommendat
 	if len(findings) > limit {
 		findings = findings[:limit]
 	}
+	addDiagnosticDrilldowns(data.TimeRange, findings)
 
 	report.Recommendations = findings
 	report.TotalFindings = len(findings)
 	report.ByCategory = countFindingsByCategory(findings)
 	report.Insights = buildRecommendationInsights(report)
 	return report
+}
+
+func addDiagnosticDrilldowns(timeRange TimeRangeInfo, findings []diagnosticFinding) {
+	for i := range findings {
+		findings[i].Drilldowns = buildDiagnosticDrilldowns(timeRange, findings[i])
+	}
+}
+
+func buildDiagnosticDrilldowns(timeRange TimeRangeInfo, finding diagnosticFinding) []diagnosticCommand {
+	rangeArgs := cliRangeArgs(timeRange)
+	base := "cc-insights"
+	commands := []diagnosticCommand{}
+	switch finding.Category {
+	case "failure":
+		reasonCategory, reason := splitCategoryReason(evidenceValue(finding, "原因"))
+		tool := evidenceValue(finding, "工具")
+		args := []string{"why"}
+		args = append(args, rangeArgs...)
+		if reasonCategory != "" {
+			args = append(args, "--category", reasonCategory)
+		}
+		if reason != "" {
+			args = append(args, "--reason", reason)
+		}
+		if tool != "" {
+			args = append(args, "--tool", tool)
+		}
+		args = append(args, "-n", "10")
+		commands = append(commands, diagnosticCommand{Label: "失败样例", Command: joinCLICommand(base, args)})
+		commands = append(commands, diagnosticCommand{Label: "失败汇总", Command: joinCLICommand(base, append([]string{"err"}, rangeArgs...))})
+	case "command":
+		commands = append(commands, diagnosticCommand{Label: "命令分布", Command: joinCLICommand(base, append([]string{"cmd"}, append(rangeArgs, "-n", "20")...))})
+		if strings.Contains(finding.ID, "high_failure") || strings.Contains(finding.ID, "risky") {
+			commands = append(commands, diagnosticCommand{Label: "Bash 失败样例", Command: joinCLICommand(base, append(append([]string{"why"}, rangeArgs...), "--tool", "Bash", "-n", "10"))})
+		}
+	case "performance":
+		session := evidenceValue(finding, "Session")
+		if session != "" && session != "unknown" {
+			commands = append(commands, diagnosticCommand{Label: "Session", Command: joinCLICommand(base, append(append([]string{"ses"}, rangeArgs...), "--session", session, "-n", "10"))})
+			commands = append(commands, diagnosticCommand{Label: "Session 失败", Command: joinCLICommand(base, append(append([]string{"why"}, rangeArgs...), "--session", session, "-n", "10"))})
+		}
+		commands = append(commands, diagnosticCommand{Label: "命令分布", Command: joinCLICommand(base, append([]string{"cmd"}, rangeArgs...))})
+	case "context":
+		session := evidenceValue(finding, "Session")
+		project := evidenceValue(finding, "项目")
+		if session != "" {
+			commands = append(commands, diagnosticCommand{Label: "Session", Command: joinCLICommand(base, append(append([]string{"ses"}, rangeArgs...), "--session", session, "-n", "10"))})
+		} else if project != "" {
+			commands = append(commands, diagnosticCommand{Label: "项目 Session", Command: joinCLICommand(base, append(append([]string{"ses"}, rangeArgs...), "--project", project, "-n", "10"))})
+		}
+		commands = append(commands, diagnosticCommand{Label: "Token 明细", Command: joinCLICommand(base, append(append([]string{"tok"}, rangeArgs...), "-n", "20"))})
+	case "workflow":
+		session := evidenceValue(finding, "Session")
+		if session != "" && session != "unknown" {
+			commands = append(commands, diagnosticCommand{Label: "Session", Command: joinCLICommand(base, append(append([]string{"ses"}, rangeArgs...), "--session", session, "-n", "10"))})
+			commands = append(commands, diagnosticCommand{Label: "Session 失败", Command: joinCLICommand(base, append(append([]string{"why"}, rangeArgs...), "--session", session, "-n", "10"))})
+		} else {
+			commands = append(commands, diagnosticCommand{Label: "Session 概览", Command: joinCLICommand(base, append(append([]string{"ses"}, rangeArgs...), "-n", "20"))})
+		}
+	}
+	return dedupeDiagnosticCommands(commands)
 }
 
 func buildCommandDiagnostics(data *DashboardData) []diagnosticFinding {
@@ -468,6 +531,72 @@ func buildRecommendationInsights(report cliRecommendationReport) []string {
 		insights = append(insights, fmt.Sprintf("最高优先级诊断是 %s（%s/%s）。", top.Title, top.Category, top.Severity))
 	}
 	return insights
+}
+
+func cliRangeArgs(timeRange TimeRangeInfo) []string {
+	if timeRange.Preset != "" && timeRange.Preset != "custom" {
+		return []string{"-p", timeRange.Preset}
+	}
+	if timeRange.Start != "" && timeRange.End != "" {
+		return []string{"--start", timeRange.Start, "--end", timeRange.End}
+	}
+	return nil
+}
+
+func evidenceValue(finding diagnosticFinding, label string) string {
+	for _, ev := range finding.Evidence {
+		if ev.Label == label {
+			return strings.TrimSpace(ev.Value)
+		}
+	}
+	return ""
+}
+
+func splitCategoryReason(value string) (string, string) {
+	parts := strings.SplitN(strings.TrimSpace(value), "/", 2)
+	if len(parts) != 2 {
+		return "", strings.TrimSpace(value)
+	}
+	return strings.TrimSpace(parts[0]), strings.TrimSpace(parts[1])
+}
+
+func joinCLICommand(base string, args []string) string {
+	parts := []string{base}
+	for _, arg := range args {
+		if strings.TrimSpace(arg) == "" {
+			continue
+		}
+		parts = append(parts, shellQuote(arg))
+	}
+	return strings.Join(parts, " ")
+}
+
+func shellQuote(value string) string {
+	if value == "" {
+		return "''"
+	}
+	if strings.IndexFunc(value, func(r rune) bool {
+		return !(r >= 'A' && r <= 'Z' ||
+			r >= 'a' && r <= 'z' ||
+			r >= '0' && r <= '9' ||
+			r == '_' || r == '-' || r == '.' || r == '/' || r == ':' || r == '=' || r == '%')
+	}) == -1 {
+		return value
+	}
+	return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'"
+}
+
+func dedupeDiagnosticCommands(commands []diagnosticCommand) []diagnosticCommand {
+	seen := make(map[string]bool)
+	deduped := make([]diagnosticCommand, 0, len(commands))
+	for _, command := range commands {
+		if command.Command == "" || seen[command.Command] {
+			continue
+		}
+		seen[command.Command] = true
+		deduped = append(deduped, command)
+	}
+	return deduped
 }
 
 func severityRank(value string) int {

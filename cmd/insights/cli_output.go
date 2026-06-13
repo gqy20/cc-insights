@@ -90,6 +90,29 @@ func writeTable(value any, w io.Writer) error {
 			if len(item.NextSteps) > 0 {
 				fmt.Fprintf(w, "  排查: %s\n", strings.Join(item.NextSteps, " / "))
 			}
+			writeDrilldownsTable(w, item.Drilldowns)
+			fmt.Fprintln(w)
+		}
+		writeInsights(w, v.Insights)
+	case cliSessionReport:
+		fmt.Fprintf(w, "Claude Code Sessions · %s\n\n", formatRange(v.TimeRange))
+		writeSessionFilter(w, v.Filter)
+		fmt.Fprintf(w, "Session: %s  Plan: %s in / %s out  Task reminders: %s  Todo reminders: %s\n\n",
+			formatInt(v.TotalSessions),
+			formatInt(v.PlanLifecycle.EntryCount),
+			formatInt(v.PlanLifecycle.ExitCount),
+			formatInt(v.ReminderSummary.TaskReminderCount),
+			formatInt(v.ReminderSummary.TodoReminderCount))
+		writeSessionItemsTable(w, "长会话", v.LongRunning)
+		writeSessionItemsTable(w, "高失败会话", v.TopFailures)
+		if len(v.FailureSamples) > 0 {
+			fmt.Fprintln(w, "失败样例:")
+			for _, sample := range v.FailureSamples {
+				fmt.Fprintf(w, "  %s %s %s/%s %s\n", sample.Timestamp, sample.Tool, sample.Category, sample.Reason, sample.Project)
+				if sample.ContentPreview != "" {
+					fmt.Fprintf(w, "    %s\n", sample.ContentPreview)
+				}
+			}
 			fmt.Fprintln(w)
 		}
 		writeInsights(w, v.Insights)
@@ -192,6 +215,29 @@ func writeMarkdown(value any, w io.Writer) error {
 					fmt.Fprintf(w, "- %s\n", step)
 				}
 			}
+			writeDrilldownsMarkdown(w, item.Drilldowns)
+			fmt.Fprintln(w)
+		}
+		writeMarkdownInsights(w, v.Insights)
+	case cliSessionReport:
+		fmt.Fprintf(w, "# Claude Code Sessions\n\n范围: %s\n\n", formatRange(v.TimeRange))
+		fmt.Fprintf(w, "- Session: %s\n- Plan: %s in / %s out\n- Task reminders: %s\n- Todo reminders: %s\n\n",
+			formatInt(v.TotalSessions),
+			formatInt(v.PlanLifecycle.EntryCount),
+			formatInt(v.PlanLifecycle.ExitCount),
+			formatInt(v.ReminderSummary.TaskReminderCount),
+			formatInt(v.ReminderSummary.TodoReminderCount))
+		writeSessionItemsMarkdown(w, "长会话", v.LongRunning)
+		writeSessionItemsMarkdown(w, "高失败会话", v.TopFailures)
+		if len(v.FailureSamples) > 0 {
+			fmt.Fprintln(w, "## 失败样例")
+			fmt.Fprintln(w)
+			for _, sample := range v.FailureSamples {
+				fmt.Fprintf(w, "- `%s` `%s` `%s/%s` `%s`\n", sample.Timestamp, sample.Tool, sample.Category, sample.Reason, sample.Project)
+				if sample.ContentPreview != "" {
+					fmt.Fprintf(w, "  - %s\n", sample.ContentPreview)
+				}
+			}
 			fmt.Fprintln(w)
 		}
 		writeMarkdownInsights(w, v.Insights)
@@ -240,6 +286,96 @@ func writeFailureFilter(w io.Writer, filter cliInspectFailureFilter) {
 		return
 	}
 	fmt.Fprintf(w, "过滤: %s\n", strings.Join(parts, ", "))
+}
+
+func writeSessionFilter(w io.Writer, filter cliSessionReportFilter) {
+	parts := []string{}
+	if filter.Session != "" {
+		parts = append(parts, "session="+filter.Session)
+	}
+	if filter.Project != "" {
+		parts = append(parts, "project="+filter.Project)
+	}
+	if len(parts) == 0 {
+		fmt.Fprintln(w, "过滤: none")
+		return
+	}
+	fmt.Fprintf(w, "过滤: %s\n", strings.Join(parts, ", "))
+}
+
+func writeSessionItemsTable(w io.Writer, title string, items []SessionAnalysisItem) {
+	if len(items) == 0 {
+		return
+	}
+	fmt.Fprintln(w, title+":")
+	for _, item := range items {
+		fmt.Fprintf(w, "  %-24s %8s  fail=%s  tok=%s  %s\n",
+			item.SessionID,
+			formatDurationMs(item.DurationMs),
+			formatInt(item.ToolFailureCount),
+			formatCompactInt(item.TotalTokens),
+			item.Project)
+		if item.Title != "" {
+			fmt.Fprintf(w, "    %s\n", item.Title)
+		}
+	}
+	fmt.Fprintln(w)
+}
+
+func writeSessionItemsMarkdown(w io.Writer, title string, items []SessionAnalysisItem) {
+	if len(items) == 0 {
+		return
+	}
+	fmt.Fprintf(w, "## %s\n\n", title)
+	for _, item := range items {
+		fmt.Fprintf(w, "- `%s`: %s, fail=%s, token=%s, `%s`\n",
+			item.SessionID,
+			formatDurationMs(item.DurationMs),
+			formatInt(item.ToolFailureCount),
+			formatCompactInt(item.TotalTokens),
+			item.Project)
+		if item.Title != "" {
+			fmt.Fprintf(w, "  - %s\n", item.Title)
+		}
+	}
+	fmt.Fprintln(w)
+}
+
+func writeDrilldownsTable(w io.Writer, commands []diagnosticCommand) {
+	if len(commands) == 0 {
+		return
+	}
+	parts := make([]string, 0, len(commands))
+	for _, command := range commands {
+		if command.Command == "" {
+			continue
+		}
+		if command.Label != "" {
+			parts = append(parts, command.Label+": `"+command.Command+"`")
+			continue
+		}
+		parts = append(parts, "`"+command.Command+"`")
+	}
+	if len(parts) > 0 {
+		fmt.Fprintf(w, "  下钻: %s\n", strings.Join(parts, " / "))
+	}
+}
+
+func writeDrilldownsMarkdown(w io.Writer, commands []diagnosticCommand) {
+	if len(commands) == 0 {
+		return
+	}
+	fmt.Fprintln(w, "\n下钻命令:")
+	for _, command := range commands {
+		if command.Command == "" {
+			continue
+		}
+		if command.Label != "" {
+			fmt.Fprintf(w, "- %s: `%s`\n", command.Label, command.Command)
+			continue
+		}
+		fmt.Fprintf(w, "- `%s`\n", command.Command)
+	}
 }
 
 func writeNameCounts(w io.Writer, title string, items []nameCount) {

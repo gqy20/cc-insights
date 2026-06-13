@@ -15,6 +15,7 @@ func TestNormalizeCLICommandAliases(t *testing.T) {
 		{name: "failures", args: []string{"err", "-p", "7d"}, wantName: "err", wantArgs: []string{"err", "-p", "7d"}},
 		{name: "why", args: []string{"why", "--reason", "error_text"}, wantName: "why", wantArgs: []string{"why", "--reason", "error_text"}},
 		{name: "cost", args: []string{"tok", "-p", "30d"}, wantName: "tok", wantArgs: []string{"tok", "-p", "30d"}},
+		{name: "sessions", args: []string{"ses", "-p", "7d"}, wantName: "ses", wantArgs: []string{"ses", "-p", "7d"}},
 		{name: "web", args: []string{"web", "--addr", ":8932"}, wantName: "web", wantArgs: []string{"web", "--addr", ":8932"}},
 		{name: "unknown long form", args: []string{"failures", "-j"}, wantName: "failures", wantArgs: []string{"failures", "-j"}},
 	}

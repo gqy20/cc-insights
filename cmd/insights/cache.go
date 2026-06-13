@@ -353,6 +353,16 @@ func cloneSessionAnalysis(source *SessionAnalysisData) *SessionAnalysisData {
 	return &copyValue
 }
 
+func cloneToolAnalysis(source *ToolAnalysisData) *ToolAnalysisData {
+	if source == nil {
+		return nil
+	}
+	copyValue := *source
+	copyValue.Tools = append([]ToolStatItem(nil), source.Tools...)
+	copyValue.ByModel = append([]ToolModelStatItem(nil), source.ByModel...)
+	return &copyValue
+}
+
 func cloneToolPerformance(source *ToolPerformanceData) *ToolPerformanceData {
 	if source == nil {
 		return nil
