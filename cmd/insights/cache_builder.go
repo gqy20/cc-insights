@@ -171,9 +171,16 @@ func (cb *CacheBuilder) BuildFullCache() error {
 	if err := cache.Save(cb.CachePath); err != nil {
 		return fmt.Errorf("保存缓存失败: %w", err)
 	}
+	if err := cache.SaveDiagnostics(diagnosticsCachePath(cb.CachePath)); err != nil {
+		Warn("保存诊断缓存失败", "error", err.Error())
+	}
 
 	Info("缓存构建完成", "messages", cache.TotalMessages, "sessions", cache.TotalSessions)
 	return nil
+}
+
+func diagnosticsCachePath(cachePath string) string {
+	return filepath.Join(filepath.Dir(cachePath), "diagnostics.db")
 }
 
 func refreshGlobalCache(force bool) error {

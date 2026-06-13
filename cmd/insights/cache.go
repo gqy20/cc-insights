@@ -188,6 +188,13 @@ func (cf *CacheFile) Save(path string) error {
 	return nil
 }
 
+// SaveDiagnostics 保存诊断命令需要的轻量缓存，避免 CLI rec 读取完整文件级缓存。
+func (cf *CacheFile) SaveDiagnostics(path string) error {
+	copyValue := *cf
+	copyValue.ProjectFiles = nil
+	return copyValue.Save(path)
+}
+
 // LoadCacheFile 从文件加载缓存
 func LoadCacheFile(path string) (*CacheFile, error) {
 	// 检查文件是否存在

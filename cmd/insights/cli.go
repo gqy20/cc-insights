@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 type cliOptions struct {
@@ -80,7 +81,16 @@ type cliRecommendationReport struct {
 	TotalFindings   int                 `json:"total_findings"`
 	ByCategory      []nameCount         `json:"by_category"`
 	Recommendations []diagnosticFinding `json:"recommendations"`
+	Runtime         *cliRuntimeInfo     `json:"runtime,omitempty"`
 	Insights        []string            `json:"insights"`
+}
+
+type cliRuntimeInfo struct {
+	Source                   string `json:"source"`
+	PrepareDurationMs        int64  `json:"prepare_duration_ms"`
+	DataDurationMs           int64  `json:"data_duration_ms"`
+	RecommendationDurationMs int64  `json:"recommendation_duration_ms"`
+	TotalDurationMs          int64  `json:"total_duration_ms"`
 }
 
 type diagnosticFinding struct {
@@ -138,6 +148,33 @@ func runCLI(args []string) error {
 		return err
 	}
 
+	if command == "rec" {
+		startedAt := time.Now()
+		prepareStartedAt := time.Now()
+		if err := prepareCLIDataForRecommendations(); err != nil {
+			return err
+		}
+		prepareDuration := time.Since(prepareStartedAt)
+		defer CloseLogger()
+		dataStartedAt := time.Now()
+		data, source, err := buildRecommendationDashboardData(tf, preset)
+		if err != nil {
+			return err
+		}
+		dataDuration := time.Since(dataStartedAt)
+		reportStartedAt := time.Now()
+		report := buildCLIRecommendationReport(data, opts.Limit)
+		recommendationDuration := time.Since(reportStartedAt)
+		report.Runtime = &cliRuntimeInfo{
+			Source:                   source,
+			PrepareDurationMs:        prepareDuration.Milliseconds(),
+			DataDurationMs:           dataDuration.Milliseconds(),
+			RecommendationDurationMs: recommendationDuration.Milliseconds(),
+			TotalDurationMs:          time.Since(startedAt).Milliseconds(),
+		}
+		return outputCLI(report, opts.Format, os.Stdout)
+	}
+
 	if err := prepareCLIData(); err != nil {
 		return err
 	}
@@ -159,8 +196,6 @@ func runCLI(args []string) error {
 		return outputCLI(buildCLIInspectFailuresReport(data, opts), opts.Format, os.Stdout)
 	case "cmd":
 		return outputCLI(buildCLICommandReport(data, opts.Limit), opts.Format, os.Stdout)
-	case "rec":
-		return outputCLI(buildCLIRecommendationReport(data, opts.Limit), opts.Format, os.Stdout)
 	}
 	return nil
 }
@@ -238,6 +273,14 @@ func parseCLIOptions(command string, args []string, analysisCommand bool) (cliOp
 }
 
 func prepareCLIData() error {
+	return prepareCLIDataWithCacheRefresh(true)
+}
+
+func prepareCLIDataForRecommendations() error {
+	return prepareCLIDataWithCacheRefresh(false)
+}
+
+func prepareCLIDataWithCacheRefresh(refreshStale bool) error {
 	if _, err := os.Stat(cfg.DataDir); os.IsNotExist(err) {
 		return fmt.Errorf("数据目录不存在: %s", cfg.DataDir)
 	}
@@ -245,10 +288,41 @@ func prepareCLIData() error {
 	if err := InitLogger(logDir); err != nil {
 		return fmt.Errorf("日志初始化失败: %w", err)
 	}
+	if !refreshStale {
+		if loaded, err := loadReusableCacheSnapshot(); err == nil {
+			globalCache = loaded
+			Info("使用现有缓存快照", "messages", globalCache.TotalMessages, "sessions", globalCache.TotalSessions)
+			return nil
+		} else {
+			Warn("缓存快照不可复用，将刷新缓存", "error", err.Error())
+		}
+	}
 	if err := initializeCache(); err != nil {
 		Warn("缓存初始化失败，将使用实时解析模式", "error", err.Error())
 	}
 	return nil
+}
+
+func loadReusableCacheSnapshot() (*CacheFile, error) {
+	cachePath := filepath.Join(cfg.CacheDir, "cache.db")
+	cache, err := LoadCacheFile(diagnosticsCachePath(cachePath))
+	if err != nil {
+		cache, err = LoadCacheFile(cachePath)
+	}
+	if err != nil {
+		return nil, err
+	}
+	if cache.Version != CacheVersion {
+		return nil, fmt.Errorf("缓存版本 %s != %s", cache.Version, CacheVersion)
+	}
+	rulesHash, err := currentBashRulesHash()
+	if err != nil {
+		return nil, err
+	}
+	if cache.BashRulesHash != rulesHash {
+		return nil, fmt.Errorf("Bash 规则已变更")
+	}
+	return cache, nil
 }
 
 func timeFilterFromCLIOptions(opts cliOptions) (TimeFilter, string, error) {

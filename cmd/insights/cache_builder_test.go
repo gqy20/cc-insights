@@ -62,6 +62,17 @@ func TestCacheBuilderBuildFullCache(t *testing.T) {
 	if cache.BuildStats.BashRulesHash != cache.BashRulesHash {
 		t.Errorf("BuildStats.BashRulesHash = %q, want %q", cache.BuildStats.BashRulesHash, cache.BashRulesHash)
 	}
+
+	diagnosticsCache, err := LoadCacheFile(diagnosticsCachePath(cachePath))
+	if err != nil {
+		t.Fatalf("Load diagnostics cache failed: %v", err)
+	}
+	if diagnosticsCache.ProjectFiles != nil {
+		t.Fatal("diagnostics cache should not include ProjectFiles")
+	}
+	if diagnosticsCache.CommandAnalysis == nil {
+		t.Fatal("diagnostics cache should retain CommandAnalysis")
+	}
 }
 
 func TestCacheBuilderBuildFullCacheDailyProjectAndModelCounts(t *testing.T) {

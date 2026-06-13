@@ -4,7 +4,51 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 )
+
+func buildRecommendationDashboardData(tf TimeFilter, preset string) (*DashboardData, string, error) {
+	if globalCache == nil {
+		data, source, err := buildDashboardData(tf, preset)
+		return data, source, err
+	}
+	if err := refreshGlobalCacheIfRulesChanged(); err != nil {
+		Warn("Bash 规则刷新失败，继续尝试现有缓存", "error", err.Error())
+	}
+
+	var start, end time.Time
+	if tf.Start != nil {
+		start = *tf.Start
+	}
+	if tf.End != nil {
+		end = *tf.End
+	}
+	queryStartedAt := time.Now()
+	cached := globalCache.QueryByTimeRange(start, end)
+	Debug("诊断缓存查询完成",
+		"preset", preset,
+		"query_duration", time.Since(queryStartedAt).Round(time.Millisecond),
+		"messages", cached.TotalMessages,
+	)
+
+	rangeInfo := TimeRangeInfo{Preset: preset}
+	if tf.Start != nil {
+		rangeInfo.Start = tf.Start.Format("2006-01-02")
+	}
+	if tf.End != nil {
+		rangeInfo.End = tf.End.Format("2006-01-02")
+	}
+
+	return &DashboardData{
+		TimeRange:        rangeInfo,
+		CommandAnalysis:  cloneCommandAnalysis(cached.CommandAnalysis),
+		FailureAnalysis:  cloneFailureAnalysis(cached.FailureAnalysis),
+		ToolPerformance:  cloneToolPerformance(cached.ToolPerformance),
+		CostAnalysis:     cloneCostAnalysis(cached.CostAnalysis),
+		SessionAnalysis:  cloneSessionAnalysis(cached.SessionAnalysis),
+		TaskPlanAnalysis: cloneTaskPlanAnalysis(cached.TaskPlanAnalysis),
+	}, "cache", nil
+}
 
 func buildCLIRecommendationReport(data *DashboardData, limit int) cliRecommendationReport {
 	report := cliRecommendationReport{TimeRange: data.TimeRange}
@@ -16,8 +60,8 @@ func buildCLIRecommendationReport(data *DashboardData, limit int) cliRecommendat
 	findings = append(findings, buildWorkflowDiagnostics(data)...)
 
 	sort.SliceStable(findings, func(i, j int) bool {
-		if severityRank(findings[i].Severity) != severityRank(findings[j].Severity) {
-			return severityRank(findings[i].Severity) > severityRank(findings[j].Severity)
+		if diagnosticRank(findings[i]) != diagnosticRank(findings[j]) {
+			return diagnosticRank(findings[i]) > diagnosticRank(findings[j])
 		}
 		if findings[i].Category != findings[j].Category {
 			return findings[i].Category < findings[j].Category
@@ -45,6 +89,7 @@ func buildCommandDiagnostics(data *DashboardData) []diagnosticFinding {
 	for _, family := range data.CommandAnalysis.BashFamilies {
 		totalCalls += family.CallCount
 		if family.Family != "other" && family.CallCount >= 30 && family.FailureRate >= 30 {
+			interpretation, nextSteps := commandFamilyGuidance(family.Family)
 			familyFailureFindings = append(familyFailureFindings, diagnosticFinding{
 				ID:       "command.family.high_failure." + sanitizeID(family.Family),
 				Category: "command",
@@ -57,26 +102,25 @@ func buildCommandDiagnostics(data *DashboardData) []diagnosticFinding {
 					{Label: "失败率", Value: formatFailureRate(family.FailureRate) + "%"},
 					{Label: "Top 命令", Value: family.TopCommand},
 				},
-				Interpretation: "这通常说明该类命令的入口、环境前置条件或失败处理方式不够稳定，AI 容易重复尝试高成本动作。",
-				NextSteps: []string{
-					"检查 CLAUDE.md 是否写清该命令族的推荐入口和前置条件。",
-					"用 `cc-insights why` 下钻失败样例，确认是否集中在缺依赖、路径、权限、服务未启动或超时。",
-					"考虑把高频长命令封装为更短、更确定的脚本或任务命令。",
-				},
-				Confidence: "high",
+				Interpretation: interpretation,
+				NextSteps:      nextSteps,
+				Confidence:     "high",
 			})
 		}
 	}
 	sort.SliceStable(familyFailureFindings, func(i, j int) bool {
-		if severityRank(familyFailureFindings[i].Severity) != severityRank(familyFailureFindings[j].Severity) {
-			return severityRank(familyFailureFindings[i].Severity) > severityRank(familyFailureFindings[j].Severity)
+		scoreI := commandFailureScore(familyFailureFindings[i])
+		scoreJ := commandFailureScore(familyFailureFindings[j])
+		if scoreI != scoreJ {
+			return scoreI > scoreJ
 		}
 		return familyFailureFindings[i].ID < familyFailureFindings[j].ID
 	})
-	if len(familyFailureFindings) > 4 {
-		familyFailureFindings = familyFailureFindings[:4]
+	if len(familyFailureFindings) > 3 {
+		familyFailureFindings = familyFailureFindings[:3]
 	}
 	findings = append(findings, familyFailureFindings...)
+	findings = append(findings, buildCommandClassificationDiagnostics(data)...)
 	if totalCalls > 0 {
 		for _, family := range data.CommandAnalysis.BashFamilies {
 			if family.Family != "other" {
@@ -192,8 +236,8 @@ func buildPerformanceDiagnostics(data *DashboardData) []diagnosticFinding {
 	}
 	var findings []diagnosticFinding
 	if len(data.ToolPerformance.ByCategory) > 0 {
-		top := data.ToolPerformance.ByCategory[0]
-		if top.TotalDurationMs >= 60_000 || top.AvgDurationMs >= 5_000 {
+		top, ok := topNonInteractivePerfCategory(data.ToolPerformance.ByCategory)
+		if ok && (top.TotalDurationMs >= 60_000 || top.AvgDurationMs >= 5_000) {
 			findings = append(findings, diagnosticFinding{
 				ID:       "performance.tool.slow." + sanitizeID(top.Category),
 				Category: "performance",
@@ -217,8 +261,8 @@ func buildPerformanceDiagnostics(data *DashboardData) []diagnosticFinding {
 		}
 	}
 	if len(data.ToolPerformance.SlowestCalls) > 0 {
-		top := data.ToolPerformance.SlowestCalls[0]
-		if top.DurationMs >= 10_000 {
+		top, ok := topNonInteractiveSlowCall(data.ToolPerformance.SlowestCalls)
+		if ok && top.DurationMs >= 10_000 {
 			findings = append(findings, diagnosticFinding{
 				ID:       "performance.slowest_call",
 				Category: "performance",
@@ -248,22 +292,43 @@ func buildPerformanceDiagnostics(data *DashboardData) []diagnosticFinding {
 				ID:       "performance.cache.build_cost",
 				Category: "performance",
 				Severity: "medium",
-				Title:    "缓存构建成本较高",
-				Summary:  fmt.Sprintf("最近一次缓存构建耗时 %s，解析文件 %s 个。", formatDurationMs(stats.BuildDurationMs), formatInt(stats.ParsedFiles)),
+				Title:    "缓存刷新成本较高",
+				Summary:  fmt.Sprintf("最近一次缓存刷新耗时 %s，解析文件 %s 个，复用文件 %s 个。", formatDurationMs(stats.BuildDurationMs), formatInt(stats.ParsedFiles), formatInt(stats.ReusedFiles)),
 				Evidence: []diagnosticEvidence{
 					{Label: "构建耗时", Value: formatDurationMs(stats.BuildDurationMs)},
 					{Label: "解析文件", Value: formatInt(stats.ParsedFiles)},
 					{Label: "复用文件", Value: formatInt(stats.ReusedFiles)},
 					{Label: "总文件", Value: formatInt(stats.TotalFiles)},
 				},
-				Interpretation: "缓存构建成本高会影响 CLI 和 Web 首次响应，规则或版本频繁变更时更明显。",
+				Interpretation: "缓存刷新成本高会影响 CLI 和 Web 首次响应。即使文件级缓存大量复用，合并聚合和任务扫描仍可能产生可见耗时。",
 				NextSteps: []string{
-					"避免频繁触发全量重建，优先利用文件级缓存复用。",
-					"如果默认数据量很大，CLI 侧优先使用较短时间范围做诊断。",
+					"观察 parsed/reused 比例：parsed 高说明重建多，reused 高但仍慢说明聚合或附加扫描成本较高。",
+					"如果默认数据量很大，CLI 侧优先使用较短时间范围做诊断，并考虑后续优化查询聚合路径。",
 				},
 				Confidence: "medium",
 			})
 		}
+	}
+	if top, ok := topInteractiveSlowCall(data.ToolPerformance.SlowestCalls); ok && top.DurationMs >= 10*60*1000 {
+		findings = append(findings, diagnosticFinding{
+			ID:       "workflow.interactive_tool.long_wait",
+			Category: "workflow",
+			Severity: severityFromDuration(float64(top.DurationMs)),
+			Title:    "交互型工具等待时间过长",
+			Summary:  fmt.Sprintf("%s 记录到 %s 的等待时间。", top.Tool, formatDurationMs(top.DurationMs)),
+			Evidence: []diagnosticEvidence{
+				{Label: "工具", Value: top.Tool},
+				{Label: "耗时", Value: formatDurationMs(top.DurationMs)},
+				{Label: "项目", Value: nonEmpty(top.Project, "unknown")},
+				{Label: "Session", Value: nonEmpty(top.SessionID, "unknown")},
+			},
+			Interpretation: "ExitPlanMode、AskUserQuestion 等交互型工具的长耗时通常不代表工具执行慢，而是会话在等待确认或跨阶段停顿。",
+			NextSteps: []string{
+				"结合该 session 检查是否存在长时间人工等待、计划确认或任务暂停。",
+				"不要把这类耗时直接归因到测试/构建性能问题；更适合作为 workflow latency 信号处理。",
+			},
+			Confidence: "medium",
+		})
 	}
 	return findings
 }
@@ -416,6 +481,223 @@ func severityRank(value string) int {
 	default:
 		return 0
 	}
+}
+
+func diagnosticRank(item diagnosticFinding) int {
+	rank := severityRank(item.Severity) * 100
+	switch item.Category {
+	case "performance":
+		rank += 35
+	case "failure":
+		rank += 30
+	case "workflow":
+		rank += 25
+	case "context":
+		rank += 20
+	case "command":
+		rank += 10
+	}
+	if strings.Contains(item.ID, "classification") {
+		rank += 15
+	}
+	return rank
+}
+
+func commandFailureScore(item diagnosticFinding) int {
+	score := severityRank(item.Severity) * 1000
+	for _, ev := range item.Evidence {
+		switch ev.Label {
+		case "调用次数":
+			score += parseFormattedInt(ev.Value) / 10
+		case "失败率":
+			score += int(parsePercent(ev.Value) * 10)
+		}
+	}
+	return score
+}
+
+func commandFamilyGuidance(family string) (string, []string) {
+	switch family {
+	case "test":
+		return "测试失败率高通常说明测试入口、依赖服务、浏览器环境或测试范围不明确，AI 可能在没有前置检查时反复执行完整测试。",
+			[]string{
+				"在 CLAUDE.md 区分 quick test、targeted test、full test 的使用条件。",
+				"下钻失败样例，确认是否集中在服务未启动、浏览器依赖、端口冲突或 fixture 数据缺失。",
+				"把高频测试命令封装为稳定脚本，减少 AI 自行拼命令。",
+			}
+	case "build":
+		return "构建失败率高通常来自环境版本、生成产物、依赖安装或构建入口不统一，容易导致 AI 在错误目录或错误包管理器下重试。",
+			[]string{
+				"明确项目标准构建命令和工作目录。",
+				"补充构建前置条件，例如依赖安装、环境变量、代码生成步骤。",
+				"区分类型检查、局部构建和完整构建，避免每次都跑最高成本路径。",
+			}
+	case "dependency":
+		return "依赖命令失败率高通常意味着包管理器、锁文件、网络源或虚拟环境边界不清晰。",
+			[]string{
+				"写清项目使用 npm/pnpm/yarn/uv/pip/poetry 中的哪一个，以及禁止混用的规则。",
+				"下钻失败样例，确认是否集中在网络、版本冲突、锁文件或权限问题。",
+				"考虑增加环境检查命令，让 AI 先验证依赖状态再安装。",
+			}
+	case "network":
+		return "网络命令失败率高通常不是简单命令问题，而是服务可达性、认证、代理、端口或外部站点稳定性问题。",
+			[]string{
+				"区分本地服务检查和外部网络访问，明确本地服务启动方式。",
+				"下钻失败样例，确认是否集中在 4xx/5xx、连接拒绝、超时或认证失败。",
+				"必要时给 curl/wget/playwright 访问增加短超时和失败摘要。",
+			}
+	case "javascript":
+		return "JavaScript 命令失败率高通常说明包管理器、脚本名、工作目录或 Node 版本约定不清晰。",
+			[]string{
+				"在项目说明中写清推荐包管理器和常用 scripts。",
+				"区分 lint、typecheck、test、build 的命令入口。",
+				"下钻失败样例，确认是否是缺依赖、脚本不存在或 Node 版本不匹配。",
+			}
+	case "cleanup":
+		return "清理命令失败率高通常需要先判断是否真的是清理动作；如果 Top 命令不是 rm 等清理命令，可能是分类规则误命中。",
+			[]string{
+				"检查 Top 命令是否符合 cleanup 语义。",
+				"如果 Top 命令是 docker、git、find 等，应优先修正 Bash 规则。",
+				"对 rm 等破坏性清理命令保留显式确认边界。",
+			}
+	default:
+		return "这通常说明该类命令的入口、环境前置条件或失败处理方式不够稳定，AI 容易重复尝试高成本动作。",
+			[]string{
+				"检查 CLAUDE.md 是否写清该命令族的推荐入口和前置条件。",
+				"用 `cc-insights why` 下钻失败样例，确认是否集中在缺依赖、路径、权限、服务未启动或超时。",
+				"考虑把高频长命令封装为更短、更确定的脚本或任务命令。",
+			}
+	}
+}
+
+func buildCommandClassificationDiagnostics(data *DashboardData) []diagnosticFinding {
+	var findings []diagnosticFinding
+	for _, family := range data.CommandAnalysis.BashFamilies {
+		if family.TopCommand == "" || family.CallCount < 20 {
+			continue
+		}
+		if commandLooksLikeFamily(family.Family, family.TopCommand) {
+			continue
+		}
+		findings = append(findings, diagnosticFinding{
+			ID:       "command.classification.suspicious." + sanitizeID(family.Family),
+			Category: "command",
+			Severity: "medium",
+			Title:    "疑似 Bash 分类异常",
+			Summary:  fmt.Sprintf("%s 命令族的 Top 命令是 %s，语义可能不匹配。", family.Family, family.TopCommand),
+			Evidence: []diagnosticEvidence{
+				{Label: "命令族", Value: family.Family},
+				{Label: "Top 命令", Value: family.TopCommand},
+				{Label: "调用次数", Value: formatInt(family.CallCount)},
+				{Label: "样例", Value: family.SampleCommand},
+			},
+			Interpretation: "分类异常会污染后续诊断，让失败率看起来像某类问题，实际可能只是规则误命中。",
+			NextSteps: []string{
+				"检查 `rules/bash.yml` 或 `~/.cc-insights/bash.yml` 中该命令族的 contains/priority/exclude 规则。",
+				"优先给更明确的命令族提高 priority，或给误命中的 family 增加 exclude。",
+			},
+			Confidence: "medium",
+		})
+	}
+	if len(findings) > 2 {
+		return findings[:2]
+	}
+	return findings
+}
+
+func commandLooksLikeFamily(family, command string) bool {
+	command = strings.ToLower(strings.TrimSpace(command))
+	switch family {
+	case "cleanup":
+		return command == "rm" || command == "rmdir" || command == "trash"
+	case "test":
+		return command == "go" || command == "npm" || command == "pnpm" || command == "bun" || command == "yarn" ||
+			command == "npx" || command == "pytest" || command == "vitest" || command == "jest" || command == "cargo" ||
+			command == "playwright" || command == "playwright-cli" || strings.Contains(command, "test")
+	case "build":
+		return command == "go" || command == "npm" || command == "pnpm" || command == "bun" || command == "yarn" ||
+			command == "make" || command == "cargo" || strings.Contains(command, "build")
+	case "dependency":
+		return command == "npm" || command == "pnpm" || command == "yarn" || command == "bun" || command == "uv" ||
+			command == "pip" || command == "pipx" || command == "poetry" || command == "go" || command == "cargo"
+	case "network":
+		return command == "curl" || command == "wget" || command == "playwright-cli"
+	default:
+		return true
+	}
+}
+
+func topNonInteractivePerfCategory(items []ToolPerfCategoryItem) (ToolPerfCategoryItem, bool) {
+	for _, item := range items {
+		if !isInteractiveTool(item.BaseTool) && !isInteractiveTool(item.Category) {
+			return item, true
+		}
+	}
+	return ToolPerfCategoryItem{}, false
+}
+
+func topNonInteractiveSlowCall(items []ToolSlowCallItem) (ToolSlowCallItem, bool) {
+	for _, item := range items {
+		if !isInteractiveTool(item.Tool) && !isInteractiveTool(item.Category) {
+			return item, true
+		}
+	}
+	return ToolSlowCallItem{}, false
+}
+
+func topInteractiveSlowCall(items []ToolSlowCallItem) (ToolSlowCallItem, bool) {
+	for _, item := range items {
+		if isInteractiveTool(item.Tool) || isInteractiveTool(item.Category) {
+			return item, true
+		}
+	}
+	return ToolSlowCallItem{}, false
+}
+
+func isInteractiveTool(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "exitplanmode", "askuserquestion", "todowrite":
+		return true
+	default:
+		return false
+	}
+}
+
+func parseFormattedInt(value string) int {
+	value = strings.ReplaceAll(value, ",", "")
+	value = strings.TrimSpace(value)
+	total := 0
+	for _, r := range value {
+		if r < '0' || r > '9' {
+			break
+		}
+		total = total*10 + int(r-'0')
+	}
+	return total
+}
+
+func parsePercent(value string) float64 {
+	value = strings.TrimSuffix(strings.TrimSpace(value), "%")
+	var whole float64
+	var fraction float64
+	base := 10.0
+	inFraction := false
+	for _, r := range value {
+		if r == '.' {
+			inFraction = true
+			continue
+		}
+		if r < '0' || r > '9' {
+			break
+		}
+		if inFraction {
+			fraction += float64(r-'0') / base
+			base *= 10
+			continue
+		}
+		whole = whole*10 + float64(r-'0')
+	}
+	return whole + fraction
 }
 
 func severityFromRate(value, high, medium float64) string {

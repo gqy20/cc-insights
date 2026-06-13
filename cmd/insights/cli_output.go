@@ -61,6 +61,14 @@ func writeTable(value any, w io.Writer) error {
 	case cliRecommendationReport:
 		fmt.Fprintf(w, "Claude Code Diagnostics · %s\n\n", formatRange(v.TimeRange))
 		fmt.Fprintf(w, "诊断项: %s\n\n", formatInt(v.TotalFindings))
+		if v.Runtime != nil {
+			fmt.Fprintf(w, "耗时: prepare=%s  data=%s  rec=%s  total=%s  source=%s\n\n",
+				formatDurationMs(v.Runtime.PrepareDurationMs),
+				formatDurationMs(v.Runtime.DataDurationMs),
+				formatDurationMs(v.Runtime.RecommendationDurationMs),
+				formatDurationMs(v.Runtime.TotalDurationMs),
+				v.Runtime.Source)
+		}
 		for _, item := range v.Recommendations {
 			fmt.Fprintf(w, "[%s] %s · %s\n", strings.ToUpper(item.Severity), item.Category, item.Title)
 			if item.Summary != "" {
@@ -152,6 +160,14 @@ func writeMarkdown(value any, w io.Writer) error {
 	case cliRecommendationReport:
 		fmt.Fprintf(w, "# Claude Code Diagnostics\n\n范围: %s\n\n", formatRange(v.TimeRange))
 		fmt.Fprintf(w, "- 诊断项: %s\n\n", formatInt(v.TotalFindings))
+		if v.Runtime != nil {
+			fmt.Fprintf(w, "- 准备耗时: %s\n- 数据耗时: %s\n- 诊断耗时: %s\n- 总耗时: %s\n- 数据源: `%s`\n\n",
+				formatDurationMs(v.Runtime.PrepareDurationMs),
+				formatDurationMs(v.Runtime.DataDurationMs),
+				formatDurationMs(v.Runtime.RecommendationDurationMs),
+				formatDurationMs(v.Runtime.TotalDurationMs),
+				v.Runtime.Source)
+		}
 		for _, item := range v.Recommendations {
 			fmt.Fprintf(w, "## %s\n\n", item.Title)
 			fmt.Fprintf(w, "- 分类: `%s`\n- 严重度: `%s`\n- 置信度: `%s`\n", item.Category, item.Severity, item.Confidence)
