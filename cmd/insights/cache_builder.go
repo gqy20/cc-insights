@@ -38,6 +38,7 @@ type projectFileResult struct {
 
 // BuildFullCache 构建完整缓存
 func (cb *CacheBuilder) BuildFullCache() error {
+	buildStartedAt := time.Now()
 	Info("开始构建完整缓存")
 
 	dataDir := cb.DataDir
@@ -73,10 +74,17 @@ func (cb *CacheBuilder) BuildFullCache() error {
 
 	// 创建缓存结构
 	cache := &CacheFile{
-		Version:          CacheVersion,
-		LastUpdate:       time.Now(),
-		TimeRange:        TimeRange{},
-		BashRulesHash:    rulesHash,
+		Version:       CacheVersion,
+		LastUpdate:    time.Now(),
+		TimeRange:     TimeRange{},
+		BashRulesHash: rulesHash,
+		BuildStats: &CacheBuildStats{
+			BuiltAt:       buildStartedAt.Format(time.RFC3339),
+			TotalFiles:    reused + parsed,
+			ReusedFiles:   reused,
+			ParsedFiles:   parsed,
+			BashRulesHash: rulesHash,
+		},
 		DailyStats:       make(map[string]*DayAggregate),
 		TotalMessages:    totalMessages,
 		TotalSessions:    sessionStats.TotalSessions,
@@ -155,6 +163,9 @@ func (cb *CacheBuilder) BuildFullCache() error {
 		if server, name, ok := splitMCPToolName(tool.Tool); ok {
 			cache.MCPToolStats[server+"::"+name] = tool.CallCount
 		}
+	}
+	if cache.BuildStats != nil {
+		cache.BuildStats.BuildDurationMs = time.Since(buildStartedAt).Milliseconds()
 	}
 	// 4. 保存缓存
 	if err := cache.Save(cb.CachePath); err != nil {

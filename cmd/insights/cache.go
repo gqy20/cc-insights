@@ -12,10 +12,11 @@ const CacheVersion = "3.0"
 
 // CacheFile 缓存文件结构
 type CacheFile struct {
-	Version       string    // 缓存格式版本
-	LastUpdate    time.Time // 最后缓存时间戳
-	TimeRange     TimeRange // 缓存覆盖的时间范围
-	BashRulesHash string    `json:"bash_rules_hash,omitempty"`
+	Version       string           // 缓存格式版本
+	LastUpdate    time.Time        // 最后缓存时间戳
+	TimeRange     TimeRange        // 缓存覆盖的时间范围
+	BashRulesHash string           `json:"bash_rules_hash,omitempty"`
+	BuildStats    *CacheBuildStats `json:"build_stats,omitempty"`
 
 	// 预聚合数据
 	DailyStats  map[string]*DayAggregate // "2026-01-08" -> 当天所有统计
@@ -42,6 +43,16 @@ type CacheFile struct {
 	ToolPerformance  *ToolPerformanceData            `json:"tool_performance,omitempty"`
 	ProjectFiles     map[string]*ProjectFileCache    `json:"project_file_caches,omitempty"`
 	DailyRuntime     map[string]ProjectFileAggregate `json:"daily_runtime,omitempty"`
+}
+
+// CacheBuildStats 记录最近一次缓存构建的结构化元数据
+type CacheBuildStats struct {
+	BuiltAt         string `json:"built_at"`
+	BuildDurationMs int64  `json:"build_duration_ms"`
+	TotalFiles      int    `json:"total_files"`
+	ReusedFiles     int    `json:"reused_files"`
+	ParsedFiles     int    `json:"parsed_files"`
+	BashRulesHash   string `json:"bash_rules_hash,omitempty"`
 }
 
 // ProjectFileCache 单个 projects JSONL 文件的增量缓存
@@ -214,12 +225,14 @@ func (cf *CacheFile) QueryByTimeRange(start, end time.Time) *CacheFile {
 			Start: start,
 			End:   end,
 		},
-		DailyStats:   make(map[string]*DayAggregate),
-		HourlyStats:  [24]*HourAggregate{},
-		ProjectStats: make(map[string]*ProjectStatItem),
-		ModelUsage:   make(map[string]*ModelUsageItem),
-		MCPToolStats: make(map[string]int),
-		ToolStats:    make(map[string]*ToolStatItem),
+		BashRulesHash: cf.BashRulesHash,
+		BuildStats:    cloneCacheBuildStats(cf.BuildStats),
+		DailyStats:    make(map[string]*DayAggregate),
+		HourlyStats:   [24]*HourAggregate{},
+		ProjectStats:  make(map[string]*ProjectStatItem),
+		ModelUsage:    make(map[string]*ModelUsageItem),
+		MCPToolStats:  make(map[string]int),
+		ToolStats:     make(map[string]*ToolStatItem),
 	}
 
 	queryRange := TimeRange{Start: start, End: end}
@@ -309,6 +322,14 @@ func (cf *CacheFile) QueryByTimeRange(start, end time.Time) *CacheFile {
 	}
 
 	return result
+}
+
+func cloneCacheBuildStats(source *CacheBuildStats) *CacheBuildStats {
+	if source == nil {
+		return nil
+	}
+	copyValue := *source
+	return &copyValue
 }
 
 func cloneSessionAnalysis(source *SessionAnalysisData) *SessionAnalysisData {

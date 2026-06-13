@@ -139,6 +139,28 @@ func TestParseProjectsConcurrentOnce_ToolAnalysis(t *testing.T) {
 	if len(agg.CommandAnalysis.FileOperations) != 1 || agg.CommandAnalysis.FileOperations[0].FailureCount != 1 {
 		t.Fatalf("FileOperations=%+v, want one failed Read", agg.CommandAnalysis.FileOperations)
 	}
+
+	if agg.ToolPerformance == nil || len(agg.ToolPerformance.SlowestCalls) == 0 {
+		t.Fatal("ToolPerformance.SlowestCalls should not be empty")
+	}
+	foundReadSlowCall := false
+	for _, call := range agg.ToolPerformance.SlowestCalls {
+		if call.Tool == "Read" {
+			foundReadSlowCall = true
+			if call.Project != "/tmp/tool-project" {
+				t.Fatalf("slow call project=%q, want /tmp/tool-project", call.Project)
+			}
+			if call.SessionID != "session-tools" {
+				t.Fatalf("slow call session=%q, want session-tools", call.SessionID)
+			}
+			if call.Model != "glm-5v-turbo" {
+				t.Fatalf("slow call model=%q, want glm-5v-turbo", call.Model)
+			}
+		}
+	}
+	if !foundReadSlowCall {
+		t.Fatalf("SlowestCalls=%+v, want Read call", agg.ToolPerformance.SlowestCalls)
+	}
 }
 
 func TestClassifyBashRisk_IgnoresNonExecutableText(t *testing.T) {

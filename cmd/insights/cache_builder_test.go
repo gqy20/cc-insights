@@ -50,6 +50,18 @@ func TestCacheBuilderBuildFullCache(t *testing.T) {
 	if cache.TotalMessages == 0 {
 		t.Error("TotalMessages should be > 0")
 	}
+	if cache.BuildStats == nil {
+		t.Fatal("BuildStats should not be nil")
+	}
+	if cache.BuildStats.ParsedFiles == 0 {
+		t.Error("BuildStats.ParsedFiles should be > 0")
+	}
+	if cache.BuildStats.TotalFiles != cache.BuildStats.ParsedFiles+cache.BuildStats.ReusedFiles {
+		t.Errorf("BuildStats.TotalFiles = %d, want parsed+reused %d", cache.BuildStats.TotalFiles, cache.BuildStats.ParsedFiles+cache.BuildStats.ReusedFiles)
+	}
+	if cache.BuildStats.BashRulesHash != cache.BashRulesHash {
+		t.Errorf("BuildStats.BashRulesHash = %q, want %q", cache.BuildStats.BashRulesHash, cache.BashRulesHash)
+	}
 }
 
 func TestCacheBuilderBuildFullCacheDailyProjectAndModelCounts(t *testing.T) {

@@ -852,6 +852,11 @@ type ToolPerfCategoryItem struct {
 type ToolSlowCallItem struct {
 	Tool        string `json:"tool"`
 	Category    string `json:"category"`
+	Project     string `json:"project,omitempty"`
+	SessionID   string `json:"session_id,omitempty"`
+	Model       string `json:"model,omitempty"`
+	AgentID     string `json:"agent_id,omitempty"`
+	IsSidechain bool   `json:"is_sidechain,omitempty"`
 	DurationMs  int64  `json:"duration_ms"`
 	IsError     bool   `json:"is_error"`
 	ResultSize  int    `json:"result_size"`
