@@ -25,6 +25,8 @@ type cliOptions struct {
 	Model    string
 	Project  string
 	Session  string
+	ID       string
+	Detail   bool
 }
 
 type normalizedCommand struct {
@@ -82,6 +84,8 @@ type cliRecommendationReport struct {
 	ByCategory      []nameCount         `json:"by_category"`
 	Recommendations []diagnosticFinding `json:"recommendations"`
 	Runtime         *cliRuntimeInfo     `json:"runtime,omitempty"`
+	Detail          bool                `json:"detail"`
+	FilterID        string              `json:"filter_id,omitempty"`
 	Insights        []string            `json:"insights"`
 }
 
@@ -115,16 +119,53 @@ type cliRuntimeInfo struct {
 }
 
 type diagnosticFinding struct {
-	ID             string               `json:"id"`
-	Category       string               `json:"category"`
-	Severity       string               `json:"severity"`
-	Title          string               `json:"title"`
-	Summary        string               `json:"summary"`
-	Evidence       []diagnosticEvidence `json:"evidence"`
-	Interpretation string               `json:"interpretation"`
-	NextSteps      []string             `json:"next_steps"`
-	Drilldowns     []diagnosticCommand  `json:"drilldown_commands,omitempty"`
-	Confidence     string               `json:"confidence"`
+	ID             string                `json:"id"`
+	Category       string                `json:"category"`
+	Severity       string                `json:"severity"`
+	Title          string                `json:"title"`
+	Summary        string                `json:"summary"`
+	Evidence       []diagnosticEvidence  `json:"evidence"`
+	Trigger        *diagnosticTrigger    `json:"trigger,omitempty"`
+	RootCauses     []diagnosticRootCause `json:"root_causes,omitempty"`
+	Targets        []string              `json:"targets,omitempty"`
+	Examples       []diagnosticExample   `json:"examples,omitempty"`
+	Actions        []diagnosticAction    `json:"actions,omitempty"`
+	Interpretation string                `json:"interpretation"`
+	NextSteps      []string              `json:"next_steps"`
+	Drilldowns     []diagnosticCommand   `json:"drilldown_commands,omitempty"`
+	Confidence     string                `json:"confidence"`
+}
+
+type diagnosticTrigger struct {
+	Metric    string `json:"metric"`
+	Value     string `json:"value"`
+	Threshold string `json:"threshold"`
+	Source    string `json:"source"`
+	Rationale string `json:"rationale,omitempty"`
+}
+
+type diagnosticRootCause struct {
+	Type                 string   `json:"type"`
+	Confidence           string   `json:"confidence"`
+	Summary              string   `json:"summary"`
+	Evidence             []string `json:"evidence,omitempty"`
+	RecommendationTarget string   `json:"recommendation_target"`
+}
+
+type diagnosticExample struct {
+	Tool           string `json:"tool"`
+	Category       string `json:"category,omitempty"`
+	Reason         string `json:"reason,omitempty"`
+	Project        string `json:"project,omitempty"`
+	SessionID      string `json:"session_id,omitempty"`
+	Timestamp      string `json:"timestamp,omitempty"`
+	ContentPreview string `json:"content_preview,omitempty"`
+}
+
+type diagnosticAction struct {
+	Target string `json:"target"`
+	Action string `json:"action"`
+	Why    string `json:"why"`
 }
 
 type diagnosticEvidence struct {
@@ -190,7 +231,7 @@ func runCLI(args []string) error {
 		}
 		dataDuration := time.Since(dataStartedAt)
 		reportStartedAt := time.Now()
-		report := buildCLIRecommendationReport(data, opts.Limit)
+		report := buildCLIRecommendationReport(data, opts)
 		recommendationDuration := time.Since(reportStartedAt)
 		report.Runtime = &cliRuntimeInfo{
 			Source:                   source,
@@ -311,6 +352,8 @@ func parseCLIOptions(command string, args []string, analysisCommand bool) (cliOp
 		fs.StringVar(&opts.Model, "model", "", "按模型名过滤")
 		fs.StringVar(&opts.Project, "project", "", "按项目路径片段过滤")
 		fs.StringVar(&opts.Session, "session", "", "按 session_id 过滤")
+		fs.StringVar(&opts.ID, "id", "", "按诊断 ID 过滤")
+		fs.BoolVar(&opts.Detail, "detail", false, "展开诊断触发条件、根因候选和优化目标")
 	}
 	if err := fs.Parse(args); err != nil {
 		return opts, err
@@ -561,7 +604,8 @@ Usage:
   cc-insights why -p 7d --reason error_text -n 20 -j
   cc-insights cmd -p 30d -j
   cc-insights ses -p 30d --session SESSION_ID -j
-  cc-insights rec -p 30d -j
+  cc-insights rec -p 30d --detail
+  cc-insights rec -p 30d --id performance.slowest_call -j
   cc-insights web [--addr :8932]
 
 Commands:
@@ -588,5 +632,9 @@ Time flags:
 
 Inspect failure filters:
   --reason VALUE --category VALUE --tool VALUE --model VALUE
-  --project VALUE --session VALUE --samples N`)
+  --project VALUE --session VALUE --samples N
+
+Diagnostic flags:
+  --detail        expand trigger, root causes, and optimization targets
+  --id VALUE      show one diagnostic finding by exact ID`)
 }

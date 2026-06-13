@@ -70,6 +70,19 @@ func TestParseCLIOptionsInspectUsesLimitAsSamples(t *testing.T) {
 	}
 }
 
+func TestParseCLIOptionsRecommendationDetail(t *testing.T) {
+	opts, err := parseCLIOptions("rec", []string{"-p", "7d", "--detail", "--id", "performance.slowest_call"}, true)
+	if err != nil {
+		t.Fatalf("parseCLIOptions returned error: %v", err)
+	}
+	if !opts.Detail {
+		t.Fatal("Detail = false, want true")
+	}
+	if opts.ID != "performance.slowest_call" {
+		t.Fatalf("ID = %q, want performance.slowest_call", opts.ID)
+	}
+}
+
 func TestRunCLIRejectsLegacyLongCommands(t *testing.T) {
 	for _, command := range []string{"summary", "failures", "cost", "inspect"} {
 		t.Run(command, func(t *testing.T) {

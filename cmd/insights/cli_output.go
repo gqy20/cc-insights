@@ -90,6 +90,9 @@ func writeTable(value any, w io.Writer) error {
 			if len(item.NextSteps) > 0 {
 				fmt.Fprintf(w, "  排查: %s\n", strings.Join(item.NextSteps, " / "))
 			}
+			if v.Detail {
+				writeDiagnosticDetailsTable(w, item)
+			}
 			writeDrilldownsTable(w, item.Drilldowns)
 			fmt.Fprintln(w)
 		}
@@ -209,6 +212,7 @@ func writeMarkdown(value any, w io.Writer) error {
 			if item.Interpretation != "" {
 				fmt.Fprintf(w, "\n解释:\n%s\n", item.Interpretation)
 			}
+			writeDiagnosticDetailsMarkdown(w, item)
 			if len(item.NextSteps) > 0 {
 				fmt.Fprintln(w, "\n下一步:")
 				for _, step := range item.NextSteps {
@@ -375,6 +379,89 @@ func writeDrilldownsMarkdown(w io.Writer, commands []diagnosticCommand) {
 			continue
 		}
 		fmt.Fprintf(w, "- `%s`\n", command.Command)
+	}
+}
+
+func writeDiagnosticDetailsTable(w io.Writer, item diagnosticFinding) {
+	if item.Trigger != nil {
+		fmt.Fprintf(w, "  触发: metric=%s; value=%s; threshold=%s; source=%s\n",
+			item.Trigger.Metric, item.Trigger.Value, item.Trigger.Threshold, item.Trigger.Source)
+		if item.Trigger.Rationale != "" {
+			fmt.Fprintf(w, "  触发解释: %s\n", item.Trigger.Rationale)
+		}
+	}
+	if len(item.Targets) > 0 {
+		fmt.Fprintf(w, "  优化目标: %s\n", strings.Join(item.Targets, ", "))
+	}
+	if len(item.RootCauses) > 0 {
+		fmt.Fprintln(w, "  根因候选:")
+		for _, cause := range item.RootCauses {
+			fmt.Fprintf(w, "    - %s [%s] -> %s: %s\n", cause.Type, cause.Confidence, cause.RecommendationTarget, cause.Summary)
+			if len(cause.Evidence) > 0 {
+				fmt.Fprintf(w, "      依据: %s\n", strings.Join(cause.Evidence, "; "))
+			}
+		}
+	}
+	if len(item.Examples) > 0 {
+		fmt.Fprintln(w, "  样例:")
+		for _, example := range item.Examples {
+			fmt.Fprintf(w, "    - %s %s/%s %s\n", example.Tool, example.Category, example.Reason, example.Project)
+			if example.ContentPreview != "" {
+				fmt.Fprintf(w, "      %s\n", previewString(example.ContentPreview, 140))
+			}
+		}
+	}
+	if len(item.Actions) > 0 {
+		fmt.Fprintln(w, "  建议动作:")
+		for _, action := range item.Actions {
+			fmt.Fprintf(w, "    - %s: %s（%s）\n", action.Target, action.Action, action.Why)
+		}
+	}
+}
+
+func writeDiagnosticDetailsMarkdown(w io.Writer, item diagnosticFinding) {
+	if item.Trigger != nil {
+		fmt.Fprintln(w, "\n触发条件:")
+		fmt.Fprintf(w, "- metric: `%s`\n- value: `%s`\n- threshold: `%s`\n- source: `%s`\n",
+			item.Trigger.Metric, item.Trigger.Value, item.Trigger.Threshold, item.Trigger.Source)
+		if item.Trigger.Rationale != "" {
+			fmt.Fprintf(w, "- rationale: %s\n", item.Trigger.Rationale)
+		}
+	}
+	if len(item.Targets) > 0 {
+		fmt.Fprintln(w, "\n优化目标:")
+		for _, target := range item.Targets {
+			fmt.Fprintf(w, "- `%s`\n", target)
+		}
+	}
+	if len(item.RootCauses) > 0 {
+		fmt.Fprintln(w, "\n根因候选:")
+		for _, cause := range item.RootCauses {
+			fmt.Fprintf(w, "- `%s` (%s -> `%s`): %s\n", cause.Type, cause.Confidence, cause.RecommendationTarget, cause.Summary)
+			if len(cause.Evidence) > 0 {
+				for _, ev := range cause.Evidence {
+					fmt.Fprintf(w, "  - %s\n", ev)
+				}
+			}
+		}
+	}
+	if len(item.Examples) > 0 {
+		fmt.Fprintln(w, "\n样例:")
+		for _, example := range item.Examples {
+			fmt.Fprintf(w, "- `%s` `%s/%s` `%s`\n", example.Tool, example.Category, example.Reason, example.Project)
+			if example.ContentPreview != "" {
+				fmt.Fprintf(w, "  - %s\n", previewString(example.ContentPreview, 180))
+			}
+		}
+	}
+	if len(item.Actions) > 0 {
+		fmt.Fprintln(w, "\n建议动作:")
+		for _, action := range item.Actions {
+			fmt.Fprintf(w, "- `%s`: %s\n", action.Target, action.Action)
+			if action.Why != "" {
+				fmt.Fprintf(w, "  - 原因: %s\n", action.Why)
+			}
+		}
 	}
 }
 

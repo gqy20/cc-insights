@@ -1,0 +1,72 @@
+version: 1
+rules:
+  - id_prefix: command.family.high_failure.
+    metric: bash_family_failure_rate
+    threshold: 调用次数 >= 30 且失败率 >= 30%
+    source: command_analysis.bash_families
+    rationale: 高频命令族失败率偏高，说明该类动作入口或前置条件不稳定。
+  - id: command.other.high_ratio
+    metric: bash_other_ratio
+    threshold: other 调用 >= 20 且占比 >= 10%
+    source: command_analysis.bash_families
+    rationale: 未分类命令占比偏高会降低后续诊断归因质量。
+  - id: command.risky.present
+    metric: risky_bash_command
+    threshold: 检测到 high/medium 风险命令
+    source: command_analysis.risky_commands
+    rationale: 破坏性或权限相关命令需要更明确的确认边界。
+  - id_prefix: command.classification.suspicious.
+    metric: bash_family_top_command_mismatch
+    threshold: 命令族调用 >= 20 且 Top 命令语义不匹配
+    source: command_analysis.bash_families
+    rationale: 分类规则误命中会污染后续诊断。
+  - id_prefix: failure.reason.concentrated.
+    metric: failure_reason_ratio
+    threshold: 失败次数 >= 10 且占全部失败 >= 25%
+    source: failure_analysis.by_reason
+    rationale: 失败原因集中时，通常可以通过明确约定或前置检查降低反复失败。
+  - id_prefix: failure.tool_reason.top.
+    metric: tool_reason_failure_count
+    threshold: 同一工具和原因失败 >= 10 次
+    source: failure_analysis.by_tool_reason
+    rationale: 特定工具失败集中，优先优化该工具调用边界。
+  - id_prefix: performance.tool.slow.
+    metric: tool_category_duration
+    threshold: 累计耗时 >= 60s 或平均耗时 >= 5s
+    source: tool_performance.by_category
+    rationale: 耗时集中会放大等待成本和上下文消耗。
+  - id: performance.slowest_call
+    metric: slowest_call_duration
+    threshold: 单次非交互工具调用 >= 10s
+    source: tool_performance.slowest_calls
+    rationale: 慢调用样例适合作为性能和工作流优化入口。
+  - id: performance.cache.build_cost
+    metric: cache_build_cost
+    threshold: 缓存构建 >= 10s 或解析文件 >= 500
+    source: cache.build_stats
+    rationale: 缓存刷新成本会影响 CLI 和 Web 首次响应。
+  - id: context.project.token_concentration
+    metric: project_token_ratio
+    threshold: 项目 token >= 100k 且占比 >= 40%
+    source: cost_analysis.by_project
+    rationale: Token 集中说明该项目的上下文读取或重复探索成本较高。
+  - id: context.session.large_token
+    metric: session_total_tokens
+    threshold: 单 session token >= 200k
+    source: cost_analysis.by_session
+    rationale: 高 Token 会话通常代表任务范围、上下文读取或阶段拆分存在优化空间。
+  - id: workflow.session.long_running
+    metric: session_duration_or_failures
+    threshold: Session >= 30min 或工具失败 >= 10
+    source: session_analysis.long_running
+    rationale: 长会话或高失败会话说明任务边界和失败恢复策略需要检查。
+  - id: workflow.interactive_tool.long_wait
+    metric: interactive_tool_wait
+    threshold: 交互型工具等待 >= 10min
+    source: tool_performance.slowest_calls
+    rationale: 交互等待更像流程停顿，而不是工具执行性能问题。
+  - id: workflow.plan.no_exit
+    metric: plan_exit_count
+    threshold: Plan 进入 >= 10 且退出 = 0
+    source: task_plan_analysis.plan_lifecycle
+    rationale: Plan 生命周期不完整会影响任务阶段判断。

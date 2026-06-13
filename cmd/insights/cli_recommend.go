@@ -51,14 +51,15 @@ func buildRecommendationDashboardData(tf TimeFilter, preset string) (*DashboardD
 	}, "cache", nil
 }
 
-func buildCLIRecommendationReport(data *DashboardData, limit int) cliRecommendationReport {
-	report := cliRecommendationReport{TimeRange: data.TimeRange}
+func buildCLIRecommendationReport(data *DashboardData, opts cliOptions) cliRecommendationReport {
+	report := cliRecommendationReport{TimeRange: data.TimeRange, Detail: opts.Detail, FilterID: strings.TrimSpace(opts.ID)}
 	findings := make([]diagnosticFinding, 0, 12)
 	findings = append(findings, buildCommandDiagnostics(data)...)
 	findings = append(findings, buildFailureDiagnostics(data)...)
 	findings = append(findings, buildPerformanceDiagnostics(data)...)
 	findings = append(findings, buildContextDiagnostics(data)...)
 	findings = append(findings, buildWorkflowDiagnostics(data)...)
+	enrichDiagnosticFindings(data, findings)
 
 	sort.SliceStable(findings, func(i, j int) bool {
 		if diagnosticRank(findings[i]) != diagnosticRank(findings[j]) {
@@ -69,8 +70,10 @@ func buildCLIRecommendationReport(data *DashboardData, limit int) cliRecommendat
 		}
 		return findings[i].ID < findings[j].ID
 	})
-	if len(findings) > limit {
-		findings = findings[:limit]
+	if report.FilterID != "" {
+		findings = filterDiagnosticFindingsByID(findings, report.FilterID)
+	} else if len(findings) > opts.Limit {
+		findings = findings[:opts.Limit]
 	}
 	addDiagnosticDrilldowns(data.TimeRange, findings)
 
@@ -79,6 +82,539 @@ func buildCLIRecommendationReport(data *DashboardData, limit int) cliRecommendat
 	report.ByCategory = countFindingsByCategory(findings)
 	report.Insights = buildRecommendationInsights(report)
 	return report
+}
+
+func filterDiagnosticFindingsByID(findings []diagnosticFinding, id string) []diagnosticFinding {
+	filtered := make([]diagnosticFinding, 0, 1)
+	for _, finding := range findings {
+		if finding.ID == id {
+			filtered = append(filtered, finding)
+		}
+	}
+	return filtered
+}
+
+func enrichDiagnosticFindings(data *DashboardData, findings []diagnosticFinding) {
+	for i := range findings {
+		findings[i] = enrichDiagnosticFinding(data, findings[i])
+	}
+}
+
+func enrichDiagnosticFinding(data *DashboardData, finding diagnosticFinding) diagnosticFinding {
+	finding.Trigger = buildDiagnosticTrigger(finding)
+	finding.Examples = buildDiagnosticExamples(data, finding, 3)
+	finding.RootCauses = buildDiagnosticRootCauses(finding, finding.Examples)
+	finding.Targets = diagnosticTargets(finding)
+	finding.Actions = diagnosticActions(finding)
+	return finding
+}
+
+func buildDiagnosticTrigger(finding diagnosticFinding) *diagnosticTrigger {
+	value := diagnosticTriggerValue(finding)
+	if rule, ok := diagnosticRuleForID(finding.ID); ok {
+		return &diagnosticTrigger{
+			Metric:    rule.Metric,
+			Value:     value,
+			Threshold: rule.Threshold,
+			Source:    rule.Source,
+			Rationale: rule.Rationale,
+		}
+	}
+	return &diagnosticTrigger{
+		Metric:    "diagnostic_rule",
+		Value:     nonEmpty(value, finding.Severity),
+		Threshold: "内置诊断规则触发",
+		Source:    "dashboard_data",
+		Rationale: "该诊断由聚合数据触发。",
+	}
+}
+
+func diagnosticTriggerValue(finding diagnosticFinding) string {
+	switch {
+	case strings.HasPrefix(finding.ID, "command.family.high_failure."):
+		return evidenceValue(finding, "失败率")
+	case finding.ID == "command.other.high_ratio":
+		return evidenceValue(finding, "占比")
+	case finding.ID == "command.risky.present":
+		return evidenceValue(finding, "风险等级")
+	case strings.HasPrefix(finding.ID, "command.classification.suspicious."):
+		return evidenceValue(finding, "Top 命令")
+	case strings.HasPrefix(finding.ID, "failure.reason.concentrated."):
+		return evidenceValue(finding, "占比")
+	case strings.HasPrefix(finding.ID, "failure.tool_reason.top."):
+		return evidenceValue(finding, "次数")
+	case strings.HasPrefix(finding.ID, "performance.tool.slow."):
+		return evidenceValue(finding, "平均耗时")
+	case finding.ID == "performance.slowest_call":
+		return evidenceValue(finding, "耗时")
+	case finding.ID == "performance.cache.build_cost":
+		return evidenceValue(finding, "构建耗时")
+	case finding.ID == "context.project.token_concentration":
+		return evidenceValue(finding, "占比")
+	case finding.ID == "context.session.large_token":
+		return evidenceValue(finding, "Token")
+	case finding.ID == "workflow.session.long_running":
+		return evidenceValue(finding, "耗时")
+	case finding.ID == "workflow.interactive_tool.long_wait":
+		return evidenceValue(finding, "耗时")
+	case finding.ID == "workflow.plan.no_exit":
+		return evidenceValue(finding, "Plan 退出")
+	default:
+		return finding.Severity
+	}
+}
+
+func buildDiagnosticExamples(data *DashboardData, finding diagnosticFinding, limit int) []diagnosticExample {
+	if data == nil || data.FailureAnalysis == nil || limit <= 0 {
+		return nil
+	}
+	examples := make([]diagnosticExample, 0, limit)
+	for _, sample := range data.FailureAnalysis.Samples {
+		if !matchesDiagnosticSample(finding, sample) {
+			continue
+		}
+		examples = append(examples, diagnosticExample{
+			Tool:           sample.Tool,
+			Category:       sample.Category,
+			Reason:         sample.Reason,
+			Project:        sample.Project,
+			SessionID:      sample.SessionID,
+			Timestamp:      sample.Timestamp,
+			ContentPreview: sample.ContentPreview,
+		})
+		if len(examples) >= limit {
+			break
+		}
+	}
+	return examples
+}
+
+func matchesDiagnosticSample(finding diagnosticFinding, sample ToolFailureSample) bool {
+	reasonCategory, reason := splitCategoryReason(evidenceValue(finding, "原因"))
+	tool := evidenceValue(finding, "工具")
+	session := evidenceValue(finding, "Session")
+	project := evidenceValue(finding, "项目")
+	switch finding.Category {
+	case "failure":
+		if tool != "" && !strings.EqualFold(tool, sample.Tool) {
+			return false
+		}
+		if reasonCategory != "" && !strings.EqualFold(reasonCategory, sample.Category) {
+			return false
+		}
+		if reason != "" && !strings.EqualFold(reason, sample.Reason) {
+			return false
+		}
+		return true
+	case "command":
+		return strings.EqualFold(sample.Tool, "Bash")
+	case "performance", "workflow", "context":
+		if session != "" && session != "unknown" {
+			return strings.EqualFold(session, sample.SessionID)
+		}
+		if project != "" && project != "unknown" {
+			return strings.Contains(strings.ToLower(sample.Project), strings.ToLower(project))
+		}
+	}
+	return false
+}
+
+func buildDiagnosticRootCauses(finding diagnosticFinding, examples []diagnosticExample) []diagnosticRootCause {
+	switch finding.Category {
+	case "failure":
+		return failureRootCauses(finding, examples)
+	case "command":
+		return commandRootCauses(finding, examples)
+	case "performance":
+		return performanceRootCauses(finding, examples)
+	case "context":
+		return contextRootCauses(finding, examples)
+	case "workflow":
+		return workflowRootCauses(finding, examples)
+	default:
+		return nil
+	}
+}
+
+func failureRootCauses(finding diagnosticFinding, examples []diagnosticExample) []diagnosticRootCause {
+	reason := strings.ToLower(evidenceValue(finding, "原因"))
+	tool := evidenceValue(finding, "工具")
+	if cause, ok := detailedFailureRootCause(finding, examples); ok {
+		return []diagnosticRootCause{cause}
+	}
+	if strings.Contains(reason, "not_found") || strings.Contains(reason, "missing") || strings.Contains(reason, "file") {
+		return []diagnosticRootCause{{
+			Type:                 "missing_path_or_file_assumption",
+			Confidence:           finding.Confidence,
+			Summary:              "失败更像路径、文件或目录假设错误。",
+			Evidence:             compactStrings(evidenceStatement(finding, "原因"), evidenceStatement(finding, "次数"), evidenceStatement(finding, "工具")),
+			RecommendationTarget: "CLAUDE.md",
+		}}
+	}
+	if strings.Contains(reason, "timeout") {
+		return []diagnosticRootCause{{
+			Type:                 "timeout_or_task_scope_too_large",
+			Confidence:           finding.Confidence,
+			Summary:              "失败更像超时、任务范围过大或缺少短路径验证。",
+			Evidence:             compactStrings(evidenceStatement(finding, "原因"), evidenceStatement(finding, "次数"), evidenceStatement(finding, "工具")),
+			RecommendationTarget: "workflow",
+		}}
+	}
+	if strings.Contains(reason, "permission") || strings.Contains(reason, "auth") {
+		return []diagnosticRootCause{{
+			Type:                 "permission_or_auth_boundary",
+			Confidence:           finding.Confidence,
+			Summary:              "失败更像权限、认证或访问边界不清。",
+			Evidence:             compactStrings(evidenceStatement(finding, "原因"), evidenceStatement(finding, "工具")),
+			RecommendationTarget: "MCP",
+		}}
+	}
+	return []diagnosticRootCause{{
+		Type:                 "tool_precondition_or_parameter_contract",
+		Confidence:           finding.Confidence,
+		Summary:              "失败集中在特定原因或工具，优先检查调用前置条件和参数约定。",
+		Evidence:             compactStrings(evidenceStatement(finding, "原因"), "工具="+nonEmpty(tool, "unknown")),
+		RecommendationTarget: "CLAUDE.md",
+	}}
+}
+
+func commandRootCauses(finding diagnosticFinding, examples []diagnosticExample) []diagnosticRootCause {
+	family := strings.ToLower(evidenceValue(finding, "命令族"))
+	if cause, ok := detailedFailureRootCause(finding, examples); ok {
+		cause.Confidence = minConfidence(cause.Confidence, finding.Confidence)
+		return []diagnosticRootCause{cause}
+	}
+	if strings.Contains(finding.ID, "classification") {
+		return []diagnosticRootCause{{
+			Type:                 "bash_rule_misclassification",
+			Confidence:           "medium",
+			Summary:              "命令族和 Top 命令语义不匹配，可能是 Bash 分类规则误命中。",
+			Evidence:             compactStrings(evidenceStatement(finding, "命令族"), evidenceStatement(finding, "Top 命令"), evidenceStatement(finding, "样例")),
+			RecommendationTarget: "tool",
+		}}
+	}
+	if strings.Contains(finding.ID, "risky") {
+		return []diagnosticRootCause{{
+			Type:                 "unsafe_command_requires_guardrail",
+			Confidence:           finding.Confidence,
+			Summary:              "高风险命令需要显式确认、提示或 hook 保护。",
+			Evidence:             compactStrings(evidenceStatement(finding, "命令"), evidenceStatement(finding, "风险等级"), evidenceStatement(finding, "原因")),
+			RecommendationTarget: "hook",
+		}}
+	}
+	target := "CLAUDE.md"
+	causeType := "unstable_command_entrypoint"
+	if family == "network" {
+		target = "MCP"
+		causeType = "service_or_network_precondition"
+	}
+	if family == "test" || family == "build" || family == "dependency" || family == "javascript" {
+		target = "tool"
+	}
+	return []diagnosticRootCause{{
+		Type:                 causeType,
+		Confidence:           finding.Confidence,
+		Summary:              "命令失败率偏高，通常来自入口、工作目录、依赖或前置条件不稳定。",
+		Evidence:             compactStrings(evidenceStatement(finding, "命令族"), evidenceStatement(finding, "失败率"), evidenceStatement(finding, "Top 命令")),
+		RecommendationTarget: target,
+	}}
+}
+
+func performanceRootCauses(finding diagnosticFinding, examples []diagnosticExample) []diagnosticRootCause {
+	if cause, ok := detailedFailureRootCause(finding, examples); ok {
+		cause.Confidence = "medium"
+		return []diagnosticRootCause{cause}
+	}
+	if finding.ID == "performance.cache.build_cost" {
+		return []diagnosticRootCause{{
+			Type:                 "cache_refresh_or_aggregation_cost",
+			Confidence:           finding.Confidence,
+			Summary:              "性能问题更像缓存刷新、聚合或附加扫描成本。",
+			Evidence:             compactStrings(evidenceStatement(finding, "构建耗时"), evidenceStatement(finding, "解析文件"), evidenceStatement(finding, "复用文件")),
+			RecommendationTarget: "tool",
+		}}
+	}
+	return []diagnosticRootCause{{
+		Type:                 "slow_tool_or_expensive_path",
+		Confidence:           finding.Confidence,
+		Summary:              "耗时更像慢工具调用、高成本命令或缺少 quick path。",
+		Evidence:             compactStrings(evidenceStatement(finding, "工具"), evidenceStatement(finding, "类别"), evidenceStatement(finding, "耗时"), evidenceStatement(finding, "平均耗时")),
+		RecommendationTarget: "tool",
+	}}
+}
+
+func contextRootCauses(finding diagnosticFinding, examples []diagnosticExample) []diagnosticRootCause {
+	if cause, ok := detailedFailureRootCause(finding, examples); ok {
+		cause.Confidence = "medium"
+		return []diagnosticRootCause{cause}
+	}
+	return []diagnosticRootCause{{
+		Type:                 "large_context_or_repeated_exploration",
+		Confidence:           finding.Confidence,
+		Summary:              "Token 消耗偏高通常来自上下文反复读取、任务范围过大或缺少项目结构说明。",
+		Evidence:             compactStrings(evidenceStatement(finding, "项目"), evidenceStatement(finding, "Session"), evidenceStatement(finding, "Token"), evidenceStatement(finding, "占比")),
+		RecommendationTarget: "CLAUDE.md",
+	}}
+}
+
+func workflowRootCauses(finding diagnosticFinding, examples []diagnosticExample) []diagnosticRootCause {
+	if cause, ok := detailedFailureRootCause(finding, examples); ok {
+		cause.Confidence = "medium"
+		return []diagnosticRootCause{cause}
+	}
+	if finding.ID == "workflow.interactive_tool.long_wait" {
+		return []diagnosticRootCause{{
+			Type:                 "human_or_plan_wait",
+			Confidence:           finding.Confidence,
+			Summary:              "长耗时更像人工确认、计划确认或会话暂停。",
+			Evidence:             compactStrings(evidenceStatement(finding, "工具"), evidenceStatement(finding, "耗时"), evidenceStatement(finding, "Session")),
+			RecommendationTarget: "workflow",
+		}}
+	}
+	if finding.ID == "workflow.plan.no_exit" {
+		return []diagnosticRootCause{{
+			Type:                 "missing_plan_lifecycle_signal",
+			Confidence:           finding.Confidence,
+			Summary:              "Plan 事件缺少退出信号，可能是解析缺口或工作流没有稳定结束标记。",
+			Evidence:             compactStrings(evidenceStatement(finding, "Plan 进入"), evidenceStatement(finding, "Plan 退出")),
+			RecommendationTarget: "workflow",
+		}}
+	}
+	return []diagnosticRootCause{{
+		Type:                 "task_boundary_or_recovery_strategy",
+		Confidence:           finding.Confidence,
+		Summary:              "长会话或高失败会话通常来自任务边界过大、计划拆分不足或失败恢复策略不清。",
+		Evidence:             compactStrings(evidenceStatement(finding, "Session"), evidenceStatement(finding, "耗时"), evidenceStatement(finding, "工具失败")),
+		RecommendationTarget: "workflow",
+	}}
+}
+
+func detailedFailureRootCause(finding diagnosticFinding, examples []diagnosticExample) (diagnosticRootCause, bool) {
+	text := strings.ToLower(evidenceValue(finding, "原因") + " " + evidenceValue(finding, "工具") + " " + examplesText(examples))
+	evidence := detailedExampleEvidence(examples)
+	confidence := "medium"
+	if len(examples) > 0 {
+		confidence = "high"
+	}
+	switch {
+	case containsAny(text, "executable doesn't exist", "playwright", "chromium", "browser"):
+		return diagnosticRootCause{
+			Type:                 "browser_missing",
+			Confidence:           confidence,
+			Summary:              "失败更像浏览器运行时或 Playwright 依赖缺失。",
+			Evidence:             evidence,
+			RecommendationTarget: "MCP",
+		}, true
+	case containsAny(text, "connection refused", "econnrefused", "localhost", "127.0.0.1"):
+		return diagnosticRootCause{
+			Type:                 "service_not_running",
+			Confidence:           confidence,
+			Summary:              "失败更像本地服务未启动、端口不可达或服务地址不一致。",
+			Evidence:             evidence,
+			RecommendationTarget: "CLAUDE.md",
+		}, true
+	case containsAny(text, "address already in use", "eaddrinuse", "port is already allocated"):
+		return diagnosticRootCause{
+			Type:                 "port_conflict",
+			Confidence:           confidence,
+			Summary:              "失败更像端口冲突或已有服务占用。",
+			Evidence:             evidence,
+			RecommendationTarget: "hook",
+		}, true
+	case containsAny(text, "command not found", "module not found", "cannot find module", "no module named", "package not found"):
+		return diagnosticRootCause{
+			Type:                 "dependency_missing",
+			Confidence:           confidence,
+			Summary:              "失败更像依赖、命令或运行环境缺失。",
+			Evidence:             evidence,
+			RecommendationTarget: "tool",
+		}, true
+	case containsAny(text, "no such file", "file not found", "not found in file", "不存在", "cannot find"):
+		return diagnosticRootCause{
+			Type:                 "missing_path",
+			Confidence:           confidence,
+			Summary:              "失败更像文件、目录或替换目标不存在。",
+			Evidence:             evidence,
+			RecommendationTarget: "CLAUDE.md",
+		}, true
+	case containsAny(text, "permission denied", "operation not permitted", "unauthorized", "forbidden", "invalid api key"):
+		return diagnosticRootCause{
+			Type:                 "permission_or_auth",
+			Confidence:           confidence,
+			Summary:              "失败更像权限、认证或访问边界不清。",
+			Evidence:             evidence,
+			RecommendationTarget: "MCP",
+		}, true
+	case containsAny(text, "http_4", "http 4", "http_5", "http 5", "status 4", "status 5", " 412", " 429", " 500", " 502", " 503"):
+		return diagnosticRootCause{
+			Type:                 "network_4xx_5xx",
+			Confidence:           confidence,
+			Summary:              "失败更像外部服务 HTTP 错误、限流或认证失败。",
+			Evidence:             evidence,
+			RecommendationTarget: "MCP",
+		}, true
+	case containsAny(text, "timed out", "timeout", "deadline exceeded", "超时"):
+		return diagnosticRootCause{
+			Type:                 "task_scope_too_large",
+			Confidence:           confidence,
+			Summary:              "失败更像任务范围过大、慢调用缺少短超时或缺少 quick path。",
+			Evidence:             evidence,
+			RecommendationTarget: "workflow",
+		}, true
+	case containsAny(text, "not a git repository", "no such directory", "working directory", "cwd"):
+		return diagnosticRootCause{
+			Type:                 "wrong_workdir",
+			Confidence:           confidence,
+			Summary:              "失败更像工作目录或项目入口判断错误。",
+			Evidence:             evidence,
+			RecommendationTarget: "CLAUDE.md",
+		}, true
+	default:
+		return diagnosticRootCause{}, false
+	}
+}
+
+func examplesText(examples []diagnosticExample) string {
+	parts := make([]string, 0, len(examples)*4)
+	for _, example := range examples {
+		parts = append(parts, example.Tool, example.Category, example.Reason, example.ContentPreview)
+	}
+	return strings.Join(parts, " ")
+}
+
+func detailedExampleEvidence(examples []diagnosticExample) []string {
+	if len(examples) == 0 {
+		return nil
+	}
+	items := make([]string, 0, len(examples))
+	for _, example := range examples {
+		reason := strings.Trim(example.Category+"/"+example.Reason, "/")
+		items = append(items, fmt.Sprintf("%s %s: %s", example.Tool, reason, previewString(example.ContentPreview, 120)))
+	}
+	return items
+}
+
+func containsAny(value string, needles ...string) bool {
+	for _, needle := range needles {
+		if strings.Contains(value, needle) {
+			return true
+		}
+	}
+	return false
+}
+
+func minConfidence(a, b string) string {
+	if severityRank(a) < severityRank(b) {
+		return a
+	}
+	return b
+}
+
+func diagnosticTargets(finding diagnosticFinding) []string {
+	targets := make([]string, 0, 4)
+	for _, cause := range finding.RootCauses {
+		targets = append(targets, cause.RecommendationTarget)
+	}
+	switch finding.Category {
+	case "failure":
+		targets = append(targets, "CLAUDE.md", "hook")
+	case "command":
+		targets = append(targets, "CLAUDE.md", "tool")
+	case "performance":
+		targets = append(targets, "tool", "workflow")
+	case "context":
+		targets = append(targets, "CLAUDE.md", "workflow")
+	case "workflow":
+		targets = append(targets, "workflow", "CLAUDE.md")
+	}
+	return uniqueNonEmptyStrings(targets)
+}
+
+func diagnosticActions(finding diagnosticFinding) []diagnosticAction {
+	actions := make([]diagnosticAction, 0, len(finding.RootCauses)+2)
+	for _, cause := range finding.RootCauses {
+		actions = append(actions, actionForRootCause(cause))
+	}
+	if len(actions) == 0 {
+		for _, target := range finding.Targets {
+			actions = append(actions, diagnosticAction{
+				Target: target,
+				Action: genericActionForTarget(target),
+				Why:    "该诊断指向 " + finding.Category + " 类问题。",
+			})
+		}
+	}
+	return dedupeDiagnosticActions(actions)
+}
+
+func actionForRootCause(cause diagnosticRootCause) diagnosticAction {
+	action := genericActionForTarget(cause.RecommendationTarget)
+	switch cause.Type {
+	case "missing_path", "missing_path_or_file_assumption":
+		action = "补充项目目录结构、常用文件入口和执行前检查路径存在的约定。"
+	case "wrong_workdir":
+		action = "写清标准工作目录、子项目入口和命令执行目录。"
+	case "service_not_running":
+		action = "补充本地服务启动、健康检查和端口约定。"
+	case "port_conflict":
+		action = "增加端口占用检查或 hook 提示，避免重复启动服务。"
+	case "dependency_missing":
+		action = "封装环境检查命令，并写清包管理器、安装步骤和禁止混用规则。"
+	case "browser_missing":
+		action = "补充浏览器/Playwright 安装检查，或在 MCP/工具初始化中验证运行时依赖。"
+	case "network_4xx_5xx":
+		action = "补充认证、代理、限流和外部服务失败的处理约定。"
+	case "permission_or_auth", "permission_or_auth_boundary":
+		action = "明确权限、认证和密钥配置边界，必要时增加前置校验。"
+	case "task_scope_too_large", "timeout_or_task_scope_too_large":
+		action = "拆分任务阶段，区分 quick path 和 full path，并为慢命令设置短超时。"
+	case "unsafe_command_requires_guardrail":
+		action = "为删除、sudo、权限修改等命令增加显式确认或 hook 拦截。"
+	case "bash_rule_misclassification":
+		action = "调整 Bash 分类规则，修正 priority、contains 或 exclude。"
+	case "slow_tool_or_expensive_path":
+		action = "把高频慢路径封装成稳定脚本，提供快速验证入口。"
+	case "large_context_or_repeated_exploration":
+		action = "补充项目结构、任务拆分和文件读取边界，减少重复探索。"
+	case "human_or_plan_wait", "task_boundary_or_recovery_strategy":
+		action = "明确计划确认、任务拆分、暂停恢复和验收点。"
+	}
+	return diagnosticAction{
+		Target: cause.RecommendationTarget,
+		Action: action,
+		Why:    cause.Summary,
+	}
+}
+
+func genericActionForTarget(target string) string {
+	switch target {
+	case "CLAUDE.md":
+		return "补充项目结构、常用命令、前置条件和任务边界。"
+	case "hook":
+		return "增加前置检查、危险操作确认或失败提示。"
+	case "MCP":
+		return "检查工具依赖、认证、网络、浏览器运行时和参数契约。"
+	case "tool":
+		return "把高频或高成本动作封装为稳定脚本或短命令。"
+	case "workflow":
+		return "拆分任务阶段，明确计划、执行、验证和恢复策略。"
+	default:
+		return "根据诊断证据补充可执行约定。"
+	}
+}
+
+func dedupeDiagnosticActions(actions []diagnosticAction) []diagnosticAction {
+	seen := make(map[string]bool)
+	deduped := make([]diagnosticAction, 0, len(actions))
+	for _, action := range actions {
+		key := action.Target + "\x00" + action.Action
+		if action.Target == "" || action.Action == "" || seen[key] {
+			continue
+		}
+		seen[key] = true
+		deduped = append(deduped, action)
+	}
+	return deduped
 }
 
 func addDiagnosticDrilldowns(timeRange TimeRangeInfo, findings []diagnosticFinding) {
@@ -550,6 +1086,39 @@ func evidenceValue(finding diagnosticFinding, label string) string {
 		}
 	}
 	return ""
+}
+
+func evidenceStatement(finding diagnosticFinding, label string) string {
+	value := evidenceValue(finding, label)
+	if value == "" {
+		return ""
+	}
+	return label + "=" + value
+}
+
+func compactStrings(values ...string) []string {
+	items := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			items = append(items, value)
+		}
+	}
+	return items
+}
+
+func uniqueNonEmptyStrings(values []string) []string {
+	seen := make(map[string]bool)
+	items := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" || seen[value] {
+			continue
+		}
+		seen[value] = true
+		items = append(items, value)
+	}
+	return items
 }
 
 func splitCategoryReason(value string) (string, string) {

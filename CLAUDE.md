@@ -16,7 +16,7 @@ cc-insights 是面向 Claude Code 的使用诊断工具。它读取 Claude Code 
 CLI 命令必须保持收敛：
 
 - `sum`：全局概览。
-- `rec`：诊断、解释、证据摘要、下一步方向和下钻命令。
+- `rec`：诊断、解释、证据摘要、触发条件、根因候选、建议动作和下钻命令。
 - `why`：失败样例下钻。
 - `cmd`：Bash 命令族、具体命令和高风险命令下钻。
 - `tok`：Token、模型、项目和会话消耗下钻。
@@ -36,6 +36,7 @@ CLI 命令必须保持收敛：
 - `*_analysis.go`：成本、Session、Skill、命令、失败等专项分析。
 - `cmd/insights/static/`：Web Dashboard 静态资源，ECharts 已本地化。
 - `cmd/insights/rules/bash.yml`：内置 Bash 命令分类规则。
+- `cmd/insights/rules/diagnostics.yml`：`rec` 诊断规则说明，包括指标、阈值、数据来源和触发解释。
 - `docs/`：路线图、说明和截图。
 
 ## 常用命令
@@ -54,6 +55,7 @@ make release        # 构建多平台发布包
 
 ```bash
 go run ./cmd/insights rec -p 7d -n 3
+go run ./cmd/insights rec -p 7d --detail
 go run ./cmd/insights why -p 7d --reason timeout -n 5
 go run ./cmd/insights ses -p 7d -n 5
 go run ./cmd/insights web --addr :8932
@@ -66,6 +68,7 @@ go run ./cmd/insights web --addr :8932
 - 不要引入重复命令；优先复用 `rec`、`why`、`cmd`、`tok`、`ses` 的职责边界。
 - 对结构化数据优先使用现有聚合和缓存结构，不要临时扫描或拼字符串。
 - 修改 Bash 分类规则时优先编辑 `cmd/insights/rules/bash.yml`，避免把可配置规则硬编码进 Go。
+- 修改诊断阈值说明、指标来源和触发解释时优先编辑 `cmd/insights/rules/diagnostics.yml`。
 - 不提交真实 Claude Code 数据、缓存文件或日志。
 
 ## 测试要求

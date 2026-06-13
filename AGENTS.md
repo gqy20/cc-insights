@@ -4,11 +4,11 @@
 
 cc-insights 是面向 Claude Code 的使用诊断工具，不只是统计或可视化工具。核心目标是把历史数据转化为可解释的证据、判断和改进方向，帮助人和 AI 看清失败、耗时、Token、Session、Bash 命令和工具调用背后的原因。
 
-命令体系保持收敛：`rec` 负责诊断、解释和下一步方向；`why`、`cmd`、`tok`、`ses` 负责证据下钻；`sum` 负责全局概览；`web` 负责本地可视化。不要为每一种解释继续增加新命令，新的分析能力优先增强 `rec`。
+命令体系保持收敛：`rec` 负责诊断、解释、触发条件、根因候选、建议动作和下一步方向；`why`、`cmd`、`tok`、`ses` 负责证据下钻；`sum` 负责全局概览；`web` 负责本地可视化。不要为每一种解释继续增加新命令，新的分析能力优先增强 `rec`。
 
 ## 项目结构
 
-主代码位于 `cmd/insights/`，使用单个 Go `main` 包。CLI 入口和报告构建在 `cli.go`、`cli_*.go`；解析、聚合、缓存和分析逻辑分布在 `parser.go`、`aggregate*.go`、`cache*.go`、`*_analysis.go`。前端静态资源在 `cmd/insights/static/`，内置 Bash 分类规则在 `cmd/insights/rules/bash.yml`，文档和截图在 `docs/`。
+主代码位于 `cmd/insights/`，使用单个 Go `main` 包。CLI 入口和报告构建在 `cli.go`、`cli_*.go`；解析、聚合、缓存和分析逻辑分布在 `parser.go`、`aggregate*.go`、`cache*.go`、`*_analysis.go`。前端静态资源在 `cmd/insights/static/`；规则文件在 `cmd/insights/rules/`，其中 `bash.yml` 负责 Bash 分类，`diagnostics.yml` 负责诊断阈值说明；文档和截图在 `docs/`。
 
 ## 构建、测试与运行
 
@@ -36,4 +36,4 @@ Go 文件提交前运行 `gofmt`。新增功能应放在对应领域文件中：
 
 ## 安全与配置
 
-不要提交真实 Claude Code 数据、缓存或日志。默认数据目录为 `~/.claude/`，本地缓存位于 `~/.cc-insights/cache/`。自定义 Bash 规则可放在 `~/.cc-insights/bash.yml`，内置默认规则位于 `cmd/insights/rules/bash.yml`。
+不要提交真实 Claude Code 数据、缓存或日志。默认数据目录为 `~/.claude/`，本地缓存位于 `~/.cc-insights/cache/`。自定义 Bash 规则可放在 `~/.cc-insights/bash.yml`，内置默认规则位于 `cmd/insights/rules/bash.yml`；诊断规则说明位于 `cmd/insights/rules/diagnostics.yml`。
