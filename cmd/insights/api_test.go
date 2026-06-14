@@ -64,9 +64,9 @@ func TestGracefulDegradation_MissingDebugDir(t *testing.T) {
 	if data.ProjectStats == nil || len(data.ProjectStats.Projects) == 0 {
 		t.Error("ProjectStats 不应为空（projects 数据存在）")
 	}
-	// debug 缺失时 MCPTools 应为空而非 nil 导致 panic
-	if data.MCPTools == nil {
-		t.Log("⚠️ MCPTools 为 nil（debug 目录缺失，预期为空切片）")
+	// debug 缺失时 RuntimeTools 应为空而非 nil 导致 panic
+	if data.RuntimeTools == nil {
+		t.Log("⚠️ RuntimeTools 为 nil（debug 目录缺失，预期为空切片）")
 	}
 }
 
@@ -328,8 +328,8 @@ func TestBuildDataFromParsing_AllSourcesMissing(t *testing.T) {
 	if data.DailyTrend.Dates == nil {
 		t.Error("DailyTrend.Dates 不应为 nil")
 	}
-	if data.MCPTools == nil {
-		t.Error("MCPTools 不应为 nil")
+	if data.RuntimeTools == nil {
+		t.Error("RuntimeTools 不应为 nil")
 	}
 	if data.Sessions == nil {
 		t.Error("Sessions 不应为 nil")
@@ -524,8 +524,8 @@ func TestParallelParsing_Correctness(t *testing.T) {
 	if data.ProjectStats == nil || data.ProjectStats.TotalMessages == 0 {
 		t.Error("ProjectStats 消息数应为 >0")
 	}
-	if len(data.MCPTools) == 0 {
-		t.Error("MCPTools 不应为空（debug 有 MCP 记录）")
+	if len(data.RuntimeTools) == 0 {
+		t.Error("RuntimeTools 不应为空（debug 有 MCP 记录）")
 	}
 	if data.Sessions == nil || data.Sessions.TotalSessions == 0 {
 		t.Error("Sessions 不应为空（有 2 个 session 文件）")
@@ -538,7 +538,7 @@ func TestParallelParsing_Correctness(t *testing.T) {
 
 	t.Logf("✅ 并行解析结果一致: cmds=%d, msgs=%d, tools=%d, sessions=%d",
 		len(data.Commands), data.ProjectStats.TotalMessages,
-		len(data.MCPTools), data.Sessions.TotalSessions)
+		len(data.RuntimeTools), data.Sessions.TotalSessions)
 }
 
 // === P0: 消除 cache_builder 冗余 I/O ===
@@ -688,21 +688,17 @@ func TestHTTPTimeout_ProtectSlowRequests(t *testing.T) {
 	t.Logf("✅ HTTP 请求在 %v 内完成（有超时保护时更安全）", elapsed)
 }
 
-// TestQueryByTimeRange_FilterGlobalStats 测试缓存查询应过滤全局统计
-//
-// 🔴 红阶段: 当前 QueryByTimeRange 只过滤了 DailyStats，
-// 但 HourlyStats/WeekdayStats/ProjectStats/ModelUsage/MCPToolStats 全量复制。
-// 选"最近7天"时返回全量项目排名和模型使用，与用户预期不符。
+// TestQueryByTimeRange_FilterGlobalStats 测试缓存查询会按时间范围重建全局统计。
 func TestQueryByTimeRange_FilterGlobalStats(t *testing.T) {
 	// Arrange: 创建一个跨多天的缓存
 	cache := &CacheFile{
-		Version:      CacheVersion,
-		LastUpdate:   time.Now(),
-		DailyStats:   make(map[string]*DayAggregate),
-		HourlyStats:  [24]*HourAggregate{},
-		ProjectStats: make(map[string]*ProjectStatItem),
-		ModelUsage:   make(map[string]*ModelUsageItem),
-		MCPToolStats: make(map[string]int),
+		Version:            CacheVersion,
+		LastUpdate:         time.Now(),
+		DailyStats:         make(map[string]*DayAggregate),
+		HourlyStats:        [24]*HourAggregate{},
+		ProjectStats:       make(map[string]*ProjectStatItem),
+		ModelUsage:         make(map[string]*ModelUsageItem),
+		RuntimeToolSignals: make(map[string]int),
 	}
 
 	// Day1 (在范围内): project-A 有活动, model-X 有使用

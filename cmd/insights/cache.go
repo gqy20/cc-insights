@@ -28,7 +28,7 @@ type CacheFile struct {
 	ProjectStats        map[string]*ProjectStatItem
 	ModelUsage          map[string]*ModelUsageItem
 	WeekdayStats        [7]*WeekdayItem
-	MCPToolStats        map[string]int
+	RuntimeToolSignals  map[string]int
 	ToolStats           map[string]*ToolStatItem
 	ToolAnalysis        *ToolAnalysisData
 	SkillAnalysis       *SkillAnalysisData
@@ -242,7 +242,7 @@ func (cf *CacheFile) QueryByTimeRange(start, end time.Time) *CacheFile {
 		HourlyStats:         [24]*HourAggregate{},
 		ProjectStats:        make(map[string]*ProjectStatItem),
 		ModelUsage:          make(map[string]*ModelUsageItem),
-		MCPToolStats:        make(map[string]int),
+		RuntimeToolSignals:  make(map[string]int),
 		ToolStats:           make(map[string]*ToolStatItem),
 		DailyRuntime:        make(map[string]ProjectFileAggregate),
 		DailyProjectRuntime: make(map[string]map[string]ProjectFileAggregate),
@@ -347,8 +347,8 @@ func (cf *CacheFile) QueryByTimeRange(start, end time.Time) *CacheFile {
 		for _, tool := range runtimeAggregate.ToolAnalysis.Tools {
 			toolCopy := tool
 			result.ToolStats[tool.Tool] = &toolCopy
-			if server, name, ok := splitMCPToolName(tool.Tool); ok {
-				result.MCPToolStats[server+"::"+name] = tool.CallCount
+			if server, name, ok := splitRuntimeMCPToolName(tool.Tool); ok {
+				result.RuntimeToolSignals[server+"::"+name] = tool.CallCount
 			}
 		}
 	}

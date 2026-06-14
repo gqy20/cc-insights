@@ -66,7 +66,7 @@ func buildCoverage(filter AnalysisFilter) map[string]CoverageInfo {
 		mark("unavailable", []string{"commands"}, "当前筛选没有 Slash 命令交叉维度索引。")
 	}
 	if filter.Reason != "" || filter.Category != "" || filter.Session != "" || filter.Family != "" {
-		mark("unavailable", []string{"mcpTools"}, "当前筛选无法精确映射到 MCP server/tool 汇总。")
+		mark("unavailable", []string{"runtimeTools"}, "当前筛选无法精确映射到 runtime debug 工具信号。")
 	}
 	if filter.Project != "" || filter.Tool != "" || filter.Reason != "" || filter.Category != "" || filter.Session != "" || filter.Family != "" {
 		mark("unavailable", []string{"modelChart"}, "当前筛选没有可复用的模型分布索引。")
@@ -198,7 +198,7 @@ func applyDimensionTimeSeries(data *DashboardData, filter AnalysisFilter) {
 	if filter.Tool != "" || filter.Reason != "" || filter.Category != "" || filter.Session != "" || filter.Family != "" || (filter.Project != "" && filter.Model != "") {
 		clearUnscopedTimeSeries(data)
 		if filter.Reason != "" || filter.Category != "" || filter.Session != "" || filter.Family != "" {
-			data.MCPTools = nil
+			data.RuntimeTools = nil
 		}
 		return
 	}
@@ -412,7 +412,7 @@ func filterTools(data *DashboardData, tool string) {
 	if tool == "" {
 		return
 	}
-	data.MCPTools = filterSlice(data.MCPTools, func(item MCPToolStats) bool {
+	data.RuntimeTools = filterSlice(data.RuntimeTools, func(item RuntimeToolSignal) bool {
 		return matchContains(tool, item.Tool) || matchContains(tool, item.Server)
 	})
 	if data.ToolAnalysis != nil {
@@ -566,7 +566,7 @@ func applyPrecisionGuard(data *DashboardData, filter AnalysisFilter) {
 		data.Commands = nil
 		data.HourlyCounts = map[string]int{}
 		data.WorkHoursStats = nil
-		data.MCPTools = filterMCPToolsForPrecision(data.MCPTools, filter)
+		data.RuntimeTools = filterRuntimeToolsForPrecision(data.RuntimeTools, filter)
 	}
 
 	if filter.Project != "" || filter.Tool != "" || filter.Reason != "" || filter.Category != "" || filter.Session != "" || filter.Family != "" {
@@ -603,11 +603,11 @@ func applyPrecisionGuard(data *DashboardData, filter AnalysisFilter) {
 	}
 }
 
-func filterMCPToolsForPrecision(items []MCPToolStats, filter AnalysisFilter) []MCPToolStats {
+func filterRuntimeToolsForPrecision(items []RuntimeToolSignal, filter AnalysisFilter) []RuntimeToolSignal {
 	if filter.Tool == "" {
 		return nil
 	}
-	return filterSlice(items, func(item MCPToolStats) bool {
+	return filterSlice(items, func(item RuntimeToolSignal) bool {
 		return matchContains(filter.Tool, item.Tool) || matchContains(filter.Tool, item.Server)
 	})
 }

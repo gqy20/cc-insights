@@ -121,8 +121,8 @@ func CreateHourlyChart(hourlyCounts map[string]int) *charts.Bar {
 	return bar
 }
 
-// CreateMCPToolsChart 创建 MCP 工具使用图表
-func CreateMCPToolsChart(toolStats []MCPToolStats) *charts.Pie {
+// CreateRuntimeToolsChart 创建 runtime debug 工具信号图表
+func CreateRuntimeToolsChart(toolStats []RuntimeToolSignal) *charts.Pie {
 	// 取前10个
 	limit := 10
 	if len(toolStats) < limit {
@@ -140,7 +140,7 @@ func CreateMCPToolsChart(toolStats []MCPToolStats) *charts.Pie {
 
 	pie := charts.NewPie()
 
-	pie.AddSeries("MCP 工具调用", data).
+	pie.AddSeries("Runtime 工具信号", data).
 		SetSeriesOptions(
 			charts.WithLabelOpts(
 				opts.Label{
@@ -151,8 +151,8 @@ func CreateMCPToolsChart(toolStats []MCPToolStats) *charts.Pie {
 
 	pie.SetGlobalOptions(
 		charts.WithTitleOpts(opts.Title{
-			Title:    "MCP 工具调用统计 (Top 10)",
-			Subtitle: "数据来源: debug/ 目录",
+			Title:    "Runtime 工具信号 (Top 10)",
+			Subtitle: "debug/ 日志中的 MCP 信号",
 			Left:     "center",
 			Top:      "20px",
 		}),
@@ -201,7 +201,7 @@ func CreateDashboard() (*components.Page, error) {
 		CreateDailyTrendChart(dates, counts),
 		CreateCommandChart(cmdStats),
 		CreateHourlyChart(hourlyCounts),
-		CreateMCPToolsChart(toolStats),
+		CreateRuntimeToolsChart(toolStats),
 	)
 
 	return page, nil

@@ -24,9 +24,9 @@ cc-insights 是面向 Claude Code 的本地使用诊断工具。它读取 `~/.cl
 主要数据源：
 
 - `history.jsonl`：slash command 和历史命令概览。
-- `projects/**/*.jsonl`：核心会话、工具调用、模型、Token、运行事件。
+- `projects/**/*.jsonl`：核心会话、工具调用、模型、Token、运行事件；真实 MCP 工具调用也属于这里的 `ToolAnalysis` 口径。
 - `tasks/*/*.json`：Task 状态、Session 任务分布。
-- `debug/`：runtime 事件日志路径，用于 hook、skill、budget、opened file 等运行时信号。
+- `debug/`：runtime 事件日志路径，用于 hook、skill、budget、opened file 和 `runtime_tools` 等补充信号。
 
 ## 主要模块
 

@@ -110,15 +110,15 @@ function initCommandsChart(commands) {
         `最常用的是 <strong>${escapeHtml(topCmd.command)}</strong>，使用了 <strong>${topCmd.count}</strong> 次（占比 ${topCmdPercent}%）。`;
 }
 
-// 初始化 MCP 工具图
-function initMCPToolsChart(tools) {
+// 初始化 Runtime 工具图
+function initRuntimeToolsChart(tools) {
     if (!tools || tools.length === 0) {
-        document.getElementById('mcpTools-insight').innerHTML =
-            '<strong>💡 数据洞察:</strong> 该时间范围内暂无 MCP 工具调用数据';
+        document.getElementById('runtimeTools-insight').innerHTML =
+            '<strong>💡 数据洞察:</strong> 该时间范围内暂无 Runtime 工具信号数据';
         return;
     }
 
-    const chart = echarts.init(document.getElementById('mcpTools'), 'wonderland');
+    const chart = echarts.init(document.getElementById('runtimeTools'), 'wonderland');
 
     const top10 = tools.slice(0, 10);
     const data = top10.map(t => ({
@@ -128,8 +128,8 @@ function initMCPToolsChart(tools) {
 
     const option = {
         title: {
-            text: 'MCP 工具调用统计 (Top 10)',
-            subtext: '数据来源: debug/ 目录',
+            text: 'Runtime 工具信号 (Top 10)',
+            subtext: 'debug/ 日志中的 MCP 信号',
             left: 'center',
             top: '20px'
         },
@@ -140,7 +140,7 @@ function initMCPToolsChart(tools) {
             }
         },
         series: [{
-            name: 'MCP 工具调用',
+            name: 'Runtime 工具信号',
             type: 'pie',
             data: data,
             radius: '70%',
@@ -163,8 +163,8 @@ function initMCPToolsChart(tools) {
     });
     const topServer = Object.entries(serverCounts).sort((a, b) => b[1] - a[1])[0];
 
-    document.getElementById('mcpTools-insight').innerHTML =
-        `<strong>💡 数据洞察:</strong> 共调用了 <strong>${tools.length}</strong> 种不同的 MCP 工具，` +
+    document.getElementById('runtimeTools-insight').innerHTML =
+        `<strong>💡 数据洞察:</strong> debug 日志捕捉到 <strong>${tools.length}</strong> 种 Runtime 工具信号，` +
         `总计 <strong>${totalCalls.toLocaleString()}</strong> 次。` +
         `最活跃的服务器是 <strong>${escapeHtml(topServer[0])}</strong>，最常用工具是 <strong>${escapeHtml(topTool.server)}::${escapeHtml(topTool.tool)}</strong>（占比 ${topToolPercent}%）。`;
 }

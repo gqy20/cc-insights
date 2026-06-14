@@ -67,8 +67,8 @@ func buildDashboardConsistencyReport(data *DashboardData) DashboardConsistencyRe
 			report.Checks["tool_items_missing_sum"] += tool.MissingResultCount
 		}
 	}
-	for _, tool := range data.MCPTools {
-		report.Checks["mcp_tool_sum"] += tool.Count
+	for _, tool := range data.RuntimeTools {
+		report.Checks["runtime_tool_sum"] += tool.Count
 	}
 	if data.ToolPerformance != nil {
 		report.Checks["tool_perf_paired_calls"] = data.ToolPerformance.TotalPairedCalls
@@ -92,7 +92,7 @@ func buildDashboardConsistencyReport(data *DashboardData) DashboardConsistencyRe
 	report.expectEqual("tool_items_call_sum", "tool_total_calls")
 	report.expectEqual("tool_items_failure_sum", "tool_total_failures")
 	report.expectEqual("tool_items_missing_sum", "tool_missing_results")
-	report.expectLessOrEqual("mcp_tool_sum", "tool_total_calls")
+	report.expectLessOrEqual("runtime_tool_sum", "tool_total_calls")
 	report.expectLessOrEqual("tool_perf_paired_calls", "tool_total_calls")
 	report.expectLessOrEqual("tool_perf_errors", "tool_perf_paired_calls")
 	report.expectLessOrEqual("tool_perf_category_error_sum", "tool_perf_category_call_sum")

@@ -32,15 +32,15 @@ const chartDefinitions = [
         render: data => initCommandsChart(data.commands)
     },
     {
-        id: 'mcpTools',
-        group: 'usage',
-        title: 'MCP 工具调用',
-        description: '按 server 和 tool 汇总外部工具使用频率。',
+        id: 'runtimeTools',
+        group: 'runtime',
+        title: 'Runtime 工具信号',
+        description: '从 debug 日志补充 MCP runtime 工具信号，不代表完整工具调用口径。',
         height: 700,
         layout: 'compact',
-        hasData: data => hasArrayData(data.mcp_tools),
-        emptyText: '该时间范围内没有 MCP 工具调用。',
-        render: data => initMCPToolsChart(data.mcp_tools)
+        hasData: data => hasArrayData(data.runtime_tools),
+        emptyText: '该时间范围内没有 Runtime 工具信号。',
+        render: data => initRuntimeToolsChart(data.runtime_tools)
     },
     {
         id: 'projectChart',
@@ -625,7 +625,7 @@ function renderSummary(data, overview) {
     const dailyCounts = safeArray(data.daily_trend && data.daily_trend.counts);
     const totalMessages = summary.messages || (data.project_stats ? data.project_stats.total_messages : dailyCounts.reduce((sum, count) => sum + count, 0));
     const totalSessions = summary.sessions || (data.sessions ? data.sessions.total_sessions : 0);
-    const totalTools = summary.tool_calls || (data.tool_analysis ? data.tool_analysis.total_calls : safeArray(data.mcp_tools).reduce((sum, tool) => sum + tool.count, 0));
+    const totalTools = summary.tool_calls || (data.tool_analysis ? data.tool_analysis.total_calls : 0);
     const failureRate = Number(summary.failure_rate) > 0
         ? `${summary.failure_rate.toFixed(1)}%`
         : data.tool_analysis && data.tool_analysis.total_calls > 0

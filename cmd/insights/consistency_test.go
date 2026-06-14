@@ -76,8 +76,8 @@ func TestDashboardDataConsistencyFromScopedCache(t *testing.T) {
 	if report.Checks["tool_total_calls"] != 2 {
 		t.Fatalf("tool_total_calls=%d, want 2; checks=%+v", report.Checks["tool_total_calls"], report.Checks)
 	}
-	if report.Checks["mcp_tool_sum"] != 1 {
-		t.Fatalf("mcp_tool_sum=%d, want 1; checks=%+v", report.Checks["mcp_tool_sum"], report.Checks)
+	if report.Checks["runtime_tool_sum"] != 1 {
+		t.Fatalf("runtime_tool_sum=%d, want 1; checks=%+v", report.Checks["runtime_tool_sum"], report.Checks)
 	}
 	if report.Checks["cost_request_count"] != 2 {
 		t.Fatalf("cost_request_count=%d, want 2; checks=%+v", report.Checks["cost_request_count"], report.Checks)

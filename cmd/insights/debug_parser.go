@@ -14,7 +14,7 @@ import (
 var mcpPattern = regexp.MustCompile(`mcp__(\w+)__(\w+)`)
 
 // ParseDebugLogs 解析 debug 日志目录
-func ParseDebugLogs() ([]MCPToolStats, error) {
+func ParseDebugLogs() ([]RuntimeToolSignal, error) {
 	debugDir := GetDataPath("debug")
 
 	entries, err := os.ReadDir(debugDir)
@@ -68,11 +68,11 @@ func ParseDebugLogs() ([]MCPToolStats, error) {
 	}
 
 	// 转换为切片
-	var toolStats []MCPToolStats
+	var toolStats []RuntimeToolSignal
 	for fullTool, count := range aggregateCounts {
 		parts := strings.Split(fullTool, "::")
 		if len(parts) == 2 {
-			toolStats = append(toolStats, MCPToolStats{
+			toolStats = append(toolStats, RuntimeToolSignal{
 				Tool:   parts[1],
 				Server: parts[0],
 				Count:  count,
@@ -87,7 +87,7 @@ func ParseDebugLogs() ([]MCPToolStats, error) {
 }
 
 // ParseDebugLogsWithFilter 带时间过滤解析 debug 日志目录
-func ParseDebugLogsWithFilter(tf TimeFilter) ([]MCPToolStats, error) {
+func ParseDebugLogsWithFilter(tf TimeFilter) ([]RuntimeToolSignal, error) {
 	debugDir := GetDataPath("debug")
 
 	entries, err := os.ReadDir(debugDir)
@@ -154,11 +154,11 @@ func ParseDebugLogsWithFilter(tf TimeFilter) ([]MCPToolStats, error) {
 	}
 
 	// 转换为切片
-	var toolStats []MCPToolStats
+	var toolStats []RuntimeToolSignal
 	for fullTool, count := range aggregateCounts {
 		parts := strings.Split(fullTool, "::")
 		if len(parts) == 2 {
-			toolStats = append(toolStats, MCPToolStats{
+			toolStats = append(toolStats, RuntimeToolSignal{
 				Tool:   parts[1],
 				Server: parts[0],
 				Count:  count,

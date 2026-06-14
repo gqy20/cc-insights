@@ -90,7 +90,7 @@ func (cb *CacheBuilder) BuildFullCache() error {
 		TotalSessions:       sessionStats.TotalSessions,
 		ProjectStats:        make(map[string]*ProjectStatItem),
 		ModelUsage:          make(map[string]*ModelUsageItem),
-		MCPToolStats:        make(map[string]int),
+		RuntimeToolSignals:  make(map[string]int),
 		ToolStats:           make(map[string]*ToolStatItem),
 		ToolAnalysis:        aggregate.ToolAnalysis,
 		SkillAnalysis:       aggregate.SkillAnalysis,
@@ -184,8 +184,8 @@ func (cb *CacheBuilder) BuildFullCache() error {
 	for _, tool := range aggregate.ToolAnalysis.Tools {
 		toolCopy := tool
 		cache.ToolStats[tool.Tool] = &toolCopy
-		if server, name, ok := splitMCPToolName(tool.Tool); ok {
-			cache.MCPToolStats[server+"::"+name] = tool.CallCount
+		if server, name, ok := splitRuntimeMCPToolName(tool.Tool); ok {
+			cache.RuntimeToolSignals[server+"::"+name] = tool.CallCount
 		}
 	}
 	if cache.BuildStats != nil {
@@ -248,7 +248,7 @@ func refreshGlobalCache(force bool) error {
 	return nil
 }
 
-func splitMCPToolName(tool string) (string, string, bool) {
+func splitRuntimeMCPToolName(tool string) (string, string, bool) {
 	if !strings.HasPrefix(tool, "mcp__") {
 		return "", "", false
 	}
@@ -592,8 +592,8 @@ func (cb *CacheBuilder) buildFromDebugLogs(cache *CacheFile) error {
 		return err
 	}
 
-	if cache.MCPToolStats == nil {
-		cache.MCPToolStats = make(map[string]int)
+	if cache.RuntimeToolSignals == nil {
+		cache.RuntimeToolSignals = make(map[string]int)
 	}
 
 	// 遍历 debug 日志文件
@@ -679,7 +679,7 @@ func (cb *CacheBuilder) parseDebugFile(filePath string, cache *CacheFile) error 
 	}
 	defer f.Close()
 
-	// 使用正则匹配 MCP 工具调用
+	// 使用正则匹配 Runtime 工具信号
 	pattern := mcpPattern
 	if pattern == nil {
 		pattern = regexp.MustCompile(`mcp__(\w+)__(\w+)`)
@@ -693,7 +693,7 @@ func (cb *CacheBuilder) parseDebugFile(filePath string, cache *CacheFile) error 
 		for _, match := range matches {
 			if len(match) >= 3 {
 				key := match[1] + "::" + match[2]
-				cache.MCPToolStats[key]++
+				cache.RuntimeToolSignals[key]++
 			}
 		}
 	}

@@ -237,8 +237,8 @@ func TestCacheQueryByTimeRangeScopesRuntimeAnalysis(t *testing.T) {
 	if len(result.ToolAnalysis.Tools) != 1 || result.ToolAnalysis.Tools[0].Tool != "mcp__crawl__extract_url" {
 		t.Fatalf("ToolAnalysis.Tools=%+v, want only mcp__crawl__extract_url", result.ToolAnalysis.Tools)
 	}
-	if result.MCPToolStats["crawl::extract_url"] != 1 {
-		t.Fatalf("MCPToolStats=%+v, want crawl::extract_url=1", result.MCPToolStats)
+	if result.RuntimeToolSignals["crawl::extract_url"] != 1 {
+		t.Fatalf("RuntimeToolSignals=%+v, want crawl::extract_url=1", result.RuntimeToolSignals)
 	}
 	if result.CostAnalysis == nil || result.CostAnalysis.Totals.RequestCount != 1 {
 		t.Fatalf("CostAnalysis totals=%+v, want request_count=1", result.CostAnalysis)

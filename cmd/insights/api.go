@@ -29,7 +29,7 @@ type DashboardData struct {
 	Commands         []CommandStats          `json:"commands"`
 	HourlyCounts     map[string]int          `json:"hourly_counts"`
 	DailyTrend       DailyTrendData          `json:"daily_trend"`
-	MCPTools         []MCPToolStats          `json:"mcp_tools"`
+	RuntimeTools     []RuntimeToolSignal     `json:"runtime_tools"`
 	Sessions         *SessionStats           `json:"sessions"`
 	ProjectStats     *ProjectStatsData       `json:"project_stats,omitempty"`
 	WeekdayStats     *WeekdayStats           `json:"weekday_stats,omitempty"`
@@ -156,9 +156,9 @@ func buildDataFromCache(tf TimeFilter, preset string) (*DashboardData, error) {
 	cached := globalCache.QueryByTimeRange(start, end)
 	queryDuration := time.Since(queryStartedAt)
 
-	// 构建 MCPTools（从缓存中的 MCPToolStats 转换）
-	mcpTools := make([]MCPToolStats, 0, len(cached.MCPToolStats))
-	for key, count := range cached.MCPToolStats {
+	// 构建 RuntimeTools（从缓存中的 RuntimeToolSignals 转换）
+	runtimeTools := make([]RuntimeToolSignal, 0, len(cached.RuntimeToolSignals))
+	for key, count := range cached.RuntimeToolSignals {
 		// key 格式: "server::tool"
 		// 需要拆分
 		server := "unknown"
@@ -167,13 +167,13 @@ func buildDataFromCache(tf TimeFilter, preset string) (*DashboardData, error) {
 			server = key[:idx]
 			tool = key[idx+2:]
 		}
-		mcpTools = append(mcpTools, MCPToolStats{
+		runtimeTools = append(runtimeTools, RuntimeToolSignal{
 			Tool:   tool,
 			Server: server,
 			Count:  count,
 		})
 	}
-	sortMCPToolStats(mcpTools)
+	sortRuntimeToolSignals(runtimeTools)
 
 	// 单次遍历 DailyStats：构建每日趋势和 session 峰谷。
 	dates := make([]string, 0, len(cached.DailyStats))
@@ -312,7 +312,7 @@ func buildDataFromCache(tf TimeFilter, preset string) (*DashboardData, error) {
 		Commands:     cmdStats,
 		HourlyCounts: hourlyCountsMap,
 		DailyTrend:   DailyTrendData{Dates: dates, Counts: counts},
-		MCPTools:     mcpTools,
+		RuntimeTools: runtimeTools,
 		Sessions:     sessionStats,
 		ProjectStats: &ProjectStatsData{
 			Projects:      projects,
@@ -350,7 +350,7 @@ func buildDataFromParsing(tf TimeFilter, preset string) (*DashboardData, error) 
 	var cmdStats []CommandStats
 	var hourlyCountsMap map[string]int
 	var aggregate *ProjectAggregate
-	var toolStats []MCPToolStats
+	var toolStats []RuntimeToolSignal
 	var taskAnalysis *TaskAnalysisData
 
 	var wg sync.WaitGroup
@@ -436,7 +436,7 @@ func buildDataFromParsing(tf TimeFilter, preset string) (*DashboardData, error) 
 		Commands:         cmdStats,
 		HourlyCounts:     hourlyCountsMap,
 		DailyTrend:       DailyTrendData{Dates: dates, Counts: counts},
-		MCPTools:         toolStats,
+		RuntimeTools:     toolStats,
 		Sessions:         sessionStats,
 		ProjectStats:     projectStatsData,
 		WeekdayStats:     aggregate.WeekdayStats,
@@ -510,7 +510,7 @@ func sortModelUsage(models []ModelUsageItem) {
 	})
 }
 
-func sortMCPToolStats(tools []MCPToolStats) {
+func sortRuntimeToolSignals(tools []RuntimeToolSignal) {
 	sort.SliceStable(tools, func(i, j int) bool {
 		if tools[i].Count != tools[j].Count {
 			return tools[i].Count > tools[j].Count
@@ -664,11 +664,11 @@ func safeParseProjectsOnce(tf TimeFilter) (*ProjectAggregate, error) {
 }
 
 // safeParseDebugLogs 安全解析 debug 日志（容错包装）
-func safeParseDebugLogs(tf TimeFilter) ([]MCPToolStats, error) {
+func safeParseDebugLogs(tf TimeFilter) ([]RuntimeToolSignal, error) {
 	tools, err := ParseDebugLogsConcurrent(tf)
 	if err != nil {
 		Warn("ParseDebugLogsConcurrent 失败，使用空结果", "error", err.Error())
-		return []MCPToolStats{}, nil
+		return []RuntimeToolSignal{}, nil
 	}
 	return tools, nil
 }

@@ -59,7 +59,7 @@ func sumCounts(stats []CommandStats) int {
 	return total
 }
 
-func sumToolCounts(stats []MCPToolStats) int {
+func sumToolCounts(stats []RuntimeToolSignal) int {
 	total := 0
 	for _, s := range stats {
 		total += s.Count

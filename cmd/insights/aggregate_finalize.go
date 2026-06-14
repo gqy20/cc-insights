@@ -777,7 +777,7 @@ func (agg *ProjectAggregate) finalizeToolPerformance() {
 		if c, ok := perToolCap[baseTool]; ok {
 			cap = c
 		}
-		// MCP 工具通常数量少且每个都有意义，不截断
+		// Runtime 工具通常数量少且每个都有意义，不截断
 		if strings.HasPrefix(baseTool, "mcp__") {
 			cap = len(items)
 		}

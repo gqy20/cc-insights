@@ -131,17 +131,17 @@ func ParseHistoryConcurrent(tf TimeFilter) ([]CommandStats, map[string]int, erro
 }
 
 // ParseDebugLogsConcurrent 并发解析 debug 日志（优化版）
-func ParseDebugLogsConcurrent(tf TimeFilter) ([]MCPToolStats, error) {
+func ParseDebugLogsConcurrent(tf TimeFilter) ([]RuntimeToolSignal, error) {
 	return ParseDebugLogsConcurrentFromDir(tf, cfg.DataDir)
 }
 
 // ParseDebugLogsConcurrentFromDir 并发解析指定数据目录下的 debug 日志
-func ParseDebugLogsConcurrentFromDir(tf TimeFilter, dataDir string) ([]MCPToolStats, error) {
+func ParseDebugLogsConcurrentFromDir(tf TimeFilter, dataDir string) ([]RuntimeToolSignal, error) {
 	debugDir := filepath.Join(dataDir, "debug")
 	entries, err := os.ReadDir(debugDir)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return []MCPToolStats{}, nil
+			return []RuntimeToolSignal{}, nil
 		}
 		return nil, err
 	}
@@ -205,11 +205,11 @@ func ParseDebugLogsConcurrentFromDir(tf TimeFilter, dataDir string) ([]MCPToolSt
 	}
 
 	// 转换为切片
-	var toolStats []MCPToolStats
+	var toolStats []RuntimeToolSignal
 	for fullTool, count := range aggregateCounts {
 		parts := strings.Split(fullTool, "::")
 		if len(parts) == 2 {
-			toolStats = append(toolStats, MCPToolStats{
+			toolStats = append(toolStats, RuntimeToolSignal{
 				Tool:   parts[1],
 				Server: parts[0],
 				Count:  count,

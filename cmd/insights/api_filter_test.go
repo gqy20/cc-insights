@@ -121,7 +121,7 @@ func TestApplyDashboardFilterKeepsPreciseToolData(t *testing.T) {
 	data := &DashboardData{
 		DailyTrend: DailyTrendData{Dates: []string{"2026-06-01"}, Counts: []int{10}},
 		Commands:   []CommandStats{{Command: "/resume", Count: 2}},
-		MCPTools: []MCPToolStats{
+		RuntimeTools: []RuntimeToolSignal{
 			{Server: "crawl", Tool: "search", Count: 5},
 			{Server: "other", Tool: "read", Count: 3},
 		},

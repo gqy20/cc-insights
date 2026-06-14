@@ -1074,8 +1074,8 @@ type SessionIndexResult struct {
 	Entries []SessionIndexEntry `json:"entries"`
 }
 
-// MCPToolStats MCP工具统计
-type MCPToolStats struct {
+// RuntimeToolSignal runtime debug 日志中识别到的 MCP 工具信号。
+type RuntimeToolSignal struct {
 	Tool   string `json:"tool"`
 	Server string `json:"server"`
 	Count  int    `json:"count"`

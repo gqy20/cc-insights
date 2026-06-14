@@ -471,10 +471,6 @@ func buildCLISummary(data *DashboardData) cliSummary {
 	totalTools := 0
 	if data.ToolAnalysis != nil {
 		totalTools = data.ToolAnalysis.TotalCalls
-	} else {
-		for _, tool := range data.MCPTools {
-			totalTools += tool.Count
-		}
 	}
 	totalMessages := 0
 	totalSessions := 0
