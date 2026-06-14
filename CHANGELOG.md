@@ -31,7 +31,7 @@
 - **并发解析引擎**：对 history、projects 和 debug 日志进行并行解析，`projects/*.jsonl` 使用 `ParseProjectsConcurrentOnce` 单次遍历聚合多类统计。
 - **缓存系统**：使用 `CacheBuilder` 预聚合并持久化缓存，按时间范围查询，基于文件修改时间判断是否重建。
 - **性能基准与大数据支持**：面向 GB 级 Claude Code 数据目录优化解析和缓存流程，README 记录 2.2GB 数据集下的性能测试结果。
-- **HTTP API**：提供 `/api/data`、`/api/stats` 和 `/api/reload`，支持前端数据读取、旧版统计接口兼容和手动刷新。
+- **HTTP API**：提供 `/api/data`、交互式下钻接口和 `/api/reload`，支持前端数据读取、大屏联动和手动刷新。
 - **单文件部署**：静态资源嵌入 Go 二进制，支持静态链接构建和跨平台发布包。
 - **测试覆盖**：覆盖解析器、缓存、API、会话分析、失败分析、成本分析、CLI 命令规范和一致性检查。
 - **项目文档**：README 提供快速开始、CLI 用法、API 示例、性能测试和开发命令说明。

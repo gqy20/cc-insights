@@ -427,8 +427,8 @@ async function loadData(params) {
 
     try {
         const filterParams = buildQueryParams();
-        const [legacy, overview, diagnostics, failures, commands, tokens, sessions, tools] = await Promise.all([
-            fetchLegacyData(filterParams, signal),
+        const [dashboard, overview, diagnostics, failures, commands, tokens, sessions, tools] = await Promise.all([
+            fetchDashboardData(filterParams, signal),
             fetchInteractive('/api/overview', filterParams, signal),
             fetchInteractive('/api/diagnostics', { ...filterParams, detail: 'true' }, signal),
             fetchInteractive('/api/detail/failures', filterParams, signal),
@@ -441,12 +441,12 @@ async function loadData(params) {
         clearInterval(stageInterval);
         updateLoadingProgress(loadingStages[loadingStages.length - 1]);
 
-        dashboardState.data = { legacy, overview, diagnostics, failures, commands, tokens, sessions, tools };
-        updateStatsInfo(legacy.data, overview.meta);
-        renderSummary(legacy.data, overview.data);
+        dashboardState.data = { dashboard, overview, diagnostics, failures, commands, tokens, sessions, tools };
+        updateStatsInfo(dashboard.data, overview.meta);
+        renderSummary(dashboard.data, overview.data);
         renderDiagnostics(diagnostics.data);
         renderDetails({ failures: failures.data, commands: commands.data, tokens: tokens.data, sessions: sessions.data, tools: tools.data });
-        renderCharts(legacy.data, { skipSummary: true });
+        renderCharts(dashboard.data, { skipSummary: true });
     } catch (error) {
         clearInterval(stageInterval);
         if (error.name !== 'AbortError') {
@@ -485,10 +485,10 @@ function toQueryString(params) {
     return new URLSearchParams(params).toString();
 }
 
-async function fetchLegacyData(params, signal) {
+async function fetchDashboardData(params, signal) {
     const response = await fetch(`/api/data?${toQueryString(params)}`, { signal });
     const result = await response.json();
-    if (!result.success) throw new Error(result.error || '旧版数据接口返回失败');
+    if (!result.success) throw new Error(result.error || 'Dashboard 数据接口返回失败');
     return result;
 }
 

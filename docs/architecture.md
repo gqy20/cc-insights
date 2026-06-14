@@ -26,7 +26,7 @@ cc-insights 是面向 Claude Code 的本地使用诊断工具。它读取 `~/.cl
 - `history.jsonl`：slash command 和历史命令概览。
 - `projects/**/*.jsonl`：核心会话、工具调用、模型、Token、运行事件。
 - `tasks/*/*.json`：Task 状态、Session 任务分布。
-- `debug/`：旧版 MCP debug 兼容路径。
+- `debug/`：runtime 事件日志路径，用于 hook、skill、budget、opened file 等运行时信号。
 
 ## 主要模块
 
@@ -78,7 +78,7 @@ Web Dashboard 负责可视化趋势、运行时统计和分析结果。当前主
 - `/api/detail/tools`：工具性能和慢调用下钻。
 - `/api/timeline`：全局时间轴数据，服务 slider / brush。
 
-这些接口和旧 `/api/data` 复用同一套 filter。后端会为响应附带 `coverage`，标记每个图表在当前筛选下是 `exact`、`sample` 还是 `unavailable`。前端只展示可解释的数据：无法精确重算的图表显示空态原因，不展示全局数据冒充联动结果。
+这些接口和 `/api/data` 复用同一套 filter。后端会为响应附带 `coverage`，标记每个图表在当前筛选下是 `exact`、`sample` 还是 `unavailable`。前端只展示可解释的数据：无法精确重算的图表显示空态原因，不展示全局数据冒充联动结果。
 
 日级趋势目前有三层索引：
 

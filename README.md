@@ -117,7 +117,7 @@ go build -trimpath -tags=prod -o cc-insights.exe ./cmd/insights
 ├── stats-cache.json     # 统计缓存
 ├── projects/            # Claude Code 项目会话 JSONL
 ├── tasks/               # Task 数据
-└── debug/               # 旧版 Debug 日志目录
+└── debug/               # runtime 事件日志目录
 ```
 
 ## 📚 项目文档
@@ -195,10 +195,6 @@ GET /api/data?preset=custom&start=2025-12-01&end=2026-01-08
 }
 ```
 
-### GET /api/stats
-
-旧版 API（保持兼容），返回全部数据。
-
 ### 交互式分析 API
 
 用于大屏联动和局部下钻：
@@ -216,7 +212,7 @@ GET /api/timeline?preset=all
 ```
 
 这些接口返回统一 `meta`，包含数据源、缓存版本、时间范围、过滤条件和运行耗时。
-`/api/data` 也接受同一组过滤参数，前端会用同一 filter 同步刷新旧图表和新下钻面板。
+`/api/data` 也接受同一组过滤参数，前端会用同一 filter 同步刷新主图表和下钻面板。
 
 Dashboard 响应会包含 `coverage` 元数据，用来说明每个图在当前筛选下的可信度：
 

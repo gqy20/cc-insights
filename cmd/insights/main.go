@@ -73,7 +73,6 @@ func runWebServer() error {
 	mux.HandleFunc("/api/detail/sessions", handleDetailSessionsAPI)
 	mux.HandleFunc("/api/detail/tools", handleDetailToolsAPI)
 	mux.HandleFunc("/api/timeline", handleTimelineAPI)
-	mux.HandleFunc("/api/stats", statsAPIHandler)
 	mux.HandleFunc("/api/reload", reloadHandler)
 
 	// 静态资源（使用嵌入的文件系统）
@@ -144,7 +143,7 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
     <p style="color: #7f8c8d; margin-bottom: 30px;">数据分析可视化平台</p>
     <div class="links">
         <a href="/dashboard">📈 查看 Dashboard (支持时间范围筛选)</a>
-        <a href="/api/stats">📡 API 接口</a>
+        <a href="/api/data?preset=30d">📡 API 接口</a>
     </div>
     <div class="info">
         <p><strong>功能:</strong></p>
@@ -280,34 +279,6 @@ func dashboardPageHandler(w http.ResponseWriter, r *http.Request) {
 	io.WriteString(w, templateContent)
 }
 
-// statsAPIHandler 统计数据 API (保持兼容)
-// 保持旧响应格式，但复用 /api/data 的缓存优先数据管道。
-func statsAPIHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-
-	tf := TimeFilter{Start: nil, End: nil}
-	data, source, err := buildDashboardData(tf, "all")
-	if err != nil {
-		http.Error(w, err.Error(), 500)
-		return
-	}
-	maybeValidateDashboardData(source, data)
-
-	// 保持原有响应格式（向后兼容），但使用真实数据
-	fmt.Fprintf(w, `{
-			"commands": %s,
-			"daily_trend": {
-				"dates": %s,
-				"counts": %s
-			},
-			"model_usage": %s
-		}`,
-		toJSON(data.Commands),
-		toJSON(data.DailyTrend.Dates),
-		toJSON(data.DailyTrend.Counts),
-		toJSON(data.ModelUsage))
-}
-
 // reloadHandler 重新加载数据
 func reloadHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
@@ -339,12 +310,6 @@ func reloadHandler(w http.ResponseWriter, r *http.Request) {
 		"sessions":     sessions,
 		"rules_hash":   rulesHash,
 	})
-}
-
-// toJSON 简单的 JSON 序列化
-func toJSON(v interface{}) string {
-	b, _ := json.Marshal(v)
-	return string(b)
 }
 
 // initializeCache 初始化缓存系统
