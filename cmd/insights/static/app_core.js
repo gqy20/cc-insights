@@ -181,7 +181,7 @@ const chartDefinitions = [
         id: 'skillAnalysisChart',
         group: 'runtime',
         title: 'Skills',
-        description: '统计本地安装、可见性、调用结果和关联工具链。',
+        description: '统计本地安装、可见性、调用结果和 session 关联工具。',
         height: 620,
         layout: 'wide',
         hasData: data => hasArrayData(data.skill_analysis && data.skill_analysis.skills) || hasArrayData(data.skill_analysis && data.skill_analysis.installed),

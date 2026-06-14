@@ -12,6 +12,7 @@ import (
 var skillListingNameExpr = regexp.MustCompile(`(?m)^-\s*([A-Za-z0-9_.:+/-]+)`)
 
 func ensureSkillUsageStat(agg *ProjectAggregate, name string) *SkillUsageStat {
+	name = normalizeSkillName(name)
 	if name == "" {
 		name = "unknown"
 	}
@@ -25,6 +26,7 @@ func ensureSkillUsageStat(agg *ProjectAggregate, name string) *SkillUsageStat {
 }
 
 func ensureSkillProjectStat(agg *ProjectAggregate, skillName, project string) *SkillProjectStat {
+	skillName = normalizeSkillName(skillName)
 	key := skillName + "\x00" + project
 	if agg.SkillProjectStats == nil {
 		agg.SkillProjectStats = make(map[string]*SkillProjectStat)
@@ -36,6 +38,7 @@ func ensureSkillProjectStat(agg *ProjectAggregate, skillName, project string) *S
 }
 
 func ensureSkillModelStat(agg *ProjectAggregate, skillName, model string) *SkillModelStat {
+	skillName = normalizeSkillName(skillName)
 	key := skillName + "\x00" + model
 	if agg.SkillModelStats == nil {
 		agg.SkillModelStats = make(map[string]*SkillModelStat)
@@ -47,6 +50,7 @@ func ensureSkillModelStat(agg *ProjectAggregate, skillName, model string) *Skill
 }
 
 func ensureSkillAgentStat(agg *ProjectAggregate, skillName, agentID string, isSidechain bool) *SkillAgentStat {
+	skillName = normalizeSkillName(skillName)
 	key := skillName + "\x00" + agentID + "\x00" + strconvBool(isSidechain)
 	if agg.SkillAgentStats == nil {
 		agg.SkillAgentStats = make(map[string]*SkillAgentStat)
@@ -57,15 +61,16 @@ func ensureSkillAgentStat(agg *ProjectAggregate, skillName, agentID string, isSi
 	return agg.SkillAgentStats[key]
 }
 
-func ensureSkillToolChainStat(agg *ProjectAggregate, skillName, tool string) *SkillToolChainStat {
+func ensureSkillSessionToolStat(agg *ProjectAggregate, skillName, tool string) *SkillSessionToolStat {
+	skillName = normalizeSkillName(skillName)
 	key := skillName + "\x00" + tool
-	if agg.SkillToolChainStats == nil {
-		agg.SkillToolChainStats = make(map[string]*SkillToolChainStat)
+	if agg.SkillSessionToolStats == nil {
+		agg.SkillSessionToolStats = make(map[string]*SkillSessionToolStat)
 	}
-	if agg.SkillToolChainStats[key] == nil {
-		agg.SkillToolChainStats[key] = &SkillToolChainStat{SkillName: skillName, Tool: tool}
+	if agg.SkillSessionToolStats[key] == nil {
+		agg.SkillSessionToolStats[key] = &SkillSessionToolStat{SkillName: skillName, Tool: tool}
 	}
-	return agg.SkillToolChainStats[key]
+	return agg.SkillSessionToolStats[key]
 }
 
 func mergeSkillUsageStat(dst, src *SkillUsageStat) {
@@ -95,6 +100,8 @@ func mergeSkillProjectStat(dst, src *SkillProjectStat) {
 		return
 	}
 	dst.InvocationCount += src.InvocationCount
+	dst.ToolUseCount += src.ToolUseCount
+	dst.AttachmentCount += src.AttachmentCount
 	dst.FailureCount += src.FailureCount
 	dst.MissingResults += src.MissingResults
 }
@@ -104,6 +111,8 @@ func mergeSkillModelStat(dst, src *SkillModelStat) {
 		return
 	}
 	dst.InvocationCount += src.InvocationCount
+	dst.ToolUseCount += src.ToolUseCount
+	dst.AttachmentCount += src.AttachmentCount
 	dst.FailureCount += src.FailureCount
 	dst.MissingResults += src.MissingResults
 }
@@ -114,6 +123,7 @@ func recordInstalledSkillsLocked(agg *ProjectAggregate, dataDir string) {
 	}
 	items := scanInstalledSkillsFromDir(dataDir)
 	for _, item := range items {
+		item.Name = normalizeSkillName(item.Name)
 		if agg.InstalledSkills == nil {
 			agg.InstalledSkills = make(map[string]*InstalledSkillItem)
 		}
@@ -148,6 +158,7 @@ func recordSkillListingLocked(agg *ProjectAggregate, attachment json.RawMessage)
 		names = parseSkillListingNames(payload.Content)
 	}
 	for _, name := range names {
+		name = normalizeSkillName(name)
 		if name == "" {
 			continue
 		}
@@ -185,6 +196,7 @@ func recordDynamicSkillLocked(agg *ProjectAggregate, attachment json.RawMessage)
 }
 
 func recordSkillToolUseLocked(agg *ProjectAggregate, call pendingToolCall, skillName string, argsLen int) {
+	skillName = normalizeSkillName(skillName)
 	stat := ensureSkillUsageStat(agg, skillName)
 	stat.InvocationCount++
 	stat.ToolUseCount++
@@ -195,16 +207,19 @@ func recordSkillToolUseLocked(agg *ProjectAggregate, call pendingToolCall, skill
 	if call.Project != "" {
 		projectStat := ensureSkillProjectStat(agg, skillName, call.Project)
 		projectStat.InvocationCount++
+		projectStat.ToolUseCount++
 	}
 	if call.Model != "" {
 		modelStat := ensureSkillModelStat(agg, skillName, call.Model)
 		modelStat.InvocationCount++
+		modelStat.ToolUseCount++
 	}
 	agentStat := ensureSkillAgentStat(agg, skillName, call.AgentID, call.IsSidechain)
 	agentStat.InvocationCount++
 }
 
 func recordSkillAttachmentInvocationLocked(agg *ProjectAggregate, skillName, path, project, model, agentID string, isSidechain bool) {
+	skillName = normalizeSkillName(skillName)
 	stat := ensureSkillUsageStat(agg, skillName)
 	stat.InvocationCount++
 	stat.AttachmentCount++
@@ -214,16 +229,19 @@ func recordSkillAttachmentInvocationLocked(agg *ProjectAggregate, skillName, pat
 	if project != "" {
 		projectStat := ensureSkillProjectStat(agg, skillName, project)
 		projectStat.InvocationCount++
+		projectStat.AttachmentCount++
 	}
 	if model != "" {
 		modelStat := ensureSkillModelStat(agg, skillName, model)
 		modelStat.InvocationCount++
+		modelStat.AttachmentCount++
 	}
 	agentStat := ensureSkillAgentStat(agg, skillName, agentID, isSidechain)
 	agentStat.InvocationCount++
 }
 
 func recordSkillToolResultLocked(agg *ProjectAggregate, call pendingToolCall, failed, missing bool) {
+	call.SkillName = normalizeSkillName(call.SkillName)
 	if call.SkillName == "" {
 		return
 	}
@@ -257,11 +275,12 @@ func recordSkillToolResultLocked(agg *ProjectAggregate, call pendingToolCall, fa
 	}
 }
 
-func recordSkillToolChainLocked(agg *ProjectAggregate, skillName, tool string, failed, missing bool) {
+func recordSkillSessionToolLocked(agg *ProjectAggregate, skillName, tool string, failed, missing bool) {
+	skillName = normalizeSkillName(skillName)
 	if skillName == "" || tool == "" || tool == "Skill" {
 		return
 	}
-	stat := ensureSkillToolChainStat(agg, skillName, tool)
+	stat := ensureSkillSessionToolStat(agg, skillName, tool)
 	stat.CallCount++
 	if failed {
 		stat.FailureCount++
@@ -271,15 +290,16 @@ func recordSkillToolChainLocked(agg *ProjectAggregate, skillName, tool string, f
 	}
 }
 
-func recordSkillToolChainResultLocked(agg *ProjectAggregate, call pendingToolCall, failed, missing bool) {
+func recordSkillSessionToolResultLocked(agg *ProjectAggregate, call pendingToolCall, failed, missing bool) {
 	if len(call.ChainSkills) == 0 || call.Tool == "" || call.Tool == "Skill" {
 		return
 	}
 	for _, skillName := range call.ChainSkills {
+		skillName = normalizeSkillName(skillName)
 		if skillName == "" {
 			continue
 		}
-		stat := ensureSkillToolChainStat(agg, skillName, call.Tool)
+		stat := ensureSkillSessionToolStat(agg, skillName, call.Tool)
 		if failed {
 			stat.FailureCount++
 		}
@@ -294,20 +314,20 @@ func finalizeSkillAnalysisLocked(agg *ProjectAggregate) {
 		return
 	}
 	analysis := &SkillAnalysisData{
-		TotalInstalled:        len(agg.InstalledSkills),
-		TotalInvocations:      0,
-		ToolUseInvocations:    0,
-		AttachmentInvocations: 0,
-		ListingEvents:         agg.SkillListingEvents,
-		InitialListingEvents:  agg.SkillInitialListings,
-		DynamicSkillEvents:    agg.DynamicSkillEvents,
-		Installed:             make([]InstalledSkillItem, 0, len(agg.InstalledSkills)),
-		Skills:                make([]SkillUsageStat, 0, len(agg.SkillUsageStats)),
-		ListingSkills:         make([]SkillListingStat, 0, len(agg.SkillListingStats)),
-		ByProject:             make([]SkillProjectStat, 0, len(agg.SkillProjectStats)),
-		ByModel:               make([]SkillModelStat, 0, len(agg.SkillModelStats)),
-		ByAgent:               make([]SkillAgentStat, 0, len(agg.SkillAgentStats)),
-		ToolChains:            make([]SkillToolChainStat, 0, len(agg.SkillToolChainStats)),
+		TotalInstalled:         len(agg.InstalledSkills),
+		TotalInvocations:       0,
+		ToolUseInvocations:     0,
+		AttachmentInvocations:  0,
+		ListingEvents:          agg.SkillListingEvents,
+		InitialListingEvents:   agg.SkillInitialListings,
+		DynamicSkillEvents:     agg.DynamicSkillEvents,
+		Installed:              make([]InstalledSkillItem, 0, len(agg.InstalledSkills)),
+		Skills:                 make([]SkillUsageStat, 0, len(agg.SkillUsageStats)),
+		ListingSkills:          make([]SkillListingStat, 0, len(agg.SkillListingStats)),
+		ByProject:              make([]SkillProjectStat, 0, len(agg.SkillProjectStats)),
+		ByModel:                make([]SkillModelStat, 0, len(agg.SkillModelStats)),
+		ByAgent:                make([]SkillAgentStat, 0, len(agg.SkillAgentStats)),
+		SessionAssociatedTools: make([]SkillSessionToolStat, 0, len(agg.SkillSessionToolStats)),
 	}
 	for _, item := range agg.InstalledSkills {
 		if item == nil {
@@ -328,8 +348,8 @@ func finalizeSkillAnalysisLocked(agg *ProjectAggregate) {
 		if copyStat.ToolUseCount > 0 {
 			copyStat.ArgsAvgLength = float64(copyStat.ArgsTotalLength) / float64(copyStat.ToolUseCount)
 		}
-		if copyStat.InvocationCount > 0 {
-			copyStat.FailureRate = float64(copyStat.FailureCount) / float64(copyStat.InvocationCount) * 100
+		if copyStat.ToolUseCount > 0 {
+			copyStat.ToolUseFailureRate = float64(copyStat.FailureCount+copyStat.MissingResultCount) / float64(copyStat.ToolUseCount) * 100
 		}
 		analysis.TotalInvocations += copyStat.InvocationCount
 		analysis.ToolUseInvocations += copyStat.ToolUseCount
@@ -358,8 +378,8 @@ func finalizeSkillAnalysisLocked(agg *ProjectAggregate) {
 			continue
 		}
 		copyStat := *stat
-		if copyStat.InvocationCount > 0 {
-			copyStat.FailureRate = float64(copyStat.FailureCount+copyStat.MissingResults) / float64(copyStat.InvocationCount) * 100
+		if copyStat.ToolUseCount > 0 {
+			copyStat.ToolUseFailureRate = float64(copyStat.FailureCount+copyStat.MissingResults) / float64(copyStat.ToolUseCount) * 100
 		}
 		analysis.ByProject = append(analysis.ByProject, copyStat)
 	}
@@ -377,8 +397,8 @@ func finalizeSkillAnalysisLocked(agg *ProjectAggregate) {
 			continue
 		}
 		copyStat := *stat
-		if copyStat.InvocationCount > 0 {
-			copyStat.FailureRate = float64(copyStat.FailureCount+copyStat.MissingResults) / float64(copyStat.InvocationCount) * 100
+		if copyStat.ToolUseCount > 0 {
+			copyStat.ToolUseFailureRate = float64(copyStat.FailureCount+copyStat.MissingResults) / float64(copyStat.ToolUseCount) * 100
 		}
 		analysis.ByModel = append(analysis.ByModel, copyStat)
 	}
@@ -406,7 +426,7 @@ func finalizeSkillAnalysisLocked(agg *ProjectAggregate) {
 		}
 		return analysis.ByAgent[i].InvocationCount > analysis.ByAgent[j].InvocationCount
 	})
-	for _, stat := range agg.SkillToolChainStats {
+	for _, stat := range agg.SkillSessionToolStats {
 		if stat == nil {
 			continue
 		}
@@ -414,18 +434,41 @@ func finalizeSkillAnalysisLocked(agg *ProjectAggregate) {
 		if copyStat.CallCount > 0 {
 			copyStat.FailureRate = float64(copyStat.FailureCount+copyStat.MissingResults) / float64(copyStat.CallCount) * 100
 		}
-		analysis.ToolChains = append(analysis.ToolChains, copyStat)
+		analysis.SessionAssociatedTools = append(analysis.SessionAssociatedTools, copyStat)
 	}
-	sort.Slice(analysis.ToolChains, func(i, j int) bool {
-		if analysis.ToolChains[i].CallCount == analysis.ToolChains[j].CallCount {
-			if analysis.ToolChains[i].SkillName == analysis.ToolChains[j].SkillName {
-				return analysis.ToolChains[i].Tool < analysis.ToolChains[j].Tool
+	sort.Slice(analysis.SessionAssociatedTools, func(i, j int) bool {
+		if analysis.SessionAssociatedTools[i].CallCount == analysis.SessionAssociatedTools[j].CallCount {
+			if analysis.SessionAssociatedTools[i].SkillName == analysis.SessionAssociatedTools[j].SkillName {
+				return analysis.SessionAssociatedTools[i].Tool < analysis.SessionAssociatedTools[j].Tool
 			}
-			return analysis.ToolChains[i].SkillName < analysis.ToolChains[j].SkillName
+			return analysis.SessionAssociatedTools[i].SkillName < analysis.SessionAssociatedTools[j].SkillName
 		}
-		return analysis.ToolChains[i].CallCount > analysis.ToolChains[j].CallCount
+		return analysis.SessionAssociatedTools[i].CallCount > analysis.SessionAssociatedTools[j].CallCount
 	})
 	agg.SkillAnalysis = analysis
+}
+
+func mergeInstalledSkillAnalysis(target, source *SkillAnalysisData) {
+	if target == nil || source == nil {
+		return
+	}
+	target.Installed = append([]InstalledSkillItem(nil), source.Installed...)
+	target.TotalInstalled = len(target.Installed)
+	if target.TotalInstalled == 0 {
+		return
+	}
+	installed := make(map[string]InstalledSkillItem, target.TotalInstalled)
+	for _, item := range target.Installed {
+		installed[item.Name] = item
+	}
+	for i := range target.Skills {
+		if item, ok := installed[target.Skills[i].Name]; ok {
+			target.Skills[i].Installed = true
+			if target.Skills[i].Path == "" {
+				target.Skills[i].Path = item.Path
+			}
+		}
+	}
 }
 
 func parseSkillListingNames(content string) []string {
@@ -435,7 +478,7 @@ func parseSkillListingNames(content string) []string {
 	}
 	names := make([]string, 0, len(matches))
 	for _, match := range matches {
-		name := strings.TrimSpace(match[1])
+		name := normalizeSkillName(match[1])
 		if name == "" || name == "note" {
 			continue
 		}
@@ -460,7 +503,7 @@ func extractSkillInvocation(input json.RawMessage) (string, int) {
 	if name == "" {
 		name = strings.TrimSpace(payload.Name)
 	}
-	return name, len(payload.Args)
+	return normalizeSkillName(name), len(payload.Args)
 }
 
 func extractAttachmentSkillSignals(attachment json.RawMessage) ([]string, string) {
@@ -484,8 +527,9 @@ func extractAttachmentSkillSignals(attachment json.RawMessage) ([]string, string
 	case "invoked_skills":
 		names := make([]string, 0, len(payload.Skills))
 		for _, skill := range payload.Skills {
-			if skill.Name != "" {
-				names = append(names, skill.Name)
+			name := normalizeSkillName(skill.Name)
+			if name != "" {
+				names = append(names, name)
 			}
 		}
 		return names, payload.Type
@@ -494,13 +538,20 @@ func extractAttachmentSkillSignals(attachment json.RawMessage) ([]string, string
 		if name == "" {
 			name = payload.Skill
 		}
+		name = normalizeSkillName(name)
 		if name == "" {
 			return nil, payload.Type
 		}
 		return []string{name}, payload.Type
 	case "skill_listing":
 		if len(payload.Names) > 0 {
-			return payload.Names, payload.Type
+			names := make([]string, 0, len(payload.Names))
+			for _, name := range payload.Names {
+				if normalized := normalizeSkillName(name); normalized != "" {
+					names = append(names, normalized)
+				}
+			}
+			return names, payload.Type
 		}
 		return parseSkillListingNames(payload.Content), payload.Type
 	default:
@@ -512,6 +563,7 @@ func appendUniqueStrings(values []string, more ...string) []string {
 	seen := make(map[string]bool, len(values)+len(more))
 	out := make([]string, 0, len(values)+len(more))
 	for _, value := range values {
+		value = normalizeSkillName(value)
 		if value == "" || seen[value] {
 			continue
 		}
@@ -519,6 +571,7 @@ func appendUniqueStrings(values []string, more ...string) []string {
 		out = append(out, value)
 	}
 	for _, value := range more {
+		value = normalizeSkillName(value)
 		if value == "" || seen[value] {
 			continue
 		}
@@ -526,6 +579,14 @@ func appendUniqueStrings(values []string, more ...string) []string {
 		out = append(out, value)
 	}
 	return out
+}
+
+func normalizeSkillName(name string) string {
+	name = strings.TrimSpace(name)
+	for strings.HasSuffix(name, ":") {
+		name = strings.TrimSpace(strings.TrimSuffix(name, ":"))
+	}
+	return name
 }
 
 func scanInstalledSkillsFromDir(dataDir string) []InstalledSkillItem {

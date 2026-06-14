@@ -546,7 +546,7 @@ func filterSkills(data *DashboardData, filter AnalysisFilter) {
 		})
 	}
 	if filter.Tool != "" {
-		data.SkillAnalysis.ToolChains = filterSlice(data.SkillAnalysis.ToolChains, func(item SkillToolChainStat) bool {
+		data.SkillAnalysis.SessionAssociatedTools = filterSlice(data.SkillAnalysis.SessionAssociatedTools, func(item SkillSessionToolStat) bool {
 			return matchContains(filter.Tool, item.Tool)
 		})
 	}

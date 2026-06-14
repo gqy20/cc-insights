@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-const CacheVersion = "3.3"
+const CacheVersion = "3.6"
 
 // CacheFile 缓存文件结构
 type CacheFile struct {
@@ -67,62 +67,62 @@ type ProjectFileCache struct {
 
 // ProjectFileAggregate 可序列化的文件级聚合快照
 type ProjectFileAggregate struct {
-	ProjectStats         map[string]ProjectStatItem                 `json:"project_stats,omitempty"`
-	WeekdayData          [7]WeekdayItem                             `json:"weekday_data"`
-	DailyActivity        map[string]int                             `json:"daily_activity,omitempty"`
-	DailySessions        map[string][]string                        `json:"daily_sessions,omitempty"`
-	DailyProjectCounts   map[string]map[string]int                  `json:"daily_project_counts,omitempty"`
-	DailyModelCounts     map[string]map[string]int                  `json:"daily_model_counts,omitempty"`
-	DailyModelTokens     map[string]map[string]int                  `json:"daily_model_tokens,omitempty"`
-	DailyHourlyCounts    map[string][24]int                         `json:"daily_hourly_counts,omitempty"`
-	DailyRuntime         map[string]ProjectFileAggregate            `json:"daily_runtime,omitempty"`
-	DailyProjectRuntime  map[string]map[string]ProjectFileAggregate `json:"daily_project_runtime,omitempty"`
-	DailySessionRuntime  map[string]map[string]ProjectFileAggregate `json:"daily_session_runtime,omitempty"`
-	HourlyCounts         [24]int                                    `json:"hourly_counts"`
-	ModelUsage           map[string]ModelUsageItem                  `json:"model_usage,omitempty"`
-	CostModelStats       map[string]CostModelStat                   `json:"cost_model_stats,omitempty"`
-	CostProjectStats     map[string]CostProjectStat                 `json:"cost_project_stats,omitempty"`
-	CostSessionStats     map[string]CostSessionStat                 `json:"cost_session_stats,omitempty"`
-	CostAgentStats       map[string]CostAgentStat                   `json:"cost_agent_stats,omitempty"`
-	BudgetTimeline       []BudgetTimelineItem                       `json:"budget_timeline,omitempty"`
-	ToolStats            map[string]ToolStatItem                    `json:"tool_stats,omitempty"`
-	ToolModelStats       map[string]ToolModelStatItem               `json:"tool_model_stats,omitempty"`
-	FailureReasons       map[string]FailureReasonStat               `json:"failure_reasons,omitempty"`
-	FailureToolReasons   map[string]FailureToolReasonStat           `json:"failure_tool_reasons,omitempty"`
-	FailureModelReasons  map[string]FailureModelReasonStat          `json:"failure_model_reasons,omitempty"`
-	FailureSamples       []ToolFailureSample                        `json:"failure_samples,omitempty"`
-	SessionStats         map[string]SessionAnalysisItem             `json:"session_stats,omitempty"`
-	SessionQueueOps      map[string]int                             `json:"session_queue_ops,omitempty"`
-	EventTypes           map[string]int                             `json:"event_types,omitempty"`
-	HookStats            map[string]HookStatItem                    `json:"hook_stats,omitempty"`
-	SkillStats           map[string]SkillStatItem                   `json:"skill_stats,omitempty"`
-	InstalledSkills      map[string]InstalledSkillItem              `json:"installed_skills,omitempty"`
-	SkillUsageStats      map[string]SkillUsageStat                  `json:"skill_usage_stats,omitempty"`
-	SkillListingStats    map[string]int                             `json:"skill_listing_stats,omitempty"`
-	SkillProjectStats    map[string]SkillProjectStat                `json:"skill_project_stats,omitempty"`
-	SkillModelStats      map[string]SkillModelStat                  `json:"skill_model_stats,omitempty"`
-	SkillAgentStats      map[string]SkillAgentStat                  `json:"skill_agent_stats,omitempty"`
-	SkillToolChainStats  map[string]SkillToolChainStat              `json:"skill_tool_chain_stats,omitempty"`
-	SkillListingEvents   int                                        `json:"skill_listing_events,omitempty"`
-	SkillInitialListings int                                        `json:"skill_initial_listings,omitempty"`
-	DynamicSkillEvents   int                                        `json:"dynamic_skill_events,omitempty"`
-	PermissionModes      map[string]int                             `json:"permission_modes,omitempty"`
-	OpenedFiles          map[string]FileAccessStat                  `json:"opened_files,omitempty"`
-	BudgetSummary        *BudgetSummary                             `json:"budget_summary,omitempty"`
-	EventSamples         []EventSample                              `json:"event_samples,omitempty"`
-	AgentStats           map[string]AgentStatItem                   `json:"agent_stats,omitempty"`
-	AgentSessions        map[string][]string                        `json:"agent_sessions,omitempty"`
-	BashCommandStats     map[string]BashCommandStat                 `json:"bash_command_stats,omitempty"`
-	FileOperationStats   map[string]FileOperationStat               `json:"file_operation_stats,omitempty"`
-	FileHotStats         map[string]FileHotStat                     `json:"file_hot_stats,omitempty"`
-	FileEditFailures     map[string]FileEditFailureAgg              `json:"file_edit_failures,omitempty"`
-	FileSnapshotStats    map[string]FileSnapshotAgg                 `json:"file_snapshot_stats,omitempty"`
-	FileEditedStats      map[string]FileEditedAgg                   `json:"file_edited_stats,omitempty"`
-	PlanModeAgg          *SerializedPlanModeAgg                     `json:"plan_mode_agg,omitempty"`
-	GoalStatusAgg        *GoalStatusAgg                             `json:"goal_status_agg,omitempty"`
-	ReminderAgg          *ReminderAgg                               `json:"reminder_agg,omitempty"`
-	ToolPerfStats        map[string]ToolPerfAgg                     `json:"tool_perf_stats,omitempty"`
-	SlowestCalls         []ToolSlowCallItem                         `json:"slowest_calls,omitempty"`
+	ProjectStats          map[string]ProjectStatItem                 `json:"project_stats,omitempty"`
+	WeekdayData           [7]WeekdayItem                             `json:"weekday_data"`
+	DailyActivity         map[string]int                             `json:"daily_activity,omitempty"`
+	DailySessions         map[string][]string                        `json:"daily_sessions,omitempty"`
+	DailyProjectCounts    map[string]map[string]int                  `json:"daily_project_counts,omitempty"`
+	DailyModelCounts      map[string]map[string]int                  `json:"daily_model_counts,omitempty"`
+	DailyModelTokens      map[string]map[string]int                  `json:"daily_model_tokens,omitempty"`
+	DailyHourlyCounts     map[string][24]int                         `json:"daily_hourly_counts,omitempty"`
+	DailyRuntime          map[string]ProjectFileAggregate            `json:"daily_runtime,omitempty"`
+	DailyProjectRuntime   map[string]map[string]ProjectFileAggregate `json:"daily_project_runtime,omitempty"`
+	DailySessionRuntime   map[string]map[string]ProjectFileAggregate `json:"daily_session_runtime,omitempty"`
+	HourlyCounts          [24]int                                    `json:"hourly_counts"`
+	ModelUsage            map[string]ModelUsageItem                  `json:"model_usage,omitempty"`
+	CostModelStats        map[string]CostModelStat                   `json:"cost_model_stats,omitempty"`
+	CostProjectStats      map[string]CostProjectStat                 `json:"cost_project_stats,omitempty"`
+	CostSessionStats      map[string]CostSessionStat                 `json:"cost_session_stats,omitempty"`
+	CostAgentStats        map[string]CostAgentStat                   `json:"cost_agent_stats,omitempty"`
+	BudgetTimeline        []BudgetTimelineItem                       `json:"budget_timeline,omitempty"`
+	ToolStats             map[string]ToolStatItem                    `json:"tool_stats,omitempty"`
+	ToolModelStats        map[string]ToolModelStatItem               `json:"tool_model_stats,omitempty"`
+	FailureReasons        map[string]FailureReasonStat               `json:"failure_reasons,omitempty"`
+	FailureToolReasons    map[string]FailureToolReasonStat           `json:"failure_tool_reasons,omitempty"`
+	FailureModelReasons   map[string]FailureModelReasonStat          `json:"failure_model_reasons,omitempty"`
+	FailureSamples        []ToolFailureSample                        `json:"failure_samples,omitempty"`
+	SessionStats          map[string]SessionAnalysisItem             `json:"session_stats,omitempty"`
+	SessionQueueOps       map[string]int                             `json:"session_queue_ops,omitempty"`
+	EventTypes            map[string]int                             `json:"event_types,omitempty"`
+	HookStats             map[string]HookStatItem                    `json:"hook_stats,omitempty"`
+	SkillStats            map[string]SkillStatItem                   `json:"skill_stats,omitempty"`
+	InstalledSkills       map[string]InstalledSkillItem              `json:"installed_skills,omitempty"`
+	SkillUsageStats       map[string]SkillUsageStat                  `json:"skill_usage_stats,omitempty"`
+	SkillListingStats     map[string]int                             `json:"skill_listing_stats,omitempty"`
+	SkillProjectStats     map[string]SkillProjectStat                `json:"skill_project_stats,omitempty"`
+	SkillModelStats       map[string]SkillModelStat                  `json:"skill_model_stats,omitempty"`
+	SkillAgentStats       map[string]SkillAgentStat                  `json:"skill_agent_stats,omitempty"`
+	SkillSessionToolStats map[string]SkillSessionToolStat            `json:"skill_session_tool_stats,omitempty"`
+	SkillListingEvents    int                                        `json:"skill_listing_events,omitempty"`
+	SkillInitialListings  int                                        `json:"skill_initial_listings,omitempty"`
+	DynamicSkillEvents    int                                        `json:"dynamic_skill_events,omitempty"`
+	PermissionModes       map[string]int                             `json:"permission_modes,omitempty"`
+	OpenedFiles           map[string]FileAccessStat                  `json:"opened_files,omitempty"`
+	BudgetSummary         *BudgetSummary                             `json:"budget_summary,omitempty"`
+	EventSamples          []EventSample                              `json:"event_samples,omitempty"`
+	AgentStats            map[string]AgentStatItem                   `json:"agent_stats,omitempty"`
+	AgentSessions         map[string][]string                        `json:"agent_sessions,omitempty"`
+	BashCommandStats      map[string]BashCommandStat                 `json:"bash_command_stats,omitempty"`
+	FileOperationStats    map[string]FileOperationStat               `json:"file_operation_stats,omitempty"`
+	FileHotStats          map[string]FileHotStat                     `json:"file_hot_stats,omitempty"`
+	FileEditFailures      map[string]FileEditFailureAgg              `json:"file_edit_failures,omitempty"`
+	FileSnapshotStats     map[string]FileSnapshotAgg                 `json:"file_snapshot_stats,omitempty"`
+	FileEditedStats       map[string]FileEditedAgg                   `json:"file_edited_stats,omitempty"`
+	PlanModeAgg           *SerializedPlanModeAgg                     `json:"plan_mode_agg,omitempty"`
+	GoalStatusAgg         *GoalStatusAgg                             `json:"goal_status_agg,omitempty"`
+	ReminderAgg           *ReminderAgg                               `json:"reminder_agg,omitempty"`
+	ToolPerfStats         map[string]ToolPerfAgg                     `json:"tool_perf_stats,omitempty"`
+	SlowestCalls          []ToolSlowCallItem                         `json:"slowest_calls,omitempty"`
 }
 
 // DayAggregate 每日聚合数据
@@ -334,6 +334,7 @@ func (cf *CacheFile) QueryByTimeRange(start, end time.Time) *CacheFile {
 		runtimeAggregate.finalize()
 		result.ToolAnalysis = runtimeAggregate.ToolAnalysis
 		result.SkillAnalysis = cloneSkillAnalysis(runtimeAggregate.SkillAnalysis)
+		mergeInstalledSkillAnalysis(result.SkillAnalysis, cf.SkillAnalysis)
 		result.FailureAnalysis = runtimeAggregate.FailureAnalysis
 		result.EventAnalysis = runtimeAggregate.EventAnalysis
 		result.AgentAnalysis = runtimeAggregate.AgentAnalysis
@@ -456,7 +457,7 @@ func cloneSkillAnalysis(source *SkillAnalysisData) *SkillAnalysisData {
 	copyValue.ByProject = append([]SkillProjectStat(nil), source.ByProject...)
 	copyValue.ByModel = append([]SkillModelStat(nil), source.ByModel...)
 	copyValue.ByAgent = append([]SkillAgentStat(nil), source.ByAgent...)
-	copyValue.ToolChains = append([]SkillToolChainStat(nil), source.ToolChains...)
+	copyValue.SessionAssociatedTools = append([]SkillSessionToolStat(nil), source.SessionAssociatedTools...)
 	return &copyValue
 }
 

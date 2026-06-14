@@ -269,12 +269,12 @@ func parseProjectFileAggregate(filePath string, tf TimeFilter, agg *ProjectAggre
 			} else if record.SessionID != "" {
 				call.ChainSkills = appendUniqueStrings(call.ChainSkills, sessionActiveSkills[record.SessionID]...)
 				for _, skillName := range sessionActiveSkills[record.SessionID] {
-					recordSkillToolChainLocked(agg, skillName, content.Name, false, false)
+					recordSkillSessionToolLocked(agg, skillName, content.Name, false, false)
 				}
 			}
 			if content.Name != "Skill" && record.AttributionSkill != "" {
 				call.ChainSkills = appendUniqueStrings(call.ChainSkills, record.AttributionSkill)
-				recordSkillToolChainLocked(agg, record.AttributionSkill, content.Name, false, false)
+				recordSkillSessionToolLocked(agg, record.AttributionSkill, content.Name, false, false)
 			}
 			dailyCall := call
 			addToolCallLocked(dailyRuntimeAgg, content.Name, msg.Model)
@@ -296,16 +296,16 @@ func parseProjectFileAggregate(filePath string, tf TimeFilter, agg *ProjectAggre
 			} else if record.SessionID != "" {
 				dailyCall.ChainSkills = appendUniqueStrings(dailyCall.ChainSkills, sessionActiveSkills[record.SessionID]...)
 				for _, skillName := range sessionActiveSkills[record.SessionID] {
-					recordSkillToolChainLocked(dailyRuntimeAgg, skillName, content.Name, false, false)
-					recordSkillToolChainLocked(dailyProjectRuntimeAgg, skillName, content.Name, false, false)
-					recordSkillToolChainLocked(dailySessionRuntimeAgg, skillName, content.Name, false, false)
+					recordSkillSessionToolLocked(dailyRuntimeAgg, skillName, content.Name, false, false)
+					recordSkillSessionToolLocked(dailyProjectRuntimeAgg, skillName, content.Name, false, false)
+					recordSkillSessionToolLocked(dailySessionRuntimeAgg, skillName, content.Name, false, false)
 				}
 			}
 			if content.Name != "Skill" && record.AttributionSkill != "" {
 				dailyCall.ChainSkills = appendUniqueStrings(dailyCall.ChainSkills, record.AttributionSkill)
-				recordSkillToolChainLocked(dailyRuntimeAgg, record.AttributionSkill, content.Name, false, false)
-				recordSkillToolChainLocked(dailyProjectRuntimeAgg, record.AttributionSkill, content.Name, false, false)
-				recordSkillToolChainLocked(dailySessionRuntimeAgg, record.AttributionSkill, content.Name, false, false)
+				recordSkillSessionToolLocked(dailyRuntimeAgg, record.AttributionSkill, content.Name, false, false)
+				recordSkillSessionToolLocked(dailyProjectRuntimeAgg, record.AttributionSkill, content.Name, false, false)
+				recordSkillSessionToolLocked(dailySessionRuntimeAgg, record.AttributionSkill, content.Name, false, false)
 			}
 			pendingTools[content.ID] = call
 		}

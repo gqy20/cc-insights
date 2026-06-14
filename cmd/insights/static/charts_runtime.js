@@ -375,10 +375,14 @@ function initSkillAnalysisChart(skillAnalysis) {
     }
 
     const chart = echarts.init(document.getElementById('skillAnalysisChart'), 'wonderland');
-    const skills = (skillAnalysis.skills || []).slice(0, 12);
-    const chains = (skillAnalysis.tool_chains || []).slice(0, 12);
+    const allSkills = skillAnalysis.skills || [];
+    const skills = allSkills.filter(item => (item.invocation_count || 0) > 0).slice(0, 12);
+    const associatedTools = (skillAnalysis.session_associated_tools || []).slice(0, 12);
+    const installedUnused = allSkills.filter(item => item.installed && !(item.invocation_count > 0)).slice(0, 8);
+    const invokedMissingInstall = allSkills.filter(item => !item.installed && (item.invocation_count || 0) > 0).slice(0, 8);
+    const seenMissingInstall = allSkills.filter(item => !item.installed && (item.seen_in_listing_count || 0) > 0 && !(item.invocation_count > 0)).slice(0, 8);
     const skillLabels = skills.map(item => item.name);
-    const chainLabels = chains.map(item => `${item.skill_name} / ${shortToolName(item.tool)}`);
+    const associatedLabels = associatedTools.map(item => `${item.skill_name} / ${shortToolName(item.tool)}`);
 
     chart.setOption({
         title: [
@@ -390,8 +394,8 @@ function initSkillAnalysisChart(skillAnalysis) {
                 textAlign: 'center'
             },
             {
-                text: 'Skill 关联工具链',
-                subtext: '按工具调用次数排序',
+                text: 'Skill Session 关联工具',
+                subtext: '弱关联: skill 激活后同 session 工具',
                 left: '75%',
                 top: 10,
                 textAlign: 'center'
@@ -403,25 +407,25 @@ function initSkillAnalysisChart(skillAnalysis) {
             formatter: function(params) {
                 const first = params[0];
                 if (first.axisIndex === 0) {
-                    const item = skills[first.dataIndex];
-                    return `${escapeHtml(item.name)}<br/>` +
+                const item = skills[first.dataIndex];
+                return `${escapeHtml(item.name)}<br/>` +
                         `调用: ${formatNumber(item.invocation_count)}<br/>` +
                         `Skill 工具: ${formatNumber(item.tool_use_count)}<br/>` +
                         `invoked_skills: ${formatNumber(item.attachment_count)}<br/>` +
                         `失败: ${formatNumber(item.failure_count)}<br/>` +
                         `Missing: ${formatNumber(item.missing_result_count)}<br/>` +
-                        `失败率: ${(item.failure_rate || 0).toFixed(1)}%`;
+                        `Skill 工具失败率: ${(item.tool_use_failure_rate || 0).toFixed(1)}%`;
                 }
-                const item = chains[first.dataIndex];
+                const item = associatedTools[first.dataIndex];
                 return `${escapeHtml(item.skill_name)}<br/>${escapeHtml(item.tool)}<br/>` +
-                    `工具调用: ${formatNumber(item.call_count)}<br/>` +
+                    `Session 关联调用: ${formatNumber(item.call_count)}<br/>` +
                     `失败: ${formatNumber(item.failure_count)}<br/>` +
                     `Missing: ${formatNumber(item.missing_results)}<br/>` +
                     `失败率: ${(item.failure_rate || 0).toFixed(1)}%`;
             }
         },
         legend: {
-            data: ['调用', '失败', 'Missing Result', '工具链调用'],
+            data: ['调用', '失败', 'Missing Result', 'Session 关联工具'],
             top: 58
         },
         grid: [
@@ -430,7 +434,7 @@ function initSkillAnalysisChart(skillAnalysis) {
         ],
         xAxis: [
             { type: 'category', gridIndex: 0, data: skillLabels, axisLabel: { interval: 0, rotate: 35 } },
-            { type: 'category', gridIndex: 1, data: chainLabels, axisLabel: { interval: 0, rotate: 35 } }
+            { type: 'category', gridIndex: 1, data: associatedLabels, axisLabel: { interval: 0, rotate: 35 } }
         ],
         yAxis: [
             { type: 'value', gridIndex: 0, name: '次数' },
@@ -464,11 +468,11 @@ function initSkillAnalysisChart(skillAnalysis) {
                 itemStyle: { color: '#f39c12' }
             },
             {
-                name: '工具链调用',
+                name: 'Session 关联工具',
                 type: 'bar',
                 xAxisIndex: 1,
                 yAxisIndex: 1,
-                data: chains.map(item => item.call_count),
+                data: associatedTools.map(item => item.call_count),
                 itemStyle: { color: '#91cc75' }
             }
         ]
@@ -478,12 +482,21 @@ function initSkillAnalysisChart(skillAnalysis) {
     const topText = topSkill
         ? `调用最多的是 <strong>${escapeHtml(topSkill.name)}</strong>，共 <strong>${formatNumber(topSkill.invocation_count)}</strong> 次。`
         : '暂无 skill 调用记录。';
+    const installedUnusedText = installedUnused.length > 0
+        ? `已安装未调用: <strong>${installedUnused.map(item => escapeHtml(item.name)).join(', ')}</strong>。`
+        : '没有发现已安装但未调用的 skill。';
+    const missingInstallText = invokedMissingInstall.length > 0
+        ? `调用但未在 ~/.claude/skills 中安装: <strong>${invokedMissingInstall.map(item => escapeHtml(item.name)).join(', ')}</strong>。`
+        : '';
+    const seenMissingText = seenMissingInstall.length > 0
+        ? `仅 listing 可见但未安装: <strong>${seenMissingInstall.map(item => escapeHtml(item.name)).join(', ')}</strong>。`
+        : '';
     insight.innerHTML =
         `<strong>数据洞察:</strong> 本地安装 <strong>${formatNumber(skillAnalysis.total_installed || 0)}</strong> 个 skills，` +
         `解析到 <strong>${formatNumber(skillAnalysis.total_invocations || 0)}</strong> 次 skill 调用，` +
         `skill_listing 事件 <strong>${formatNumber(skillAnalysis.listing_events || 0)}</strong> 次，` +
         `失败 <strong>${formatNumber(skillAnalysis.failure_count || 0)}</strong> 次。` +
-        topText;
+        topText + installedUnusedText + missingInstallText + seenMissingText;
 }
 
 function initAgentChart(agentAnalysis) {

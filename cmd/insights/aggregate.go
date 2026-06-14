@@ -7,51 +7,51 @@ import (
 
 func newProjectAggregate() *ProjectAggregate {
 	aggregate := &ProjectAggregate{
-		ProjectStats:        make(map[string]*ProjectStatItem),
-		DailyActivity:       make(map[string]int),
-		DailySessions:       make(map[string]map[string]bool),
-		DailyProjectCounts:  make(map[string]map[string]int),
-		DailyModelCounts:    make(map[string]map[string]int),
-		DailyModelTokens:    make(map[string]map[string]int),
-		DailyHourlyCounts:   make(map[string][24]int),
-		DailyRuntime:        make(map[string]*ProjectAggregate),
-		DailyProjectRuntime: make(map[string]map[string]*ProjectAggregate),
-		DailySessionRuntime: make(map[string]map[string]*ProjectAggregate),
-		ModelUsage:          make(map[string]*ModelUsageItem),
-		ToolStats:           make(map[string]*ToolStatItem),
-		ToolModelStats:      make(map[string]*ToolModelStatItem),
-		FailureReasons:      make(map[string]*FailureReasonStat),
-		FailureToolReasons:  make(map[string]*FailureToolReasonStat),
-		FailureModelReasons: make(map[string]*FailureModelReasonStat),
-		SessionStatsMap:     make(map[string]*SessionAnalysisItem),
-		SessionQueueOps:     make(map[string]int),
-		EventTypes:          make(map[string]int),
-		HookStats:           make(map[string]*HookStatItem),
-		SkillStats:          make(map[string]*SkillStatItem),
-		InstalledSkills:     make(map[string]*InstalledSkillItem),
-		SkillUsageStats:     make(map[string]*SkillUsageStat),
-		SkillListingStats:   make(map[string]int),
-		SkillProjectStats:   make(map[string]*SkillProjectStat),
-		SkillModelStats:     make(map[string]*SkillModelStat),
-		SkillAgentStats:     make(map[string]*SkillAgentStat),
-		SkillToolChainStats: make(map[string]*SkillToolChainStat),
-		PermissionModes:     make(map[string]int),
-		OpenedFiles:         make(map[string]*FileAccessStat),
-		AgentStats:          make(map[string]*AgentStatItem),
-		AgentSessions:       make(map[string]map[string]bool),
-		BashCommandStats:    make(map[string]*BashCommandStat),
-		FileOperationStats:  make(map[string]*FileOperationStat),
-		FileHotStats:        make(map[string]*FileHotStat),
-		FileEditFailures:    make(map[string]*FileEditFailureAgg),
-		FileSnapshotStats:   make(map[string]*FileSnapshotAgg),
-		FileEditedStats:     make(map[string]*FileEditedAgg),
-		ToolPerfStats:       make(map[string]*ToolPerfAgg),
-		HourlyCounts:        [24]int{},
-		CostModelStats:      make(map[string]*CostModelStat),
-		CostProjectStats:    make(map[string]*CostProjectStat),
-		CostSessionStats:    make(map[string]*CostSessionStat),
-		CostAgentStats:      make(map[string]*CostAgentStat),
-		mu:                  sync.RWMutex{},
+		ProjectStats:          make(map[string]*ProjectStatItem),
+		DailyActivity:         make(map[string]int),
+		DailySessions:         make(map[string]map[string]bool),
+		DailyProjectCounts:    make(map[string]map[string]int),
+		DailyModelCounts:      make(map[string]map[string]int),
+		DailyModelTokens:      make(map[string]map[string]int),
+		DailyHourlyCounts:     make(map[string][24]int),
+		DailyRuntime:          make(map[string]*ProjectAggregate),
+		DailyProjectRuntime:   make(map[string]map[string]*ProjectAggregate),
+		DailySessionRuntime:   make(map[string]map[string]*ProjectAggregate),
+		ModelUsage:            make(map[string]*ModelUsageItem),
+		ToolStats:             make(map[string]*ToolStatItem),
+		ToolModelStats:        make(map[string]*ToolModelStatItem),
+		FailureReasons:        make(map[string]*FailureReasonStat),
+		FailureToolReasons:    make(map[string]*FailureToolReasonStat),
+		FailureModelReasons:   make(map[string]*FailureModelReasonStat),
+		SessionStatsMap:       make(map[string]*SessionAnalysisItem),
+		SessionQueueOps:       make(map[string]int),
+		EventTypes:            make(map[string]int),
+		HookStats:             make(map[string]*HookStatItem),
+		SkillStats:            make(map[string]*SkillStatItem),
+		InstalledSkills:       make(map[string]*InstalledSkillItem),
+		SkillUsageStats:       make(map[string]*SkillUsageStat),
+		SkillListingStats:     make(map[string]int),
+		SkillProjectStats:     make(map[string]*SkillProjectStat),
+		SkillModelStats:       make(map[string]*SkillModelStat),
+		SkillAgentStats:       make(map[string]*SkillAgentStat),
+		SkillSessionToolStats: make(map[string]*SkillSessionToolStat),
+		PermissionModes:       make(map[string]int),
+		OpenedFiles:           make(map[string]*FileAccessStat),
+		AgentStats:            make(map[string]*AgentStatItem),
+		AgentSessions:         make(map[string]map[string]bool),
+		BashCommandStats:      make(map[string]*BashCommandStat),
+		FileOperationStats:    make(map[string]*FileOperationStat),
+		FileHotStats:          make(map[string]*FileHotStat),
+		FileEditFailures:      make(map[string]*FileEditFailureAgg),
+		FileSnapshotStats:     make(map[string]*FileSnapshotAgg),
+		FileEditedStats:       make(map[string]*FileEditedAgg),
+		ToolPerfStats:         make(map[string]*ToolPerfAgg),
+		HourlyCounts:          [24]int{},
+		CostModelStats:        make(map[string]*CostModelStat),
+		CostProjectStats:      make(map[string]*CostProjectStat),
+		CostSessionStats:      make(map[string]*CostSessionStat),
+		CostAgentStats:        make(map[string]*CostAgentStat),
+		mu:                    sync.RWMutex{},
 	}
 
 	// 初始化星期数据
@@ -290,13 +290,13 @@ func mergeProjectAggregate(dst, src *ProjectAggregate) {
 		}
 		dst.SkillAgentStats[key].InvocationCount += stat.InvocationCount
 	}
-	for key, stat := range src.SkillToolChainStats {
-		if dst.SkillToolChainStats[key] == nil {
+	for key, stat := range src.SkillSessionToolStats {
+		if dst.SkillSessionToolStats[key] == nil {
 			statCopy := *stat
-			dst.SkillToolChainStats[key] = &statCopy
+			dst.SkillSessionToolStats[key] = &statCopy
 			continue
 		}
-		dstStat := dst.SkillToolChainStats[key]
+		dstStat := dst.SkillSessionToolStats[key]
 		dstStat.CallCount += stat.CallCount
 		dstStat.FailureCount += stat.FailureCount
 		dstStat.MissingResults += stat.MissingResults
@@ -576,60 +576,60 @@ func aggregateToProjectFileAggregate(src *ProjectAggregate) ProjectFileAggregate
 
 func aggregateToProjectFileAggregateWithDaily(src *ProjectAggregate, includeDaily bool) ProjectFileAggregate {
 	out := ProjectFileAggregate{
-		ProjectStats:         make(map[string]ProjectStatItem, len(src.ProjectStats)),
-		WeekdayData:          src.WeekdayData,
-		DailyActivity:        copyIntMap(src.DailyActivity),
-		DailySessions:        boolSetMapToSlices(src.DailySessions),
-		DailyProjectCounts:   copyNestedIntMap(src.DailyProjectCounts),
-		DailyModelCounts:     copyNestedIntMap(src.DailyModelCounts),
-		DailyModelTokens:     copyNestedIntMap(src.DailyModelTokens),
-		DailyHourlyCounts:    copyDailyHourlyCounts(src.DailyHourlyCounts),
-		DailyRuntime:         make(map[string]ProjectFileAggregate),
-		DailyProjectRuntime:  make(map[string]map[string]ProjectFileAggregate),
-		DailySessionRuntime:  make(map[string]map[string]ProjectFileAggregate),
-		HourlyCounts:         src.HourlyCounts,
-		ModelUsage:           make(map[string]ModelUsageItem, len(src.ModelUsage)),
-		CostModelStats:       make(map[string]CostModelStat, len(src.CostModelStats)),
-		CostProjectStats:     make(map[string]CostProjectStat, len(src.CostProjectStats)),
-		CostSessionStats:     make(map[string]CostSessionStat, len(src.CostSessionStats)),
-		CostAgentStats:       make(map[string]CostAgentStat, len(src.CostAgentStats)),
-		BudgetTimeline:       append([]BudgetTimelineItem(nil), src.BudgetTimeline...),
-		ToolStats:            make(map[string]ToolStatItem, len(src.ToolStats)),
-		ToolModelStats:       make(map[string]ToolModelStatItem, len(src.ToolModelStats)),
-		FailureReasons:       make(map[string]FailureReasonStat, len(src.FailureReasons)),
-		FailureToolReasons:   make(map[string]FailureToolReasonStat, len(src.FailureToolReasons)),
-		FailureModelReasons:  make(map[string]FailureModelReasonStat, len(src.FailureModelReasons)),
-		FailureSamples:       append([]ToolFailureSample(nil), src.FailureSamples...),
-		SessionStats:         make(map[string]SessionAnalysisItem, len(src.SessionStatsMap)),
-		SessionQueueOps:      copyIntMap(src.SessionQueueOps),
-		EventTypes:           copyIntMap(src.EventTypes),
-		HookStats:            make(map[string]HookStatItem, len(src.HookStats)),
-		SkillStats:           make(map[string]SkillStatItem, len(src.SkillStats)),
-		InstalledSkills:      make(map[string]InstalledSkillItem, len(src.InstalledSkills)),
-		SkillUsageStats:      make(map[string]SkillUsageStat, len(src.SkillUsageStats)),
-		SkillListingStats:    copyIntMap(src.SkillListingStats),
-		SkillProjectStats:    make(map[string]SkillProjectStat, len(src.SkillProjectStats)),
-		SkillModelStats:      make(map[string]SkillModelStat, len(src.SkillModelStats)),
-		SkillAgentStats:      make(map[string]SkillAgentStat, len(src.SkillAgentStats)),
-		SkillToolChainStats:  make(map[string]SkillToolChainStat, len(src.SkillToolChainStats)),
-		SkillListingEvents:   src.SkillListingEvents,
-		SkillInitialListings: src.SkillInitialListings,
-		DynamicSkillEvents:   src.DynamicSkillEvents,
-		PermissionModes:      copyIntMap(src.PermissionModes),
-		OpenedFiles:          make(map[string]FileAccessStat, len(src.OpenedFiles)),
-		AgentStats:           make(map[string]AgentStatItem, len(src.AgentStats)),
-		AgentSessions:        boolSetMapToSlices(src.AgentSessions),
-		BashCommandStats:     make(map[string]BashCommandStat, len(src.BashCommandStats)),
-		FileOperationStats:   make(map[string]FileOperationStat, len(src.FileOperationStats)),
-		FileHotStats:         make(map[string]FileHotStat, len(src.FileHotStats)),
-		FileEditFailures:     make(map[string]FileEditFailureAgg, len(src.FileEditFailures)),
-		FileSnapshotStats:    make(map[string]FileSnapshotAgg, len(src.FileSnapshotStats)),
-		FileEditedStats:      make(map[string]FileEditedAgg, len(src.FileEditedStats)),
-		PlanModeAgg:          serializePlanModeAgg(src.PlanModeAgg),
-		GoalStatusAgg:        serializeGoalStatusAgg(src.GoalStatusAgg),
-		ReminderAgg:          serializeReminderAgg(src.ReminderAgg),
-		ToolPerfStats:        make(map[string]ToolPerfAgg, len(src.ToolPerfStats)),
-		SlowestCalls:         append([]ToolSlowCallItem(nil), src.SlowestCalls...),
+		ProjectStats:          make(map[string]ProjectStatItem, len(src.ProjectStats)),
+		WeekdayData:           src.WeekdayData,
+		DailyActivity:         copyIntMap(src.DailyActivity),
+		DailySessions:         boolSetMapToSlices(src.DailySessions),
+		DailyProjectCounts:    copyNestedIntMap(src.DailyProjectCounts),
+		DailyModelCounts:      copyNestedIntMap(src.DailyModelCounts),
+		DailyModelTokens:      copyNestedIntMap(src.DailyModelTokens),
+		DailyHourlyCounts:     copyDailyHourlyCounts(src.DailyHourlyCounts),
+		DailyRuntime:          make(map[string]ProjectFileAggregate),
+		DailyProjectRuntime:   make(map[string]map[string]ProjectFileAggregate),
+		DailySessionRuntime:   make(map[string]map[string]ProjectFileAggregate),
+		HourlyCounts:          src.HourlyCounts,
+		ModelUsage:            make(map[string]ModelUsageItem, len(src.ModelUsage)),
+		CostModelStats:        make(map[string]CostModelStat, len(src.CostModelStats)),
+		CostProjectStats:      make(map[string]CostProjectStat, len(src.CostProjectStats)),
+		CostSessionStats:      make(map[string]CostSessionStat, len(src.CostSessionStats)),
+		CostAgentStats:        make(map[string]CostAgentStat, len(src.CostAgentStats)),
+		BudgetTimeline:        append([]BudgetTimelineItem(nil), src.BudgetTimeline...),
+		ToolStats:             make(map[string]ToolStatItem, len(src.ToolStats)),
+		ToolModelStats:        make(map[string]ToolModelStatItem, len(src.ToolModelStats)),
+		FailureReasons:        make(map[string]FailureReasonStat, len(src.FailureReasons)),
+		FailureToolReasons:    make(map[string]FailureToolReasonStat, len(src.FailureToolReasons)),
+		FailureModelReasons:   make(map[string]FailureModelReasonStat, len(src.FailureModelReasons)),
+		FailureSamples:        append([]ToolFailureSample(nil), src.FailureSamples...),
+		SessionStats:          make(map[string]SessionAnalysisItem, len(src.SessionStatsMap)),
+		SessionQueueOps:       copyIntMap(src.SessionQueueOps),
+		EventTypes:            copyIntMap(src.EventTypes),
+		HookStats:             make(map[string]HookStatItem, len(src.HookStats)),
+		SkillStats:            make(map[string]SkillStatItem, len(src.SkillStats)),
+		InstalledSkills:       make(map[string]InstalledSkillItem, len(src.InstalledSkills)),
+		SkillUsageStats:       make(map[string]SkillUsageStat, len(src.SkillUsageStats)),
+		SkillListingStats:     copyIntMap(src.SkillListingStats),
+		SkillProjectStats:     make(map[string]SkillProjectStat, len(src.SkillProjectStats)),
+		SkillModelStats:       make(map[string]SkillModelStat, len(src.SkillModelStats)),
+		SkillAgentStats:       make(map[string]SkillAgentStat, len(src.SkillAgentStats)),
+		SkillSessionToolStats: make(map[string]SkillSessionToolStat, len(src.SkillSessionToolStats)),
+		SkillListingEvents:    src.SkillListingEvents,
+		SkillInitialListings:  src.SkillInitialListings,
+		DynamicSkillEvents:    src.DynamicSkillEvents,
+		PermissionModes:       copyIntMap(src.PermissionModes),
+		OpenedFiles:           make(map[string]FileAccessStat, len(src.OpenedFiles)),
+		AgentStats:            make(map[string]AgentStatItem, len(src.AgentStats)),
+		AgentSessions:         boolSetMapToSlices(src.AgentSessions),
+		BashCommandStats:      make(map[string]BashCommandStat, len(src.BashCommandStats)),
+		FileOperationStats:    make(map[string]FileOperationStat, len(src.FileOperationStats)),
+		FileHotStats:          make(map[string]FileHotStat, len(src.FileHotStats)),
+		FileEditFailures:      make(map[string]FileEditFailureAgg, len(src.FileEditFailures)),
+		FileSnapshotStats:     make(map[string]FileSnapshotAgg, len(src.FileSnapshotStats)),
+		FileEditedStats:       make(map[string]FileEditedAgg, len(src.FileEditedStats)),
+		PlanModeAgg:           serializePlanModeAgg(src.PlanModeAgg),
+		GoalStatusAgg:         serializeGoalStatusAgg(src.GoalStatusAgg),
+		ReminderAgg:           serializeReminderAgg(src.ReminderAgg),
+		ToolPerfStats:         make(map[string]ToolPerfAgg, len(src.ToolPerfStats)),
+		SlowestCalls:          append([]ToolSlowCallItem(nil), src.SlowestCalls...),
 	}
 	if !includeDaily {
 		out.DailyRuntime = nil
@@ -691,8 +691,8 @@ func aggregateToProjectFileAggregateWithDaily(src *ProjectAggregate, includeDail
 	for key, stat := range src.SkillAgentStats {
 		out.SkillAgentStats[key] = *stat
 	}
-	for key, stat := range src.SkillToolChainStats {
-		out.SkillToolChainStats[key] = *stat
+	for key, stat := range src.SkillSessionToolStats {
+		out.SkillSessionToolStats[key] = *stat
 	}
 	for key, stat := range src.OpenedFiles {
 		out.OpenedFiles[key] = *stat
@@ -880,9 +880,9 @@ func projectFileAggregateToAggregate(src ProjectFileAggregate) *ProjectAggregate
 		statCopy := stat
 		out.SkillAgentStats[key] = &statCopy
 	}
-	for key, stat := range src.SkillToolChainStats {
+	for key, stat := range src.SkillSessionToolStats {
 		statCopy := stat
-		out.SkillToolChainStats[key] = &statCopy
+		out.SkillSessionToolStats[key] = &statCopy
 	}
 	out.SkillListingEvents = src.SkillListingEvents
 	out.SkillInitialListings = src.SkillInitialListings

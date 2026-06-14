@@ -18,9 +18,9 @@ func TestParseProjectsConcurrentOnce_SkillAnalysis(t *testing.T) {
 	writeSkillFixture(t, dataDir, "tdd")
 
 	base := time.Date(2026, 6, 11, 9, 0, 0, 0, time.UTC)
-	content := attachmentRecord("/tmp/skill-project", "session-skill", base, `{"type":"skill_listing","names":["playwright-cli","write"],"skillCount":2,"isInitial":true}`) + "\n" +
-		attachmentRecord("/tmp/skill-project", "session-skill", base.Add(time.Second), `{"type":"invoked_skills","skills":[{"name":"write","path":"userSettings:write"}]}`) + "\n" +
-		toolUseRecordWithInput("/tmp/skill-project", "session-skill", base.Add(2*time.Second), "skill-ok", "Skill", "claude-sonnet-4.5", false, "", `{"skill":"playwright-cli","args":"open page and screenshot"}`) + "\n" +
+	content := attachmentRecord("/tmp/skill-project", "session-skill", base, `{"type":"skill_listing","names":["playwright-cli:","write"],"skillCount":2,"isInitial":true}`) + "\n" +
+		attachmentRecord("/tmp/skill-project", "session-skill", base.Add(time.Second), `{"type":"invoked_skills","skills":[{"name":"write:","path":"userSettings:write"}]}`) + "\n" +
+		toolUseRecordWithInput("/tmp/skill-project", "session-skill", base.Add(2*time.Second), "skill-ok", "Skill", "claude-sonnet-4.5", false, "", `{"skill":"playwright-cli:","args":"open page and screenshot"}`) + "\n" +
 		toolResultRecord("/tmp/skill-project", "session-skill", base.Add(3*time.Second), "skill-ok", "skill completed") + "\n" +
 		toolUseRecordWithInput("/tmp/skill-project", "session-skill", base.Add(4*time.Second), "bash-fail", "Bash", "claude-sonnet-4.5", false, "", `{"command":"exit 1"}`) + "\n" +
 		toolResultRecord("/tmp/skill-project", "session-skill", base.Add(5*time.Second), "bash-fail", "Error: exit code 1") + "\n" +
@@ -65,13 +65,68 @@ func TestParseProjectsConcurrentOnce_SkillAnalysis(t *testing.T) {
 	if listing["playwright-cli"] != 1 || listing["write"] != 1 {
 		t.Fatalf("ListingSkills=%+v, want playwright-cli/write once", agg.SkillAnalysis.ListingSkills)
 	}
-
-	chains := map[string]SkillToolChainStat{}
-	for _, item := range agg.SkillAnalysis.ToolChains {
-		chains[item.SkillName+"::"+item.Tool] = item
+	if listing["playwright-cli:"] != 0 || skills["write:"].Name != "" {
+		t.Fatalf("skill names should be normalized, listing=%+v skills=%+v", listing, skills)
 	}
-	if chains["playwright-cli::Bash"].CallCount != 1 || chains["playwright-cli::Bash"].FailureCount != 1 {
-		t.Fatalf("playwright-cli Bash chain=%+v, want one failed Bash", chains["playwright-cli::Bash"])
+
+	associatedTools := map[string]SkillSessionToolStat{}
+	for _, item := range agg.SkillAnalysis.SessionAssociatedTools {
+		associatedTools[item.SkillName+"::"+item.Tool] = item
+	}
+	if associatedTools["playwright-cli::Bash"].CallCount != 1 || associatedTools["playwright-cli::Bash"].FailureCount != 1 {
+		t.Fatalf("playwright-cli Bash associated tool=%+v, want one failed Bash", associatedTools["playwright-cli::Bash"])
+	}
+}
+
+func TestCacheQueryKeepsInstalledSkillAnalysis(t *testing.T) {
+	date := "2026-06-11"
+	runtimeAgg := newProjectAggregate()
+	recordSkillToolUseLocked(runtimeAgg, pendingToolCall{Project: "/tmp/project", Model: "claude-sonnet-4.5"}, "playwright-cli", 12)
+	runtimeAgg.finalize()
+
+	cache := &CacheFile{
+		DailyStats: map[string]*DayAggregate{
+			date: {Date: date, MessageCount: 1},
+		},
+		DailyRuntime: map[string]ProjectFileAggregate{
+			date: aggregateToProjectFileAggregateWithDaily(runtimeAgg, false),
+		},
+		SkillAnalysis: &SkillAnalysisData{
+			TotalInstalled: 1,
+			Installed: []InstalledSkillItem{{
+				Name:       "playwright-cli",
+				Path:       "skills/playwright-cli",
+				HasSkillMD: true,
+			}},
+		},
+	}
+
+	result := cache.QueryByTimeRange(time.Time{}, time.Time{})
+	if result.SkillAnalysis == nil {
+		t.Fatal("SkillAnalysis should not be nil")
+	}
+	if result.SkillAnalysis.TotalInstalled != 1 || len(result.SkillAnalysis.Installed) != 1 {
+		t.Fatalf("installed skills lost after query: %+v", result.SkillAnalysis)
+	}
+	if len(result.SkillAnalysis.Skills) == 0 || !result.SkillAnalysis.Skills[0].Installed {
+		t.Fatalf("queried skill should be marked installed: %+v", result.SkillAnalysis.Skills)
+	}
+	if result.SkillAnalysis.Skills[0].Path != "skills/playwright-cli" {
+		t.Fatalf("skill path=%q, want installed path", result.SkillAnalysis.Skills[0].Path)
+	}
+}
+
+func TestNormalizeSkillName(t *testing.T) {
+	tests := map[string]string{
+		"playwright-cli:":                    "playwright-cli",
+		" frontend-design:frontend-design: ": "frontend-design:frontend-design",
+		"agent-browser":                      "agent-browser",
+		"::::":                               "",
+	}
+	for input, want := range tests {
+		if got := normalizeSkillName(input); got != want {
+			t.Fatalf("normalizeSkillName(%q)=%q, want %q", input, got, want)
+		}
 	}
 }
 

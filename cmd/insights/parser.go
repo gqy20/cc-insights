@@ -112,7 +112,7 @@ func addToolResultLocked(agg *ProjectAggregate, call pendingToolCall, classifica
 		if call.Tool == "Skill" {
 			recordSkillToolResultLocked(agg, call, true, false)
 		}
-		recordSkillToolChainResultLocked(agg, call, true, false)
+		recordSkillSessionToolResultLocked(agg, call, true, false)
 		addAgentToolResultLocked(agg, call, true, false)
 		addSessionToolResultLocked(agg, call, true, false)
 		addCommandOrFileResultLocked(agg, call, true, false)
@@ -145,7 +145,7 @@ func addToolResultLocked(agg *ProjectAggregate, call pendingToolCall, classifica
 	if call.Tool == "Skill" {
 		recordSkillToolResultLocked(agg, call, false, false)
 	}
-	recordSkillToolChainResultLocked(agg, call, false, false)
+	recordSkillSessionToolResultLocked(agg, call, false, false)
 	addAgentToolResultLocked(agg, call, false, false)
 	addSessionToolResultLocked(agg, call, false, false)
 	addCommandOrFileResultLocked(agg, call, false, false)
@@ -161,7 +161,7 @@ func addMissingToolResultLocked(agg *ProjectAggregate, call pendingToolCall) {
 	if call.Tool == "Skill" {
 		recordSkillToolResultLocked(agg, call, false, true)
 	}
-	recordSkillToolChainResultLocked(agg, call, false, true)
+	recordSkillSessionToolResultLocked(agg, call, false, true)
 	addAgentToolResultLocked(agg, call, false, true)
 	addSessionToolResultLocked(agg, call, false, true)
 	addCommandOrFileResultLocked(agg, call, false, true)
@@ -564,6 +564,7 @@ func recordHookEventLocked(agg *ProjectAggregate, attachmentType, hookName, hook
 }
 
 func recordSkillLocked(agg *ProjectAggregate, name, path string) {
+	name = normalizeSkillName(name)
 	if name == "" {
 		name = "unknown"
 	}
