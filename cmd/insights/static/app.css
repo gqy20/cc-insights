@@ -683,6 +683,11 @@ input:focus-visible {
     margin-top: 0;
 }
 
+.chart-wrapper.coverage-unavailable .chart-insight {
+    border-left-color: var(--warning);
+    color: #7a4d12;
+}
+
 .chart-wrapper.healthy-empty .chart-insight {
     border-left-color: var(--success);
     color: #315d47;
@@ -701,6 +706,14 @@ input:focus-visible {
     padding-bottom: 12px;
 }
 
+.chart-title-row {
+    align-items: center;
+    display: flex;
+    gap: 8px;
+    justify-content: space-between;
+    min-width: 0;
+}
+
 .chart-card-header h3 {
     color: var(--ink);
     font-size: clamp(16px, 1vw, 18px);
@@ -708,6 +721,27 @@ input:focus-visible {
     line-height: 1.25;
     margin: 0;
     overflow-wrap: anywhere;
+}
+
+.coverage-badge {
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    color: var(--muted);
+    flex: 0 0 auto;
+    font-size: 11px;
+    font-weight: 720;
+    line-height: 1;
+    padding: 5px 8px;
+}
+
+.coverage-sample .coverage-badge {
+    border-color: rgba(184, 107, 0, 0.35);
+    color: #7a4d12;
+}
+
+.coverage-unavailable .coverage-badge {
+    border-color: rgba(184, 107, 0, 0.35);
+    color: #7a4d12;
 }
 
 .chart-card-header p {

@@ -596,11 +596,18 @@ function renderCharts(data, options = {}) {
     container.style.display = '';
 
     chartDefinitions.forEach(definition => {
+        const coverage = getChartCoverage(data, definition.id);
+        setChartCoverageState(definition, coverage);
+        if (coverage.status === 'unavailable') {
+            renderEmptyChart(definition, coverage.reason || '当前筛选条件下该图没有精确数据。', coverage);
+            return;
+        }
         if (definition.hasData && !definition.hasData(data)) {
-            renderEmptyChart(definition);
+            renderEmptyChart(definition, definition.emptyText, coverage);
             return;
         }
         definition.render(data);
+        annotateChartCoverage(definition, coverage);
     });
 
     normalizeInsightBlocks();
@@ -659,9 +666,15 @@ function buildPrimarySummaryMetric(data, summary, totals) {
     const filters = dashboardState.filters || {};
     const dailyTotal = safeArray(data.daily_trend && data.daily_trend.counts).reduce((sum, count) => sum + count, 0);
     if (filters.tool) {
+        if (data.coverage && data.coverage.dailyTrend && data.coverage.dailyTrend.status === 'unavailable') {
+            return { label: '筛选命中', value: '-', meta: '当前组合暂不支持精确计算' };
+        }
         return { label: '筛选命中', value: formatNumber(totals.tools || dailyTotal), meta: `工具 ${filters.tool}` };
     }
     if (filters.reason) {
+        if (data.coverage && data.coverage.dailyTrend && data.coverage.dailyTrend.status === 'unavailable') {
+            return { label: '筛选命中', value: '-', meta: '当前组合暂不支持精确计算' };
+        }
         const failures = summary.failures || (data.failure_analysis ? data.failure_analysis.total_failures : dailyTotal);
         return { label: '筛选命中', value: formatNumber(failures), meta: `失败原因 ${filters.reason}` };
     }
@@ -902,15 +915,48 @@ function hasTaskPlanData(taskPlan) {
         hasArrayData(tasks.session_task_counts);
 }
 
-function renderEmptyChart(definition) {
+function renderEmptyChart(definition, message, coverage = {}) {
     const wrapper = document.querySelector(`#${definition.id}`)?.closest('.chart-wrapper');
     if (!wrapper) return;
 
     const insight = wrapper.querySelector('.chart-insight');
     wrapper.classList.add('empty-chart');
+    wrapper.classList.toggle('coverage-unavailable', coverage.status === 'unavailable');
     wrapper.classList.toggle('healthy-empty', definition.state === 'healthy');
     if (insight) {
-        insight.textContent = definition.emptyText || '该时间范围内暂无数据。';
+        insight.textContent = message || definition.emptyText || '该时间范围内暂无数据。';
+    }
+}
+
+function getChartCoverage(data, chartID) {
+    const coverage = data && data.coverage && data.coverage[chartID];
+    return coverage || { status: 'exact' };
+}
+
+function setChartCoverageState(definition, coverage) {
+    const wrapper = document.querySelector(`#${definition.id}`)?.closest('.chart-wrapper');
+    if (!wrapper) return;
+    wrapper.classList.toggle('coverage-sample', coverage.status === 'sample');
+    wrapper.classList.toggle('coverage-unavailable', coverage.status === 'unavailable');
+
+    const badge = wrapper.querySelector('.coverage-badge');
+    if (!badge) return;
+    if (!coverage.status || coverage.status === 'exact') {
+        badge.hidden = true;
+        badge.textContent = '';
+        return;
+    }
+    badge.hidden = false;
+    badge.textContent = coverage.status === 'sample' ? '样本' : '不可用';
+    badge.title = coverage.reason || '';
+}
+
+function annotateChartCoverage(definition, coverage) {
+    if (!coverage || !coverage.status || coverage.status === 'exact' || coverage.status === 'unavailable') return;
+    const wrapper = document.querySelector(`#${definition.id}`)?.closest('.chart-wrapper');
+    const insight = wrapper && wrapper.querySelector('.chart-insight');
+    if (insight && coverage.reason && !insight.textContent.trim()) {
+        insight.textContent = coverage.reason;
     }
 }
 
@@ -934,6 +980,13 @@ function createChartDiv(definition) {
     const title = document.createElement('h3');
     title.textContent = definition.title || definition.id;
 
+    const titleRow = document.createElement('div');
+    titleRow.className = 'chart-title-row';
+    const badge = document.createElement('span');
+    badge.className = 'coverage-badge';
+    badge.hidden = true;
+    titleRow.append(title, badge);
+
     const description = document.createElement('p');
     description.textContent = definition.description || '';
 
@@ -946,7 +999,7 @@ function createChartDiv(definition) {
     insightDiv.id = `${definition.id}-insight`;
     insightDiv.className = 'chart-insight';
 
-    header.append(title, description);
+    header.append(titleRow, description);
     wrapper.append(header, chartDiv, insightDiv);
     return wrapper;
 }

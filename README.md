@@ -214,7 +214,15 @@ GET /api/timeline?preset=all
 ```
 
 这些接口返回统一 `meta`，包含数据源、缓存版本、时间范围、过滤条件和运行耗时。
-`/api/data` 也接受同一组过滤参数，前端会用同一 filter 同步刷新旧图表和新下钻面板。当前无法按维度精确重算的旧图表会返回空数据，避免展示全局数据造成假联动。
+`/api/data` 也接受同一组过滤参数，前端会用同一 filter 同步刷新旧图表和新下钻面板。
+
+Dashboard 响应会包含 `coverage` 元数据，用来说明每个图在当前筛选下的可信度：
+
+- `exact`：可由缓存索引精确计算。
+- `sample`：只能基于样例下钻，不能代表完整总体。
+- `unavailable`：当前组合筛选没有精确数据支撑，前端会显示空态原因。
+
+当前每日趋势已支持时间范围、项目、Session、工具、失败原因和模型的部分组合精确联动，例如 `project + tool`、`project + reason`、`project + model`、`session + tool`、`session + reason`、`session + model`。无法精确重算的图表不会展示全局数据，避免造成假联动。
 
 ## 🔧 CLI 用法
 

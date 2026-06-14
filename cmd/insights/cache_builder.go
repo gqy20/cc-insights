@@ -85,30 +85,54 @@ func (cb *CacheBuilder) BuildFullCache() error {
 			ParsedFiles:   parsed,
 			BashRulesHash: rulesHash,
 		},
-		DailyStats:       make(map[string]*DayAggregate),
-		TotalMessages:    totalMessages,
-		TotalSessions:    sessionStats.TotalSessions,
-		ProjectStats:     make(map[string]*ProjectStatItem),
-		ModelUsage:       make(map[string]*ModelUsageItem),
-		MCPToolStats:     make(map[string]int),
-		ToolStats:        make(map[string]*ToolStatItem),
-		ToolAnalysis:     aggregate.ToolAnalysis,
-		SkillAnalysis:    aggregate.SkillAnalysis,
-		FailureAnalysis:  aggregate.FailureAnalysis,
-		SessionAnalysis:  aggregate.SessionAnalysis,
-		EventAnalysis:    aggregate.EventAnalysis,
-		AgentAnalysis:    aggregate.AgentAnalysis,
-		CommandAnalysis:  aggregate.CommandAnalysis,
-		CostAnalysis:     aggregate.CostAnalysis,
-		FileAnalysis:     aggregate.FileAnalysis,
-		TaskPlanAnalysis: aggregate.TaskPlanAnalysis,
-		ToolPerformance:  aggregate.ToolPerformance,
-		ProjectFiles:     projectFiles,
-		DailyRuntime:     make(map[string]ProjectFileAggregate, len(aggregate.DailyRuntime)),
+		DailyStats:          make(map[string]*DayAggregate),
+		TotalMessages:       totalMessages,
+		TotalSessions:       sessionStats.TotalSessions,
+		ProjectStats:        make(map[string]*ProjectStatItem),
+		ModelUsage:          make(map[string]*ModelUsageItem),
+		MCPToolStats:        make(map[string]int),
+		ToolStats:           make(map[string]*ToolStatItem),
+		ToolAnalysis:        aggregate.ToolAnalysis,
+		SkillAnalysis:       aggregate.SkillAnalysis,
+		FailureAnalysis:     aggregate.FailureAnalysis,
+		SessionAnalysis:     aggregate.SessionAnalysis,
+		EventAnalysis:       aggregate.EventAnalysis,
+		AgentAnalysis:       aggregate.AgentAnalysis,
+		CommandAnalysis:     aggregate.CommandAnalysis,
+		CostAnalysis:        aggregate.CostAnalysis,
+		FileAnalysis:        aggregate.FileAnalysis,
+		TaskPlanAnalysis:    aggregate.TaskPlanAnalysis,
+		ToolPerformance:     aggregate.ToolPerformance,
+		ProjectFiles:        projectFiles,
+		DailyRuntime:        make(map[string]ProjectFileAggregate, len(aggregate.DailyRuntime)),
+		DailyProjectRuntime: make(map[string]map[string]ProjectFileAggregate, len(aggregate.DailyProjectRuntime)),
+		DailySessionRuntime: make(map[string]map[string]ProjectFileAggregate, len(aggregate.DailySessionRuntime)),
 	}
 	for date, runtimeAgg := range aggregate.DailyRuntime {
 		if runtimeAgg != nil {
 			cache.DailyRuntime[date] = aggregateToProjectFileAggregateWithDaily(runtimeAgg, false)
+		}
+	}
+	for date, projects := range aggregate.DailyProjectRuntime {
+		for project, runtimeAgg := range projects {
+			if runtimeAgg == nil {
+				continue
+			}
+			if cache.DailyProjectRuntime[date] == nil {
+				cache.DailyProjectRuntime[date] = make(map[string]ProjectFileAggregate)
+			}
+			cache.DailyProjectRuntime[date][project] = aggregateToProjectFileAggregateWithDaily(runtimeAgg, false)
+		}
+	}
+	for date, sessions := range aggregate.DailySessionRuntime {
+		for sessionID, runtimeAgg := range sessions {
+			if runtimeAgg == nil {
+				continue
+			}
+			if cache.DailySessionRuntime[date] == nil {
+				cache.DailySessionRuntime[date] = make(map[string]ProjectFileAggregate)
+			}
+			cache.DailySessionRuntime[date][sessionID] = aggregateToProjectFileAggregateWithDaily(runtimeAgg, false)
 		}
 	}
 	// 填充 HourlyStats

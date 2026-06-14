@@ -63,6 +63,8 @@ func parseToolResults(record ProjectRecord, timestamp time.Time, projectName str
 			dateKey = timestamp.Format("2006-01-02")
 		}
 		dailyAgg := ensureDailyRuntimeAggregate(agg, dateKey)
+		dailyProjectAgg := ensureDailyProjectRuntimeAggregate(agg, dateKey, call.Project)
+		dailySessionAgg := ensureDailySessionRuntimeAggregate(agg, dateKey, call.SessionID)
 
 		classification := classifyToolResult(call.Tool, content)
 		preview := toolResultPreview(content.Content)
@@ -78,9 +80,17 @@ func parseToolResults(record ProjectRecord, timestamp time.Time, projectName str
 			addToolCallLocked(dailyAgg, call.Tool, call.Model)
 			addAgentToolCallLocked(dailyAgg, call)
 			addSessionToolCallLocked(dailyAgg, call)
+			addToolCallLocked(dailyProjectAgg, call.Tool, call.Model)
+			addAgentToolCallLocked(dailyProjectAgg, call)
+			addSessionToolCallLocked(dailyProjectAgg, call)
+			addToolCallLocked(dailySessionAgg, call.Tool, call.Model)
+			addAgentToolCallLocked(dailySessionAgg, call)
+			addSessionToolCallLocked(dailySessionAgg, call)
 		}
 		addToolResultLocked(agg, call, classification, preview, timestamp, durationMs, resultSize)
 		addToolResultLocked(dailyAgg, call, classification, preview, timestamp, durationMs, resultSize)
+		addToolResultLocked(dailyProjectAgg, call, classification, preview, timestamp, durationMs, resultSize)
+		addToolResultLocked(dailySessionAgg, call, classification, preview, timestamp, durationMs, resultSize)
 
 		delete(pendingTools, content.ToolUseID)
 	}

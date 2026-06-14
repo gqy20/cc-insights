@@ -32,6 +32,7 @@ func applyDashboardFilter(data *DashboardData, filter AnalysisFilter) {
 	filterAgents(data, filter.Session)
 	applyPrecisionGuard(data, filter)
 	recomputeDashboardTotals(data)
+	data.Coverage = buildCoverage(filter)
 }
 
 func (filter AnalysisFilter) hasDimensionFilter() bool {
@@ -42,6 +43,143 @@ func (filter AnalysisFilter) hasDimensionFilter() bool {
 		strings.TrimSpace(filter.Category) != "" ||
 		strings.TrimSpace(filter.Reason) != "" ||
 		strings.TrimSpace(filter.Family) != ""
+}
+
+func buildCoverage(filter AnalysisFilter) map[string]CoverageInfo {
+	if !filter.hasDimensionFilter() {
+		return nil
+	}
+	coverage := map[string]CoverageInfo{}
+	mark := func(status string, modules []string, reason string) {
+		for _, module := range modules {
+			if coveragePriority(status) < coveragePriority(coverage[module].Status) {
+				continue
+			}
+			coverage[module] = CoverageInfo{Status: status, Reason: reason}
+		}
+	}
+
+	mark("unavailable", []string{"workHoursChart"}, "当前筛选没有小时维度索引。")
+	if filter.Family != "" && filter.Project == "" && filter.Session == "" && filter.Tool == "" && filter.Model == "" && filter.Reason == "" && filter.Category == "" {
+		mark("exact", []string{"commands"}, "基于 Bash 命令族聚合过滤。")
+	} else {
+		mark("unavailable", []string{"commands"}, "当前筛选没有 Slash 命令交叉维度索引。")
+	}
+	if filter.Reason != "" || filter.Category != "" || filter.Session != "" || filter.Family != "" {
+		mark("unavailable", []string{"mcpTools"}, "当前筛选无法精确映射到 MCP server/tool 汇总。")
+	}
+	if filter.Project != "" || filter.Tool != "" || filter.Reason != "" || filter.Category != "" || filter.Session != "" || filter.Family != "" {
+		mark("unavailable", []string{"modelChart"}, "当前筛选没有可复用的模型分布索引。")
+	}
+	if filter.Tool != "" || filter.Reason != "" || filter.Category != "" || filter.Family != "" {
+		mark("unavailable", []string{"projectChart", "costAnalysisChart"}, "当前筛选不能精确还原项目或成本归因。")
+	}
+	if filter.Project != "" {
+		mark("unavailable", []string{"costAnalysisChart"}, "项目筛选下模型成本归因不完整。")
+	}
+	if filter.Project != "" || filter.Session != "" {
+		mark("unavailable", []string{"toolModelFailureChart", "toolPerformanceChart"}, "项目或 session 筛选缺少工具维度精确索引。")
+	}
+	if filter.Tool != "" || filter.Reason != "" || filter.Category != "" || filter.Model != "" || filter.Family != "" {
+		mark("unavailable", []string{"sessionChart", "sessionAnalysisChart"}, "当前筛选不能精确还原 session 生命周期。")
+	}
+	if filter.Project != "" || filter.Tool != "" || filter.Reason != "" || filter.Category != "" || filter.Session != "" || filter.Model != "" || filter.Family != "" {
+		mark("unavailable", []string{"fileAnalysisChart", "eventHookChart", "skillAnalysisChart", "agentChart", "taskPlanChart"}, "当前筛选缺少该模块的交叉维度索引。")
+	}
+	if filter.Family != "" {
+		mark("unavailable", []string{"failureReasonChart"}, "命令族筛选尚不能精确归因到失败原因。")
+	}
+	if isPreciseDailyFilter(filter) {
+		mark("exact", []string{"dailyTrend", "weekdayChart"}, "基于每日运行时索引重建。")
+	} else if isPreciseSessionDailyFilter(filter) {
+		mark("exact", []string{"dailyTrend", "weekdayChart"}, "基于每日 Session 运行时索引重建。")
+	} else if isPreciseProjectDailyFilter(filter) {
+		mark("exact", []string{"dailyTrend", "weekdayChart"}, "基于每日项目运行时索引重建。")
+	} else if isSingleProjectOrModelFilter(filter) {
+		mark("exact", []string{"dailyTrend", "weekdayChart"}, "基于每日聚合索引重建。")
+	} else {
+		mark("unavailable", []string{"dailyTrend", "weekdayChart"}, "当前组合筛选还不能精确计算每日趋势。")
+	}
+	if filter.Project != "" || filter.Session != "" || (filter.Tool != "" && filter.Model != "") {
+		mark("sample", []string{"failureReasonChart"}, "当前组合筛选使用失败样例下钻，不能代表完整总体。")
+	} else if filter.Tool != "" || filter.Model != "" || filter.Reason != "" || filter.Category != "" {
+		mark("exact", []string{"failureReasonChart"}, "基于失败原因聚合重新计算。")
+	}
+	if filter.Tool != "" || filter.Model != "" {
+		mark("exact", []string{"toolModelFailureChart"}, "基于工具和模型聚合重新计算。")
+	}
+	if filter.Tool != "" || filter.Category != "" || filter.Model != "" {
+		mark("exact", []string{"toolPerformanceChart"}, "基于工具性能样本过滤。")
+	}
+	return coverage
+}
+
+func coveragePriority(status string) int {
+	switch status {
+	case "unavailable":
+		return 3
+	case "sample":
+		return 2
+	case "exact":
+		return 1
+	default:
+		return 0
+	}
+}
+
+func isPreciseDailyFilter(filter AnalysisFilter) bool {
+	if filter.Session != "" || filter.Family != "" || filter.Project != "" {
+		return false
+	}
+	hasTool := filter.Tool != ""
+	hasFailure := filter.Reason != "" || filter.Category != ""
+	hasModel := filter.Model != ""
+	active := 0
+	for _, enabled := range []bool{hasTool, hasFailure, hasModel} {
+		if enabled {
+			active++
+		}
+	}
+	return active == 1 || (hasModel && (hasTool != hasFailure))
+}
+
+func isPreciseSessionDailyFilter(filter AnalysisFilter) bool {
+	if filter.Session == "" || filter.Family != "" {
+		return false
+	}
+	hasTool := filter.Tool != ""
+	hasFailure := filter.Reason != "" || filter.Category != ""
+	hasModel := filter.Model != ""
+	active := 0
+	for _, enabled := range []bool{hasTool, hasFailure, hasModel} {
+		if enabled {
+			active++
+		}
+	}
+	return active >= 1 && active <= 2 && !(hasTool && hasFailure)
+}
+
+func isPreciseProjectDailyFilter(filter AnalysisFilter) bool {
+	if filter.Project == "" || filter.Session != "" || filter.Family != "" {
+		return false
+	}
+	hasTool := filter.Tool != ""
+	hasFailure := filter.Reason != "" || filter.Category != ""
+	hasModel := filter.Model != ""
+	active := 0
+	for _, enabled := range []bool{hasTool, hasFailure, hasModel} {
+		if enabled {
+			active++
+		}
+	}
+	return active >= 1 && active <= 2 && !(hasTool && hasFailure)
+}
+
+func isSingleProjectOrModelFilter(filter AnalysisFilter) bool {
+	if filter.Session != "" || filter.Family != "" || filter.Tool != "" || filter.Reason != "" || filter.Category != "" {
+		return false
+	}
+	return (filter.Project != "") != (filter.Model != "")
 }
 
 func filterProjects(data *DashboardData, project string) {
@@ -107,10 +245,10 @@ func applyDimensionTimeSeries(data *DashboardData, filter AnalysisFilter) {
 }
 
 func applyRuntimeDailyTrend(data *DashboardData, filter AnalysisFilter) bool {
-	if globalCache == nil || len(globalCache.DailyRuntime) == 0 {
+	if globalCache == nil || (len(globalCache.DailyRuntime) == 0 && len(globalCache.DailyProjectRuntime) == 0 && len(globalCache.DailySessionRuntime) == 0) {
 		return false
 	}
-	if filter.Project != "" || filter.Session != "" || filter.Family != "" || (filter.Tool == "" && filter.Reason == "" && filter.Category == "") {
+	if filter.Family != "" || (filter.Tool == "" && filter.Reason == "" && filter.Category == "" && filter.Model == "") {
 		return false
 	}
 	dates := append([]string(nil), data.DailyTrend.Dates...)
@@ -126,7 +264,7 @@ func applyRuntimeDailyTrend(data *DashboardData, filter AnalysisFilter) bool {
 		weekdayStats.WeekdayData[i] = WeekdayItem{Weekday: i, WeekdayName: weekdayName(i)}
 	}
 	for _, date := range dates {
-		count := dailyRuntimeCount(globalCache.DailyRuntime[date], filter)
+		count := dailyRuntimeCountForDate(date, filter)
 		counts = append(counts, count)
 		if parsed, err := parseDateOnly(date); err == nil {
 			weekday := (int(parsed.Weekday()) + 6) % 7
@@ -148,7 +286,47 @@ func applyRuntimeDailyTrend(data *DashboardData, filter AnalysisFilter) bool {
 	return true
 }
 
+func dailyRuntimeCountForDate(date string, filter AnalysisFilter) int {
+	if filter.Session != "" {
+		total := 0
+		for sessionID, snapshot := range globalCache.DailySessionRuntime[date] {
+			if matchContains(filter.Session, sessionID) {
+				total += dailyRuntimeCount(snapshot, filter)
+			}
+		}
+		return total
+	}
+	if filter.Project != "" {
+		total := 0
+		for project, snapshot := range globalCache.DailyProjectRuntime[date] {
+			if matchContains(filter.Project, project) {
+				total += dailyRuntimeCount(snapshot, filter)
+			}
+		}
+		return total
+	}
+	return dailyRuntimeCount(globalCache.DailyRuntime[date], filter)
+}
+
 func dailyRuntimeCount(snapshot ProjectFileAggregate, filter AnalysisFilter) int {
+	if filter.Model != "" && filter.Tool != "" {
+		total := 0
+		for _, item := range snapshot.ToolModelStats {
+			if matchContains(filter.Model, item.Model) && matchContains(filter.Tool, item.Tool) {
+				total += item.CallCount
+			}
+		}
+		return total
+	}
+	if filter.Model != "" && (filter.Reason != "" || filter.Category != "") {
+		total := 0
+		for _, item := range snapshot.FailureModelReasons {
+			if matchContains(filter.Model, item.Model) && matchEqual(filter.Category, item.Category) && matchEqual(filter.Reason, item.Reason) {
+				total += item.Count
+			}
+		}
+		return total
+	}
 	if filter.Tool != "" {
 		total := 0
 		for _, item := range snapshot.ToolStats {
@@ -162,6 +340,15 @@ func dailyRuntimeCount(snapshot ProjectFileAggregate, filter AnalysisFilter) int
 		total := 0
 		for _, item := range snapshot.FailureReasons {
 			if matchEqual(filter.Category, item.Category) && matchEqual(filter.Reason, item.Reason) {
+				total += item.Count
+			}
+		}
+		return total
+	}
+	if filter.Model != "" {
+		total := 0
+		for _, item := range snapshot.ModelUsage {
+			if matchContains(filter.Model, item.Model) {
 				total += item.Count
 			}
 		}

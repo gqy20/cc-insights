@@ -212,14 +212,14 @@ func parseProjectFileAggregate(filePath string, tf TimeFilter, agg *ProjectAggre
 
 		// 5. 模型使用统计
 		dailyRuntimeAgg := ensureDailyRuntimeAggregate(agg, dateKey)
+		dailyProjectRuntimeAgg := ensureDailyProjectRuntimeAggregate(agg, dateKey, projectName)
+		dailySessionRuntimeAgg := ensureDailySessionRuntimeAggregate(agg, dateKey, record.SessionID)
 		if msg.Model != "" {
-			if agg.ModelUsage[msg.Model] == nil {
-				agg.ModelUsage[msg.Model] = &ModelUsageItem{
-					Model: msg.Model,
-				}
-			}
-			agg.ModelUsage[msg.Model].Count++
-			agg.ModelUsage[msg.Model].Tokens += msg.Usage.InputTokens + msg.Usage.OutputTokens
+			tokens := msg.Usage.InputTokens + msg.Usage.OutputTokens
+			recordModelUsageLocked(agg, msg.Model, tokens)
+			recordModelUsageLocked(dailyRuntimeAgg, msg.Model, tokens)
+			recordModelUsageLocked(dailyProjectRuntimeAgg, msg.Model, tokens)
+			recordModelUsageLocked(dailySessionRuntimeAgg, msg.Model, tokens)
 			if agg.DailyModelCounts[dateKey] == nil {
 				agg.DailyModelCounts[dateKey] = make(map[string]int)
 			}
@@ -227,9 +227,11 @@ func parseProjectFileAggregate(filePath string, tf TimeFilter, agg *ProjectAggre
 			if agg.DailyModelTokens[dateKey] == nil {
 				agg.DailyModelTokens[dateKey] = make(map[string]int)
 			}
-			agg.DailyModelTokens[dateKey][msg.Model] += msg.Usage.InputTokens + msg.Usage.OutputTokens
+			agg.DailyModelTokens[dateKey][msg.Model] += tokens
 			recordCostUsageLocked(agg, msg, record, projectName)
 			recordCostUsageLocked(dailyRuntimeAgg, msg, record, projectName)
+			recordCostUsageLocked(dailyProjectRuntimeAgg, msg, record, projectName)
+			recordCostUsageLocked(dailySessionRuntimeAgg, msg, record, projectName)
 		}
 
 		// 6. 工具调用统计
@@ -279,17 +281,31 @@ func parseProjectFileAggregate(filePath string, tf TimeFilter, agg *ProjectAggre
 			addAgentToolCallLocked(dailyRuntimeAgg, dailyCall)
 			addSessionToolCallLocked(dailyRuntimeAgg, dailyCall)
 			recordStructuredToolInputLocked(dailyRuntimeAgg, &dailyCall)
+			addToolCallLocked(dailyProjectRuntimeAgg, content.Name, msg.Model)
+			addAgentToolCallLocked(dailyProjectRuntimeAgg, dailyCall)
+			addSessionToolCallLocked(dailyProjectRuntimeAgg, dailyCall)
+			recordStructuredToolInputLocked(dailyProjectRuntimeAgg, &dailyCall)
+			addToolCallLocked(dailySessionRuntimeAgg, content.Name, msg.Model)
+			addAgentToolCallLocked(dailySessionRuntimeAgg, dailyCall)
+			addSessionToolCallLocked(dailySessionRuntimeAgg, dailyCall)
+			recordStructuredToolInputLocked(dailySessionRuntimeAgg, &dailyCall)
 			if content.Name == "Skill" {
 				recordSkillToolUseLocked(dailyRuntimeAgg, dailyCall, dailyCall.SkillName, dailyCall.SkillArgsLength)
+				recordSkillToolUseLocked(dailyProjectRuntimeAgg, dailyCall, dailyCall.SkillName, dailyCall.SkillArgsLength)
+				recordSkillToolUseLocked(dailySessionRuntimeAgg, dailyCall, dailyCall.SkillName, dailyCall.SkillArgsLength)
 			} else if record.SessionID != "" {
 				dailyCall.ChainSkills = appendUniqueStrings(dailyCall.ChainSkills, sessionActiveSkills[record.SessionID]...)
 				for _, skillName := range sessionActiveSkills[record.SessionID] {
 					recordSkillToolChainLocked(dailyRuntimeAgg, skillName, content.Name, false, false)
+					recordSkillToolChainLocked(dailyProjectRuntimeAgg, skillName, content.Name, false, false)
+					recordSkillToolChainLocked(dailySessionRuntimeAgg, skillName, content.Name, false, false)
 				}
 			}
 			if content.Name != "Skill" && record.AttributionSkill != "" {
 				dailyCall.ChainSkills = appendUniqueStrings(dailyCall.ChainSkills, record.AttributionSkill)
 				recordSkillToolChainLocked(dailyRuntimeAgg, record.AttributionSkill, content.Name, false, false)
+				recordSkillToolChainLocked(dailyProjectRuntimeAgg, record.AttributionSkill, content.Name, false, false)
+				recordSkillToolChainLocked(dailySessionRuntimeAgg, record.AttributionSkill, content.Name, false, false)
 			}
 			pendingTools[content.ID] = call
 		}
@@ -301,6 +317,8 @@ func parseProjectFileAggregate(filePath string, tf TimeFilter, agg *ProjectAggre
 			dateKey := call.Timestamp.Format("2006-01-02")
 			if dateKey != "0001-01-01" {
 				addMissingToolResultLocked(ensureDailyRuntimeAggregate(agg, dateKey), call)
+				addMissingToolResultLocked(ensureDailyProjectRuntimeAggregate(agg, dateKey, call.Project), call)
+				addMissingToolResultLocked(ensureDailySessionRuntimeAggregate(agg, dateKey, call.SessionID), call)
 			}
 		}
 	}

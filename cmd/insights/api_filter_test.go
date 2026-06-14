@@ -151,6 +151,12 @@ func TestApplyDashboardFilterKeepsPreciseToolData(t *testing.T) {
 	if data.ToolAnalysis.TotalCalls != 7 || data.ToolAnalysis.TotalFailures != 4 {
 		t.Fatalf("tool totals = calls %d failures %d, want 7/4", data.ToolAnalysis.TotalCalls, data.ToolAnalysis.TotalFailures)
 	}
+	if data.Coverage["dailyTrend"].Status != "exact" {
+		t.Fatalf("daily trend coverage = %+v, want exact", data.Coverage["dailyTrend"])
+	}
+	if data.Coverage["projectChart"].Status != "unavailable" {
+		t.Fatalf("project chart coverage = %+v, want unavailable", data.Coverage["projectChart"])
+	}
 }
 
 func TestApplyDashboardFilterRebuildsReasonTrend(t *testing.T) {
@@ -198,6 +204,9 @@ func TestApplyDashboardFilterRebuildsReasonTrend(t *testing.T) {
 	if data.FailureAnalysis == nil || data.FailureAnalysis.TotalFailures != 7 {
 		t.Fatalf("failure total = %+v, want reason aggregate total 7", data.FailureAnalysis)
 	}
+	if data.Coverage["failureReasonChart"].Status != "exact" {
+		t.Fatalf("failure coverage = %+v, want exact", data.Coverage["failureReasonChart"])
+	}
 }
 
 func TestApplyDashboardFilterRebuildsFailureTotalsFromToolReasons(t *testing.T) {
@@ -226,5 +235,108 @@ func TestApplyDashboardFilterRebuildsFailureTotalsFromToolReasons(t *testing.T) 
 	}
 	if len(data.FailureAnalysis.ByReason) != 2 {
 		t.Fatalf("by reason = %+v, want two Bash reasons", data.FailureAnalysis.ByReason)
+	}
+}
+
+func TestCoverageUnavailableWinsForCombinedFilters(t *testing.T) {
+	coverage := buildCoverage(AnalysisFilter{Project: "/repo/alpha", Tool: "Bash"})
+	if coverage["toolModelFailureChart"].Status != "unavailable" {
+		t.Fatalf("tool model coverage = %+v, want unavailable", coverage["toolModelFailureChart"])
+	}
+	if coverage["dailyTrend"].Status != "exact" {
+		t.Fatalf("daily trend coverage = %+v, want exact", coverage["dailyTrend"])
+	}
+	if coverage["failureReasonChart"].Status != "sample" {
+		t.Fatalf("failure coverage = %+v, want sample", coverage["failureReasonChart"])
+	}
+}
+
+func TestCoverageKeepsCommandFamilyExact(t *testing.T) {
+	coverage := buildCoverage(AnalysisFilter{Family: "python"})
+	if coverage["commands"].Status != "exact" {
+		t.Fatalf("commands coverage = %+v, want exact", coverage["commands"])
+	}
+	if coverage["failureReasonChart"].Status != "unavailable" {
+		t.Fatalf("failure coverage = %+v, want unavailable", coverage["failureReasonChart"])
+	}
+}
+
+func TestApplyDashboardFilterUsesDailyProjectRuntime(t *testing.T) {
+	origCache := globalCache
+	globalCache = &CacheFile{
+		DailyStats: map[string]*DayAggregate{
+			"2026-06-01": {Date: "2026-06-01"},
+		},
+		DailyProjectRuntime: map[string]map[string]ProjectFileAggregate{
+			"2026-06-01": {
+				"/repo/alpha": {
+					ToolStats: map[string]ToolStatItem{
+						"Bash": {Tool: "Bash", CallCount: 3},
+					},
+				},
+				"/repo/beta": {
+					ToolStats: map[string]ToolStatItem{
+						"Bash": {Tool: "Bash", CallCount: 11},
+					},
+				},
+			},
+		},
+	}
+	defer func() { globalCache = origCache }()
+
+	data := &DashboardData{
+		DailyTrend: DailyTrendData{Dates: []string{"2026-06-01"}, Counts: []int{99}},
+		ToolAnalysis: &ToolAnalysisData{
+			Tools: []ToolStatItem{{Tool: "Bash", CallCount: 14}},
+		},
+	}
+
+	applyDashboardFilter(data, AnalysisFilter{Project: "alpha", Tool: "Bash"})
+
+	if len(data.DailyTrend.Counts) != 1 || data.DailyTrend.Counts[0] != 3 {
+		t.Fatalf("daily trend = %+v, want alpha Bash count 3", data.DailyTrend)
+	}
+	if data.Coverage["dailyTrend"].Status != "exact" {
+		t.Fatalf("daily coverage = %+v, want exact", data.Coverage["dailyTrend"])
+	}
+}
+
+func TestApplyDashboardFilterUsesDailySessionRuntime(t *testing.T) {
+	origCache := globalCache
+	globalCache = &CacheFile{
+		DailyStats: map[string]*DayAggregate{
+			"2026-06-01": {Date: "2026-06-01"},
+		},
+		DailySessionRuntime: map[string]map[string]ProjectFileAggregate{
+			"2026-06-01": {
+				"s-alpha": {
+					FailureReasons: map[string]FailureReasonStat{
+						"rate_limit\x00rate_limit_429": {Category: "rate_limit", Reason: "rate_limit_429", Count: 4},
+					},
+				},
+				"s-beta": {
+					FailureReasons: map[string]FailureReasonStat{
+						"rate_limit\x00rate_limit_429": {Category: "rate_limit", Reason: "rate_limit_429", Count: 9},
+					},
+				},
+			},
+		},
+	}
+	defer func() { globalCache = origCache }()
+
+	data := &DashboardData{
+		DailyTrend: DailyTrendData{Dates: []string{"2026-06-01"}, Counts: []int{99}},
+		FailureAnalysis: &FailureAnalysisData{
+			ByReason: []FailureReasonStat{{Category: "rate_limit", Reason: "rate_limit_429", Count: 13}},
+		},
+	}
+
+	applyDashboardFilter(data, AnalysisFilter{Session: "s-alpha", Reason: "rate_limit_429"})
+
+	if len(data.DailyTrend.Counts) != 1 || data.DailyTrend.Counts[0] != 4 {
+		t.Fatalf("daily trend = %+v, want s-alpha rate limit count 4", data.DailyTrend)
+	}
+	if data.Coverage["dailyTrend"].Status != "exact" {
+		t.Fatalf("daily coverage = %+v, want exact", data.Coverage["dailyTrend"])
 	}
 }

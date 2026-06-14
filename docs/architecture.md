@@ -78,4 +78,12 @@ Web Dashboard 负责可视化趋势、运行时统计和分析结果。当前主
 - `/api/detail/tools`：工具性能和慢调用下钻。
 - `/api/timeline`：全局时间轴数据，服务 slider / brush。
 
-这些接口和旧 `/api/data` 复用同一套 filter。项目和模型维度已有日级缓存，API 会重算每日/星期趋势；工具、失败原因、Session 等暂时没有完整日级交叉索引，无法精确重算的旧图表会返回空数据，让前端显示空态而不是展示全局数据。若后续大屏滑动出现性能瓶颈，再增加 project/session/tool/reason 维度索引或响应 LRU。
+这些接口和旧 `/api/data` 复用同一套 filter。后端会为响应附带 `coverage`，标记每个图表在当前筛选下是 `exact`、`sample` 还是 `unavailable`。前端只展示可解释的数据：无法精确重算的图表显示空态原因，不展示全局数据冒充联动结果。
+
+日级趋势目前有三层索引：
+
+- `DailyRuntime`：date 级运行时聚合，支持工具、失败原因、模型的单维或部分模型组合趋势。
+- `DailyProjectRuntime`：date × project 运行时聚合，支持 `project + tool/reason/model` 等组合趋势。
+- `DailySessionRuntime`：date × session 运行时聚合，支持 `session + tool/reason/model` 等组合趋势。
+
+仍然需要谨慎的部分包括成本归因、文件编辑质量、运行事件、Task/Plan、Skill/Agent 等模块的复杂组合筛选。它们没有对应交叉索引时会被标记为 `unavailable` 或 `sample`。

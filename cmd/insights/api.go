@@ -24,28 +24,34 @@ var globalCache *CacheFile
 
 // DashboardData Dashboard 数据
 type DashboardData struct {
-	Timestamp        string                `json:"timestamp"`
-	TimeRange        TimeRangeInfo         `json:"time_range"`
-	Commands         []CommandStats        `json:"commands"`
-	HourlyCounts     map[string]int        `json:"hourly_counts"`
-	DailyTrend       DailyTrendData        `json:"daily_trend"`
-	MCPTools         []MCPToolStats        `json:"mcp_tools"`
-	Sessions         *SessionStats         `json:"sessions"`
-	ProjectStats     *ProjectStatsData     `json:"project_stats,omitempty"`
-	WeekdayStats     *WeekdayStats         `json:"weekday_stats,omitempty"`
-	ModelUsage       []ModelUsageItem      `json:"model_usage,omitempty"`
-	WorkHoursStats   *WorkHoursStats       `json:"work_hours_stats,omitempty"`
-	ToolAnalysis     *ToolAnalysisData     `json:"tool_analysis,omitempty"`
-	SkillAnalysis    *SkillAnalysisData    `json:"skill_analysis,omitempty"`
-	EventAnalysis    *EventAnalysisData    `json:"event_analysis,omitempty"`
-	AgentAnalysis    *AgentAnalysisData    `json:"agent_analysis,omitempty"`
-	CommandAnalysis  *CommandAnalysisData  `json:"command_analysis,omitempty"`
-	CostAnalysis     *CostAnalysisData     `json:"cost_analysis,omitempty"`
-	FailureAnalysis  *FailureAnalysisData  `json:"failure_analysis,omitempty"`
-	SessionAnalysis  *SessionAnalysisData  `json:"session_analysis,omitempty"`
-	FileAnalysis     *FileAnalysisData     `json:"file_analysis,omitempty"`
-	TaskPlanAnalysis *TaskPlanAnalysisData `json:"task_plan_analysis,omitempty"`
-	ToolPerformance  *ToolPerformanceData  `json:"tool_performance,omitempty"`
+	Timestamp        string                  `json:"timestamp"`
+	TimeRange        TimeRangeInfo           `json:"time_range"`
+	Commands         []CommandStats          `json:"commands"`
+	HourlyCounts     map[string]int          `json:"hourly_counts"`
+	DailyTrend       DailyTrendData          `json:"daily_trend"`
+	MCPTools         []MCPToolStats          `json:"mcp_tools"`
+	Sessions         *SessionStats           `json:"sessions"`
+	ProjectStats     *ProjectStatsData       `json:"project_stats,omitempty"`
+	WeekdayStats     *WeekdayStats           `json:"weekday_stats,omitempty"`
+	ModelUsage       []ModelUsageItem        `json:"model_usage,omitempty"`
+	WorkHoursStats   *WorkHoursStats         `json:"work_hours_stats,omitempty"`
+	ToolAnalysis     *ToolAnalysisData       `json:"tool_analysis,omitempty"`
+	SkillAnalysis    *SkillAnalysisData      `json:"skill_analysis,omitempty"`
+	EventAnalysis    *EventAnalysisData      `json:"event_analysis,omitempty"`
+	AgentAnalysis    *AgentAnalysisData      `json:"agent_analysis,omitempty"`
+	CommandAnalysis  *CommandAnalysisData    `json:"command_analysis,omitempty"`
+	CostAnalysis     *CostAnalysisData       `json:"cost_analysis,omitempty"`
+	FailureAnalysis  *FailureAnalysisData    `json:"failure_analysis,omitempty"`
+	SessionAnalysis  *SessionAnalysisData    `json:"session_analysis,omitempty"`
+	FileAnalysis     *FileAnalysisData       `json:"file_analysis,omitempty"`
+	TaskPlanAnalysis *TaskPlanAnalysisData   `json:"task_plan_analysis,omitempty"`
+	ToolPerformance  *ToolPerformanceData    `json:"tool_performance,omitempty"`
+	Coverage         map[string]CoverageInfo `json:"coverage,omitempty"`
+}
+
+type CoverageInfo struct {
+	Status string `json:"status"`
+	Reason string `json:"reason,omitempty"`
 }
 
 // TimeRangeInfo 时间范围信息
