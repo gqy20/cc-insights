@@ -427,9 +427,8 @@ async function loadData(params) {
 
     try {
         const filterParams = buildQueryParams();
-        const legacyParams = buildQueryParams({ legacy: true });
         const [legacy, overview, diagnostics, failures, commands, tokens, sessions, tools] = await Promise.all([
-            fetchLegacyData(legacyParams, signal),
+            fetchLegacyData(filterParams, signal),
             fetchInteractive('/api/overview', filterParams, signal),
             fetchInteractive('/api/diagnostics', { ...filterParams, detail: 'true' }, signal),
             fetchInteractive('/api/detail/failures', filterParams, signal),
@@ -460,7 +459,7 @@ async function loadData(params) {
     }
 }
 
-function buildQueryParams(options = {}) {
+function buildQueryParams() {
     const params = {};
     const filter = dashboardState.filters;
     const add = (key, value) => {
@@ -471,16 +470,14 @@ function buildQueryParams(options = {}) {
     add('preset', filter.preset || '30d');
     add('start', filter.start);
     add('end', filter.end);
-    if (!options.legacy) {
-        add('limit', filter.limit);
-        add('samples', filter.samples);
-        add('project', filter.project);
-        add('tool', filter.tool);
-        add('model', filter.model);
-        add('reason', filter.reason);
-        if (filter.detail) add('detail', 'true');
-        if (dashboardState.selectedDiagnosticID) add('id', dashboardState.selectedDiagnosticID);
-    }
+    add('limit', filter.limit);
+    add('samples', filter.samples);
+    add('project', filter.project);
+    add('tool', filter.tool);
+    add('model', filter.model);
+    add('reason', filter.reason);
+    if (filter.detail) add('detail', 'true');
+    if (dashboardState.selectedDiagnosticID) add('id', dashboardState.selectedDiagnosticID);
     return params;
 }
 
@@ -570,7 +567,7 @@ function updateStatsInfo(data, meta) {
     }
     document.getElementById('summaryRange').textContent = rangeText;
 
-    const totalRecords = (data.commands || []).reduce((sum, cmd) => sum + cmd.count, 0);
+    const totalRecords = safeArray(data.commands).reduce((sum, cmd) => sum + cmd.count, 0);
     const context = document.getElementById('detailContext');
     if (context) context.textContent = `${rangeText}，Slash 命令 ${totalRecords.toLocaleString()} 次。`;
 }
@@ -617,10 +614,11 @@ function renderSummary(data, overview) {
     const summaryGrid = document.getElementById('summaryGrid');
     const summary = overview && overview.summary ? overview.summary : {};
     const top = overview && overview.top ? overview.top : {};
-    const totalCommands = summary.commands || (data.commands || []).reduce((sum, cmd) => sum + cmd.count, 0);
-    const totalMessages = summary.messages || (data.project_stats ? data.project_stats.total_messages : (data.daily_trend || { counts: [] }).counts.reduce((sum, count) => sum + count, 0));
+    const totalCommands = summary.commands || safeArray(data.commands).reduce((sum, cmd) => sum + cmd.count, 0);
+    const dailyCounts = safeArray(data.daily_trend && data.daily_trend.counts);
+    const totalMessages = summary.messages || (data.project_stats ? data.project_stats.total_messages : dailyCounts.reduce((sum, count) => sum + count, 0));
     const totalSessions = summary.sessions || (data.sessions ? data.sessions.total_sessions : 0);
-    const totalTools = summary.tool_calls || (data.tool_analysis ? data.tool_analysis.total_calls : (data.mcp_tools || []).reduce((sum, tool) => sum + tool.count, 0));
+    const totalTools = summary.tool_calls || (data.tool_analysis ? data.tool_analysis.total_calls : safeArray(data.mcp_tools).reduce((sum, tool) => sum + tool.count, 0));
     const failureRate = Number(summary.failure_rate) > 0
         ? `${summary.failure_rate.toFixed(1)}%`
         : data.tool_analysis && data.tool_analysis.total_calls > 0
@@ -628,7 +626,7 @@ function renderSummary(data, overview) {
         : '-';
     const totalTokens = summary.tokens || (data.cost_analysis && data.cost_analysis.totals
         ? data.cost_analysis.totals.total_tokens
-        : (data.model_usage || []).reduce((sum, model) => sum + model.tokens, 0));
+        : safeArray(data.model_usage).reduce((sum, model) => sum + model.tokens, 0));
     const topProject = top.projects && top.projects[0]
         ? shortPath(top.projects[0].project)
         : data.project_stats && data.project_stats.projects && data.project_stats.projects[0]
@@ -636,11 +634,17 @@ function renderSummary(data, overview) {
         : '-';
     const topModel = top.models && top.models[0]
         ? shortModelName(top.models[0].model)
-        : data.model_usage && data.model_usage[0] ? shortModelName(data.model_usage[0].model) : '-';
+        : safeArray(data.model_usage)[0] ? shortModelName(safeArray(data.model_usage)[0].model) : '-';
+    const primaryMetric = buildPrimarySummaryMetric(data, summary, {
+        messages: totalMessages,
+        sessions: totalSessions,
+        tools: totalTools,
+        commands: totalCommands
+    });
 
     const cards = [
-        { label: '消息数', value: formatNumber(totalMessages), meta: `${formatNumber(totalSessions)} 个会话` },
-        { label: '命令调用', value: formatNumber(totalCommands), meta: `${(data.commands || []).length} 种命令` },
+        primaryMetric,
+        { label: '命令调用', value: formatNumber(totalCommands), meta: `${safeArray(data.commands).length} 种命令` },
         { label: '工具调用', value: formatNumber(totalTools), meta: `失败率 ${failureRate}` },
         { label: 'Token', value: compactNumber(totalTokens), meta: `Top 模型 ${topModel}` },
         { label: '活跃项目', value: topProject, meta: `${formatNumber(summary.projects || (data.project_stats ? data.project_stats.projects.length : 0))} 个项目` },
@@ -649,6 +653,28 @@ function renderSummary(data, overview) {
 
     summaryGrid.replaceChildren(...cards.map(createSummaryCard));
     summaryPanel.style.display = '';
+}
+
+function buildPrimarySummaryMetric(data, summary, totals) {
+    const filters = dashboardState.filters || {};
+    const dailyTotal = safeArray(data.daily_trend && data.daily_trend.counts).reduce((sum, count) => sum + count, 0);
+    if (filters.tool) {
+        return { label: '筛选命中', value: formatNumber(totals.tools || dailyTotal), meta: `工具 ${filters.tool}` };
+    }
+    if (filters.reason) {
+        const failures = summary.failures || (data.failure_analysis ? data.failure_analysis.total_failures : dailyTotal);
+        return { label: '筛选命中', value: formatNumber(failures), meta: `失败原因 ${filters.reason}` };
+    }
+    if (filters.model) {
+        return { label: '筛选命中', value: formatNumber(totals.messages || dailyTotal), meta: `模型 ${shortModelName(filters.model)}` };
+    }
+    if (filters.project) {
+        return { label: '筛选命中', value: formatNumber(totals.messages || dailyTotal), meta: shortPath(filters.project) };
+    }
+    if (filters.family) {
+        return { label: '筛选命中', value: formatNumber(totals.commands || dailyTotal), meta: `命令族 ${filters.family}` };
+    }
+    return { label: '消息数', value: formatNumber(totals.messages), meta: `${formatNumber(totals.sessions)} 个会话` };
 }
 
 function renderDiagnostics(report) {
@@ -854,6 +880,10 @@ function createChartSection(group) {
 
 function hasArrayData(items) {
     return Array.isArray(items) && items.length > 0;
+}
+
+function safeArray(items) {
+    return Array.isArray(items) ? items : [];
 }
 
 function sumBy(items, field) {

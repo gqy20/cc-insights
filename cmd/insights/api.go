@@ -69,32 +69,10 @@ func handleDataAPI(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
 	defer cancel()
 
-	// 解析参数
-	preset := r.URL.Query().Get("preset")
-	startStr := r.URL.Query().Get("start")
-	endStr := r.URL.Query().Get("end")
-
-	// 创建时间过滤器
-	var tf TimeFilter
-	var err error
-
-	if startStr != "" && endStr != "" {
-		// 自定义时间范围
-		tf, err = NewTimeFilterCustom(startStr, endStr)
-		if err != nil {
-			sendError(w, "无效的时间格式: "+err.Error())
-			return
-		}
-	} else if preset != "" {
-		// 预设时间范围
-		tf, err = timeFilterFromAPIPreset(preset)
-		if err != nil {
-			sendError(w, err.Error())
-			return
-		}
-	} else {
-		// 默认全部数据
-		tf = TimeFilter{Start: nil, End: nil}
+	filter, err := parseAnalysisFilter(r)
+	if err != nil {
+		sendError(w, err.Error())
+		return
 	}
 
 	// 使用 channel + select 实现超时控制
@@ -105,7 +83,7 @@ func handleDataAPI(w http.ResponseWriter, r *http.Request) {
 	resultCh := make(chan result, 1)
 
 	go func() {
-		data, source, err := buildDashboardData(tf, preset)
+		data, source, err := buildDashboardDataWithFilter(filter)
 
 		if err == nil {
 			maybeValidateDashboardData(source, data)

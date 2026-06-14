@@ -1,4 +1,5 @@
 (function() {
+    const assetVersion = 'interactive-filter-v4';
     const scripts = [
         '/static/app_state.js',
         '/static/app_formatters.js',
@@ -12,7 +13,7 @@
     function loadScript(src) {
         return new Promise((resolve, reject) => {
             const script = document.createElement('script');
-            script.src = src;
+            script.src = `${src}?v=${assetVersion}`;
             script.async = false;
             script.onload = resolve;
             script.onerror = () => reject(new Error(`Failed to load ${src}`));

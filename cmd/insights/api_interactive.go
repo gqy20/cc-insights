@@ -115,7 +115,7 @@ func handleOverviewAPI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	startedAt := time.Now()
-	data, source, err := buildDashboardData(filter.TimeFilter, filter.Preset)
+	data, source, err := buildDashboardDataWithFilter(filter)
 	if err != nil {
 		sendInteractiveError(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -132,7 +132,7 @@ func handleDiagnosticsAPI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	startedAt := time.Now()
-	data, source, err := buildRecommendationDashboardData(filter.TimeFilter, filter.Preset)
+	data, source, err := buildRecommendationDataWithFilter(filter)
 	if err != nil {
 		sendInteractiveError(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -152,7 +152,7 @@ func handleDetailFailuresAPI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	startedAt := time.Now()
-	data, source, err := buildRecommendationDashboardData(filter.TimeFilter, filter.Preset)
+	data, source, err := buildRecommendationDataWithFilter(filter)
 	if err != nil {
 		sendInteractiveError(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -168,7 +168,7 @@ func handleDetailCommandsAPI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	startedAt := time.Now()
-	data, source, err := buildRecommendationDashboardData(filter.TimeFilter, filter.Preset)
+	data, source, err := buildRecommendationDataWithFilter(filter)
 	if err != nil {
 		sendInteractiveError(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -187,7 +187,7 @@ func handleDetailTokensAPI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	startedAt := time.Now()
-	data, source, err := buildRecommendationDashboardData(filter.TimeFilter, filter.Preset)
+	data, source, err := buildRecommendationDataWithFilter(filter)
 	if err != nil {
 		sendInteractiveError(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -206,7 +206,7 @@ func handleDetailSessionsAPI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	startedAt := time.Now()
-	data, source, err := buildRecommendationDashboardData(filter.TimeFilter, filter.Preset)
+	data, source, err := buildRecommendationDataWithFilter(filter)
 	if err != nil {
 		sendInteractiveError(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -222,7 +222,7 @@ func handleDetailToolsAPI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	startedAt := time.Now()
-	data, source, err := buildRecommendationDashboardData(filter.TimeFilter, filter.Preset)
+	data, source, err := buildRecommendationDataWithFilter(filter)
 	if err != nil {
 		sendInteractiveError(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -238,13 +238,22 @@ func handleTimelineAPI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	startedAt := time.Now()
-	data, source, err := buildDashboardData(filter.TimeFilter, filter.Preset)
+	data, source, err := buildDashboardDataWithFilter(filter)
 	if err != nil {
 		sendInteractiveError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	payload := buildTimelineData(data)
 	sendInteractiveJSON(w, payload, source, data.TimeRange, filter, startedAt)
+}
+
+func buildRecommendationDataWithFilter(filter AnalysisFilter) (*DashboardData, string, error) {
+	data, source, err := buildRecommendationDashboardData(filter.TimeFilter, filter.Preset)
+	if err != nil {
+		return nil, source, err
+	}
+	applyDashboardFilter(data, filter)
+	return data, source, nil
 }
 
 func parseAnalysisFilter(r *http.Request) (AnalysisFilter, error) {

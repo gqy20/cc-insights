@@ -78,4 +78,4 @@ Web Dashboard 负责可视化趋势、运行时统计和分析结果。当前主
 - `/api/detail/tools`：工具性能和慢调用下钻。
 - `/api/timeline`：全局时间轴数据，服务 slider / brush。
 
-这些接口复用现有缓存和聚合结构，先采用时间范围查询后内存过滤。若后续大屏滑动出现性能瓶颈，再增加 project/session/tool/reason 维度索引或响应 LRU。
+这些接口和旧 `/api/data` 复用同一套 filter。项目和模型维度已有日级缓存，API 会重算每日/星期趋势；工具、失败原因、Session 等暂时没有完整日级交叉索引，无法精确重算的旧图表会返回空数据，让前端显示空态而不是展示全局数据。若后续大屏滑动出现性能瓶颈，再增加 project/session/tool/reason 维度索引或响应 LRU。
