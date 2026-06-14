@@ -133,10 +133,13 @@ func TestDetailedFailureRootCauseUsesExamples(t *testing.T) {
 	}
 }
 
-func TestNormalizeCLICommandRecognizesRec(t *testing.T) {
-	normalized := normalizeCLICommand([]string{"rec", "-p", "7d"})
-	if normalized.Name != "rec" {
-		t.Fatalf("Name = %q, want rec", normalized.Name)
+func TestResolveCLICommandRecognizesRec(t *testing.T) {
+	resolved := resolveCLICommand([]string{"rec", "-p", "7d"})
+	if resolved.Name != "rec" {
+		t.Fatalf("Name = %q, want rec", resolved.Name)
+	}
+	if len(resolved.Args) != 2 || resolved.Args[0] != "-p" || resolved.Args[1] != "7d" {
+		t.Fatalf("Args = %#v, want [-p 7d]", resolved.Args)
 	}
 }
 

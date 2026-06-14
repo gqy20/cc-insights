@@ -394,19 +394,16 @@ func parseProjectFilesForCache(files []projectFileInfo) ([]projectFileResult, er
 	return items, nil
 }
 
-// IncrementalUpdate 增量更新缓存
-func (cb *CacheBuilder) IncrementalUpdate() error {
-	// 1. 加载现有缓存
+// RebuildIfChanged 在数据变化时重建缓存。
+func (cb *CacheBuilder) RebuildIfChanged() error {
 	cache, err := LoadCacheFile(cb.CachePath)
 	if err != nil {
-		// 缓存不存在，构建完整缓存
 		Info("缓存不存在，开始构建完整缓存")
 		return cb.BuildFullCache()
 	}
 
-	Info("检查增量更新", "cache_time", cache.LastUpdate.Format("2006-01-02 15:04:05"))
+	Info("检查缓存是否需要重建", "cache_time", cache.LastUpdate.Format("2006-01-02 15:04:05"))
 
-	// 2. 检查是否有新数据
 	lastDataMod, err := cb.GetLastDataModified()
 	if err != nil {
 		return fmt.Errorf("获取数据修改时间失败: %w", err)
@@ -417,9 +414,6 @@ func (cb *CacheBuilder) IncrementalUpdate() error {
 		return nil
 	}
 
-	// 3. 增量解析新数据
-	// 重新解析（简化实现：完整重建）
-	// TODO: 实现真正的增量解析
 	Info("数据已更新，重新构建缓存")
 	return cb.BuildFullCache()
 }

@@ -32,7 +32,7 @@ CLI 命令必须保持收敛：
 - `cli.go`、`cli_*.go`：CLI 参数、报告构建和输出。
 - `parser.go`、`project_parser.go`、`history_parser.go`、`debug_parser.go`：数据解析。
 - `aggregate.go`、`aggregate_finalize.go`：聚合和最终分析结果生成。
-- `cache.go`、`cache_builder.go`：缓存结构、增量构建和快速查询。
+- `cache.go`、`cache_builder.go`：缓存结构、文件级快照、变化检测和快速查询。
 - `*_analysis.go`：成本、Session、Skill、命令、失败等专项分析。
 - `cmd/insights/static/`：Web Dashboard 静态资源，ECharts 已本地化。
 - `cmd/insights/rules/bash.yml`：内置 Bash 命令分类规则。

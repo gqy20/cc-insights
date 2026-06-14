@@ -2,7 +2,7 @@ package main
 
 import "testing"
 
-func TestNormalizeCLICommandAliases(t *testing.T) {
+func TestResolveCLICommand(t *testing.T) {
 	tests := []struct {
 		name     string
 		args     []string
@@ -11,18 +11,18 @@ func TestNormalizeCLICommandAliases(t *testing.T) {
 	}{
 		{name: "default", args: nil, wantName: "sum", wantArgs: nil},
 		{name: "default with flags", args: []string{"-p", "7d"}, wantName: "sum", wantArgs: []string{"-p", "7d"}},
-		{name: "summary", args: []string{"sum", "-j"}, wantName: "sum", wantArgs: []string{"sum", "-j"}},
-		{name: "failures", args: []string{"err", "-p", "7d"}, wantName: "err", wantArgs: []string{"err", "-p", "7d"}},
-		{name: "why", args: []string{"why", "--reason", "error_text"}, wantName: "why", wantArgs: []string{"why", "--reason", "error_text"}},
-		{name: "cost", args: []string{"tok", "-p", "30d"}, wantName: "tok", wantArgs: []string{"tok", "-p", "30d"}},
-		{name: "sessions", args: []string{"ses", "-p", "7d"}, wantName: "ses", wantArgs: []string{"ses", "-p", "7d"}},
-		{name: "web", args: []string{"web", "--addr", ":8932"}, wantName: "web", wantArgs: []string{"web", "--addr", ":8932"}},
-		{name: "unknown long form", args: []string{"failures", "-j"}, wantName: "failures", wantArgs: []string{"failures", "-j"}},
+		{name: "summary", args: []string{"sum", "-j"}, wantName: "sum", wantArgs: []string{"-j"}},
+		{name: "failures", args: []string{"err", "-p", "7d"}, wantName: "err", wantArgs: []string{"-p", "7d"}},
+		{name: "why", args: []string{"why", "--reason", "error_text"}, wantName: "why", wantArgs: []string{"--reason", "error_text"}},
+		{name: "cost", args: []string{"tok", "-p", "30d"}, wantName: "tok", wantArgs: []string{"-p", "30d"}},
+		{name: "sessions", args: []string{"ses", "-p", "7d"}, wantName: "ses", wantArgs: []string{"-p", "7d"}},
+		{name: "web", args: []string{"web", "--addr", ":8932"}, wantName: "web", wantArgs: []string{"--addr", ":8932"}},
+		{name: "unknown long form", args: []string{"failures", "-j"}, wantName: "failures", wantArgs: []string{"-j"}},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := normalizeCLICommand(tt.args)
+			got := resolveCLICommand(tt.args)
 			if got.Name != tt.wantName {
 				t.Fatalf("Name = %q, want %q", got.Name, tt.wantName)
 			}

@@ -251,8 +251,8 @@ func TestCacheQueryByTimeRangeScopesRuntimeAnalysis(t *testing.T) {
 	}
 }
 
-// TestCacheBuilderIncrementalUpdate 测试增量更新缓存
-func TestCacheBuilderIncrementalUpdate(t *testing.T) {
+// TestCacheBuilderRebuildIfChanged 测试数据变化时重建缓存。
+func TestCacheBuilderRebuildIfChanged(t *testing.T) {
 	// Arrange
 	tmpDir := t.TempDir()
 	dataDir := createTestDataDir(t, tmpDir)
@@ -279,12 +279,10 @@ func TestCacheBuilderIncrementalUpdate(t *testing.T) {
 		t.Fatalf("更新 projects 文件修改时间失败: %v", err)
 	}
 
-	// Act - 增量更新
-	err := builder.IncrementalUpdate()
+	err := builder.RebuildIfChanged()
 
-	// Assert
 	if err != nil {
-		t.Fatalf("IncrementalUpdate() failed: %v", err)
+		t.Fatalf("RebuildIfChanged() failed: %v", err)
 	}
 
 	// 验证缓存已更新

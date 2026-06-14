@@ -30,7 +30,7 @@ type cliOptions struct {
 	Prompts  bool
 }
 
-type normalizedCommand struct {
+type resolvedCommand struct {
 	Name string
 	Args []string
 }
@@ -185,10 +185,9 @@ func runCLI(args []string) error {
 		return nil
 	}
 
-	normalized := normalizeCLICommand(args)
-	args = normalized.Args
-	if normalized.Name == "web" {
-		opts, err := parseCLIOptions(args[0], args[1:], false)
+	resolved := resolveCLICommand(args)
+	if resolved.Name == "web" {
+		opts, err := parseCLIOptions(resolved.Name, resolved.Args, false)
 		if err != nil {
 			return err
 		}
@@ -196,12 +195,8 @@ func runCLI(args []string) error {
 		return runWebServer()
 	}
 
-	command := normalized.Name
-	commandArgs := normalized.Args
-	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
-		command = args[0]
-		commandArgs = args[1:]
-	}
+	command := resolved.Name
+	commandArgs := resolved.Args
 	if command != "sum" && command != "err" && command != "why" && command != "tok" && command != "cmd" && command != "rec" && command != "ses" {
 		return fmt.Errorf("未知命令 %q，运行 cc-insights help 查看用法", command)
 	}
@@ -323,17 +318,11 @@ func runFastAnalysisCommand(command string, opts cliOptions, tf TimeFilter, pres
 	}
 }
 
-func normalizeCLICommand(args []string) normalizedCommand {
+func resolveCLICommand(args []string) resolvedCommand {
 	if len(args) == 0 || strings.HasPrefix(args[0], "-") {
-		return normalizedCommand{Name: "sum", Args: args}
+		return resolvedCommand{Name: "sum", Args: args}
 	}
-
-	switch args[0] {
-	case "sum", "err", "why", "tok", "cmd", "rec", "ses", "web":
-		return normalizedCommand{Name: args[0], Args: args}
-	default:
-		return normalizedCommand{Name: args[0], Args: args}
-	}
+	return resolvedCommand{Name: args[0], Args: args[1:]}
 }
 
 func parseCLIOptions(command string, args []string, analysisCommand bool) (cliOptions, error) {
