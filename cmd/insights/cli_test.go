@@ -83,6 +83,19 @@ func TestParseCLIOptionsRecommendationDetail(t *testing.T) {
 	}
 }
 
+func TestParseCLIOptionsPromptProfile(t *testing.T) {
+	opts, err := parseCLIOptions("rec", []string{"-p", "30d", "--prompts", "--project", "cc-insights"}, true)
+	if err != nil {
+		t.Fatalf("parseCLIOptions returned error: %v", err)
+	}
+	if !opts.Prompts {
+		t.Fatal("Prompts = false, want true")
+	}
+	if opts.Project != "cc-insights" {
+		t.Fatalf("Project = %q, want cc-insights", opts.Project)
+	}
+}
+
 func TestRunCLIRejectsLegacyLongCommands(t *testing.T) {
 	for _, command := range []string{"summary", "failures", "cost", "inspect"} {
 		t.Run(command, func(t *testing.T) {

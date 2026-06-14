@@ -97,6 +97,35 @@ func writeTable(value any, w io.Writer) error {
 			fmt.Fprintln(w)
 		}
 		writeInsights(w, v.Insights)
+	case cliPromptReport:
+		fmt.Fprintf(w, "Claude Code Prompt Profile · %s\n\n", formatRange(v.TimeRange))
+		writePromptFilter(w, v.Filter)
+		fmt.Fprintf(w, "真实输入: %s  清洗后: %s  噪声: %s  工具回传: %s  项目: %s  Session: %s\n\n",
+			formatInt(v.RawPrompts),
+			formatInt(v.CleanPrompts),
+			formatInt(v.NoisePrompts),
+			formatInt(v.ToolResultRecords),
+			formatInt(v.ProjectCount),
+			formatInt(v.SessionCount))
+		if v.Runtime != nil {
+			fmt.Fprintf(w, "耗时: prepare=%s  analysis=%s  total=%s  source=%s\n\n",
+				formatDurationMs(v.Runtime.PrepareDurationMs),
+				formatDurationMs(v.Runtime.RecommendationDurationMs),
+				formatDurationMs(v.Runtime.TotalDurationMs),
+				v.Runtime.Source)
+		}
+		writePromptCategoriesTable(w, v.ByCategory)
+		writeNameCounts(w, "高频短指令", v.TopShortPrompts)
+		writeNameCounts(w, "Top 项目", v.TopProjects)
+		writePromptPreferencesTable(w, v.Preferences)
+		if len(v.Samples) > 0 {
+			fmt.Fprintln(w, "样例:")
+			for _, sample := range v.Samples {
+				fmt.Fprintf(w, "  - %s %s\n", sample.Timestamp, sample.Preview)
+			}
+			fmt.Fprintln(w)
+		}
+		writeInsights(w, v.Insights)
 	case cliSessionReport:
 		fmt.Fprintf(w, "Claude Code Sessions · %s\n\n", formatRange(v.TimeRange))
 		writeSessionFilter(w, v.Filter)
@@ -223,6 +252,35 @@ func writeMarkdown(value any, w io.Writer) error {
 			fmt.Fprintln(w)
 		}
 		writeMarkdownInsights(w, v.Insights)
+	case cliPromptReport:
+		fmt.Fprintf(w, "# Claude Code Prompt Profile\n\n范围: %s\n\n", formatRange(v.TimeRange))
+		fmt.Fprintf(w, "- 真实输入: %s\n- 清洗后: %s\n- 噪声: %s\n- 工具回传: %s\n- 项目: %s\n- Session: %s\n\n",
+			formatInt(v.RawPrompts),
+			formatInt(v.CleanPrompts),
+			formatInt(v.NoisePrompts),
+			formatInt(v.ToolResultRecords),
+			formatInt(v.ProjectCount),
+			formatInt(v.SessionCount))
+		if v.Runtime != nil {
+			fmt.Fprintf(w, "- 准备耗时: %s\n- 分析耗时: %s\n- 总耗时: %s\n- 数据源: `%s`\n\n",
+				formatDurationMs(v.Runtime.PrepareDurationMs),
+				formatDurationMs(v.Runtime.RecommendationDurationMs),
+				formatDurationMs(v.Runtime.TotalDurationMs),
+				v.Runtime.Source)
+		}
+		writePromptCategoriesMarkdown(w, v.ByCategory)
+		writeMarkdownNameCounts(w, "高频短指令", v.TopShortPrompts)
+		writeMarkdownNameCounts(w, "Top 项目", v.TopProjects)
+		writePromptPreferencesMarkdown(w, v.Preferences)
+		if len(v.Samples) > 0 {
+			fmt.Fprintln(w, "## 样例")
+			fmt.Fprintln(w)
+			for _, sample := range v.Samples {
+				fmt.Fprintf(w, "- `%s` %s\n", sample.Timestamp, sample.Preview)
+			}
+			fmt.Fprintln(w)
+		}
+		writeMarkdownInsights(w, v.Insights)
 	case cliSessionReport:
 		fmt.Fprintf(w, "# Claude Code Sessions\n\n范围: %s\n\n", formatRange(v.TimeRange))
 		fmt.Fprintf(w, "- Session: %s\n- Plan: %s in / %s out\n- Task reminders: %s\n- Todo reminders: %s\n\n",
@@ -305,6 +363,80 @@ func writeSessionFilter(w io.Writer, filter cliSessionReportFilter) {
 		return
 	}
 	fmt.Fprintf(w, "过滤: %s\n", strings.Join(parts, ", "))
+}
+
+func writePromptFilter(w io.Writer, filter cliPromptReportFilter) {
+	parts := []string{}
+	if filter.Project != "" {
+		parts = append(parts, "project="+filter.Project)
+	}
+	if filter.Session != "" {
+		parts = append(parts, "session="+filter.Session)
+	}
+	if len(parts) == 0 {
+		fmt.Fprintln(w, "过滤: none")
+		return
+	}
+	fmt.Fprintf(w, "过滤: %s\n", strings.Join(parts, ", "))
+}
+
+func writePromptCategoriesTable(w io.Writer, items []promptCategoryStat) {
+	if len(items) == 0 {
+		return
+	}
+	fmt.Fprintln(w, "输入类型:")
+	for _, item := range items {
+		fmt.Fprintf(w, "  %-18s %s\n", item.Name, formatInt(item.Count))
+		for _, example := range item.Examples {
+			fmt.Fprintf(w, "    - %s\n", example.Preview)
+		}
+	}
+	fmt.Fprintln(w)
+}
+
+func writePromptPreferencesTable(w io.Writer, items []promptPreferenceItem) {
+	if len(items) == 0 {
+		return
+	}
+	fmt.Fprintln(w, "候选协作规则:")
+	for _, item := range items {
+		fmt.Fprintf(w, "  [%s] %s · %s\n", strings.ToUpper(item.Confidence), item.Title, item.Summary)
+		fmt.Fprintf(w, "    建议: %s\n", item.Suggestion)
+		for _, evidence := range item.Evidence {
+			fmt.Fprintf(w, "    证据: %s\n", evidence.Preview)
+		}
+	}
+	fmt.Fprintln(w)
+}
+
+func writePromptCategoriesMarkdown(w io.Writer, items []promptCategoryStat) {
+	if len(items) == 0 {
+		return
+	}
+	fmt.Fprintln(w, "## 输入类型")
+	fmt.Fprintln(w)
+	for _, item := range items {
+		fmt.Fprintf(w, "- `%s`: %s\n", item.Name, formatInt(item.Count))
+		for _, example := range item.Examples {
+			fmt.Fprintf(w, "  - %s\n", example.Preview)
+		}
+	}
+	fmt.Fprintln(w)
+}
+
+func writePromptPreferencesMarkdown(w io.Writer, items []promptPreferenceItem) {
+	if len(items) == 0 {
+		return
+	}
+	fmt.Fprintln(w, "## 候选协作规则")
+	fmt.Fprintln(w)
+	for _, item := range items {
+		fmt.Fprintf(w, "- **%s** (`%s`, %s): %s\n", item.Title, item.Confidence, formatInt(item.Count), item.Suggestion)
+		for _, evidence := range item.Evidence {
+			fmt.Fprintf(w, "  - 证据: %s\n", evidence.Preview)
+		}
+	}
+	fmt.Fprintln(w)
 }
 
 func writeSessionItemsTable(w io.Writer, title string, items []SessionAnalysisItem) {

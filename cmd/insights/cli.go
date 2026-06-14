@@ -27,6 +27,7 @@ type cliOptions struct {
 	Session  string
 	ID       string
 	Detail   bool
+	Prompts  bool
 }
 
 type normalizedCommand struct {
@@ -224,6 +225,20 @@ func runCLI(args []string) error {
 		}
 		prepareDuration := time.Since(prepareStartedAt)
 		defer CloseLogger()
+		if opts.Prompts {
+			reportStartedAt := time.Now()
+			report, err := buildCLIPromptReport(tf, preset, opts)
+			if err != nil {
+				return err
+			}
+			report.Runtime = &cliRuntimeInfo{
+				Source:                   "raw-jsonl",
+				PrepareDurationMs:        prepareDuration.Milliseconds(),
+				RecommendationDurationMs: time.Since(reportStartedAt).Milliseconds(),
+				TotalDurationMs:          time.Since(startedAt).Milliseconds(),
+			}
+			return outputCLI(report, opts.Format, os.Stdout)
+		}
 		dataStartedAt := time.Now()
 		data, source, err := buildRecommendationDashboardData(tf, preset)
 		if err != nil {
@@ -354,6 +369,7 @@ func parseCLIOptions(command string, args []string, analysisCommand bool) (cliOp
 		fs.StringVar(&opts.Session, "session", "", "按 session_id 过滤")
 		fs.StringVar(&opts.ID, "id", "", "按诊断 ID 过滤")
 		fs.BoolVar(&opts.Detail, "detail", false, "展开诊断触发条件、根因候选和优化目标")
+		fs.BoolVar(&opts.Prompts, "prompts", false, "分析用户输入提示词画像")
 	}
 	if err := fs.Parse(args); err != nil {
 		return opts, err
@@ -605,6 +621,7 @@ Usage:
   cc-insights cmd -p 30d -j
   cc-insights ses -p 30d --session SESSION_ID -j
   cc-insights rec -p 30d --detail
+  cc-insights rec -p 30d --prompts
   cc-insights rec -p 30d --id performance.slowest_call -j
   cc-insights web [--addr :8932]
 
@@ -636,5 +653,6 @@ Inspect failure filters:
 
 Diagnostic flags:
   --detail        expand trigger, root causes, and optimization targets
-  --id VALUE      show one diagnostic finding by exact ID`)
+  --id VALUE      show one diagnostic finding by exact ID
+  --prompts       analyze user prompt patterns and collaboration preferences`)
 }
