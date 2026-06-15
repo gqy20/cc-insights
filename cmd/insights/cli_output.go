@@ -678,7 +678,7 @@ func formatCompactInt(value int) string {
 	number := float64(value)
 	switch {
 	case value >= 1_000_000_000:
-		return fmt.Sprintf("%.1fG", number/1_000_000_000)
+		return fmt.Sprintf("%.1fB", number/1_000_000_000)
 	case value >= 1_000_000:
 		return fmt.Sprintf("%.1fM", number/1_000_000)
 	case value >= 1_000:
