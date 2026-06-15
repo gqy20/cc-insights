@@ -1102,4 +1102,5 @@ type pendingToolCall struct {
 	SkillName       string
 	SkillArgsLength int
 	ChainSkills     []string
+	ChainCommands   []string // Bash && 链中所有去重的命令名
 }

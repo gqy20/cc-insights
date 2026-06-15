@@ -34,6 +34,7 @@ CLI 命令必须保持收敛：
 - `aggregate.go`、`aggregate_finalize.go`：聚合和最终分析结果生成。
 - `cache.go`、`cache_builder.go`：缓存结构、文件级快照、变化检测和快速查询。
 - `*_analysis.go`：成本、Session、Skill、命令、失败等专项分析。
+- `command_file_analysis.go`：Bash 命令解析，支持多段 `&&`/`;` 链式命令独立统计（含引号感知分割、同链去重、结果分发和逐段风险检测）。
 - `cmd/insights/static/`：Web Dashboard 静态资源，ECharts 已本地化。
 - `cmd/insights/rules/bash.yml`：内置 Bash 命令分类规则。
 - `cmd/insights/rules/diagnostics.yml`：`rec` 诊断规则说明，包括指标、阈值、数据来源和触发解释。
@@ -77,7 +78,7 @@ go run ./cmd/insights web --addr :8932
 
 - CLI 命令、输出结构和过滤参数。
 - 缓存构建、轻量诊断缓存和时间范围查询。
-- Bash 命令分类规则。
+- Bash 命令分类规则和多段链式命令解析（`splitChainSegments`、`extractShellSegments`、结果分发）。
 - 失败原因、Session 生命周期、Token 成本、性能诊断。
 
 提交前至少运行：

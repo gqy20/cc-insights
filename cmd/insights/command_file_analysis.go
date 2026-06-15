@@ -6,6 +6,71 @@ import (
 	"strings"
 )
 
+// --- chain command analysis: 多段 && 链式命令解析 ---
+
+// splitChainSegments 将单行命令按 && 和 ; 分割为多个段，引号内的 && 和 ; 不会被分割。
+// 例如：cd /tmp && pnpm test → ["cd /tmp", "pnpm test"]
+//
+//	echo "a&&b"          → ["echo \"a&&b\""] (引号内不拆)
+//	grep "x;y" file      → ["grep \"x;y\" file"] (引号内不拆)
+func splitChainSegments(line string) []string {
+	var segments []string
+	var current strings.Builder
+	inSingle, inDouble := false, false
+
+	for i := 0; i < len(line); i++ {
+		c := line[i]
+		switch {
+		case c == '\'' && !inDouble:
+			inSingle = !inSingle
+			current.WriteByte(c)
+		case c == '"' && !inSingle:
+			inDouble = !inDouble
+			current.WriteByte(c)
+		case !inSingle && !inDouble:
+			if i+1 < len(line) && line[i] == '&' && line[i+1] == '&' {
+				segments = append(segments, strings.TrimSpace(current.String()))
+				current.Reset()
+				i++ // 跳过第二个 &
+			} else if c == ';' {
+				segments = append(segments, strings.TrimSpace(current.String()))
+				current.Reset()
+			} else {
+				current.WriteByte(c)
+			}
+		default:
+			current.WriteByte(c)
+		}
+	}
+	if tail := strings.TrimSpace(current.String()); tail != "" {
+		segments = append(segments, tail)
+	}
+	return segments
+}
+
+// extractShellSegments 从完整命令字符串中提取所有可执行段。
+// 处理多行（只取第一个非空非注释行）、注释跳过、&&/; 链式分割。
+// 返回的每个元素都是经过 trim 的独立命令段。
+func extractShellSegments(command string) []string {
+	for _, line := range strings.Split(command, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		parts := splitChainSegments(line)
+		var result []string
+		for _, p := range parts {
+			if p = strings.TrimSpace(p); p != "" {
+				result = append(result, p)
+			}
+		}
+		return result // 只取第一个非空行（保持原有行为）
+	}
+	return nil
+}
+
+// --- end chain command analysis ---
+
 func recordStructuredToolInputLocked(agg *ProjectAggregate, call *pendingToolCall) {
 	switch call.Tool {
 	case "Bash":
@@ -15,17 +80,41 @@ func recordStructuredToolInputLocked(agg *ProjectAggregate, call *pendingToolCal
 		if err := json.Unmarshal(call.Input, &input); err != nil || strings.TrimSpace(input.Command) == "" {
 			return
 		}
-		commandName := bashCommandName(input.Command)
-		riskLevel, riskReason := classifyBashRisk(input.Command)
-		call.CommandName = commandName
-		stat := ensureBashCommandStat(agg, commandName)
-		stat.CallCount++
-		if stat.SampleCommand == "" {
-			stat.SampleCommand = previewString(input.Command, 180)
+		segments := extractShellSegments(input.Command)
+		if len(segments) == 0 {
+			return
 		}
-		if riskLevel != "" {
-			stat.RiskLevel = riskLevel
-			stat.RiskReason = riskReason
+		// 主命令名 = 第一段（保持 pendingToolCall.CommandName 向后兼容）
+		primaryName := bashCommandName(segments[0])
+		call.CommandName = primaryName
+
+		// 记录链中每个唯一命令
+		recorded := make(map[string]bool)
+		for _, seg := range segments {
+			cmdName := bashCommandName(seg)
+			if recorded[cmdName] {
+				continue // 同链去重：echo && echo 只计 1 次
+			}
+			recorded[cmdName] = true
+
+			stat := ensureBashCommandStat(agg, cmdName)
+			stat.CallCount++
+			if stat.SampleCommand == "" {
+				stat.SampleCommand = previewString(input.Command, 180)
+			}
+
+			// 逐段风险检测
+			level, reason := classifyBashRisk(seg)
+			if level != "" && (stat.RiskLevel == "" || riskRank(level) > riskRank(stat.RiskLevel)) {
+				stat.RiskLevel = level
+				stat.RiskReason = reason
+			}
+		}
+
+		// 存储链中所有命令名（用于结果分发）
+		call.ChainCommands = make([]string, 0, len(recorded))
+		for name := range recorded {
+			call.ChainCommands = append(call.ChainCommands, name)
 		}
 	case "Read", "Edit", "Write", "MultiEdit":
 		path := filePathFromToolInput(call.Input)
@@ -81,16 +170,28 @@ func updateFileHotResultLocked(agg *ProjectAggregate, path string, failed, missi
 
 // --- end file_analysis ---
 
+// updateBashResultStat 更新单个 BashCommandStat 的成功/失败/missing 计数。
+func updateBashResultStat(stat *BashCommandStat, failed, missing bool) {
+	switch {
+	case missing:
+		stat.MissingResultCount++
+	case failed:
+		stat.FailureCount++
+	default:
+		stat.SuccessCount++
+	}
+}
+
 func addCommandOrFileResultLocked(agg *ProjectAggregate, call pendingToolCall, failed bool, missing bool) {
 	if call.CommandName != "" {
-		stat := ensureBashCommandStat(agg, call.CommandName)
-		switch {
-		case missing:
-			stat.MissingResultCount++
-		case failed:
-			stat.FailureCount++
-		default:
-			stat.SuccessCount++
+		// 主命令
+		updateBashResultStat(ensureBashCommandStat(agg, call.CommandName), failed, missing)
+		// 链中其他命令：结果全局分发（整个链共享同一成败状态）
+		for _, name := range call.ChainCommands {
+			if name == call.CommandName {
+				continue
+			}
+			updateBashResultStat(ensureBashCommandStat(agg, name), failed, missing)
 		}
 	}
 	if call.FileOpKey != "" && agg.FileOperationStats[call.FileOpKey] != nil {
@@ -137,21 +238,23 @@ func bashCommandName(command string) string {
 }
 
 func classifyBashRisk(command string) (string, string) {
-	lower := strings.ToLower(firstExecutableShellSegment(command))
-	switch {
-	case strings.HasPrefix(lower, "rm -rf ") || strings.HasPrefix(lower, "rm -fr ") || lower == "rm -rf" || lower == "rm -fr":
-		return "high", "recursive delete"
-	case strings.HasPrefix(lower, "git reset --hard") || strings.HasPrefix(lower, "git clean -fd"):
-		return "high", "destructive git cleanup"
-	case strings.HasPrefix(lower, "sudo "):
-		return "medium", "privileged command"
-	case strings.HasPrefix(lower, "curl ") && strings.Contains(lower, "| sh"):
-		return "high", "download pipe to shell"
-	case strings.HasPrefix(lower, "wget ") && strings.Contains(lower, "| sh"):
-		return "high", "download pipe to shell"
-	default:
-		return "", ""
+	// 遍历所有段（而非仅第一段），检测任意段中的危险命令
+	for _, seg := range extractShellSegments(command) {
+		lower := strings.ToLower(seg)
+		switch {
+		case strings.HasPrefix(lower, "rm -rf ") || strings.HasPrefix(lower, "rm -fr ") || lower == "rm -rf" || lower == "rm -fr":
+			return "high", "recursive delete"
+		case strings.HasPrefix(lower, "git reset --hard") || strings.HasPrefix(lower, "git clean -fd"):
+			return "high", "destructive git cleanup"
+		case strings.HasPrefix(lower, "sudo "):
+			return "medium", "privileged command"
+		case strings.HasPrefix(lower, "curl ") && strings.Contains(lower, "| sh"):
+			return "high", "download pipe to shell"
+		case strings.HasPrefix(lower, "wget ") && strings.Contains(lower, "| sh"):
+			return "high", "download pipe to shell"
+		}
 	}
+	return "", ""
 }
 
 func firstExecutableShellSegment(command string) string {

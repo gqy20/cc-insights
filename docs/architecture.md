@@ -37,6 +37,7 @@ cc-insights 是面向 Claude Code 的本地使用诊断工具。它读取 `~/.cl
 - `cmd/insights/static/`：Web Dashboard 静态资源，ECharts 本地化。
 - `cmd/insights/rules/bash.yml`：Bash 命令族分类规则。
 - `cmd/insights/rules/diagnostics.yml`：诊断规则的指标、阈值、来源和触发解释。
+- `cmd/insights/command_file_analysis.go`：Bash 命令解析核心，支持多段 `&&`/`;` 链式命令独立统计（引号感知分割、同链去重、结果分发、逐段风险检测）。
 
 ## CLI 职责
 
