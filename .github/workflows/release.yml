@@ -152,11 +152,9 @@ jobs:
           cp README.md "${package_dir}/README.md" 2>/dev/null || true
           cp LICENSE "${package_dir}/LICENSE" 2>/dev/null || true
 
-          # Windows: 额外生成 UPX 压缩的独立 exe
+          # Windows: UPX 压缩
           if [[ "${GOOS}" == "windows" ]]; then
-            upx --best --lzma -o "${package_dir}/${BINARY_NAME}${ext}.tmp" "${package_dir}/${BINARY_NAME}${ext}" && \
-              mv "${package_dir}/${BINARY_NAME}${ext}.tmp" "${package_dir}/${BINARY_NAME}${ext}"
-            cp "${package_dir}/${BINARY_NAME}${ext}" "dist/${artifact_base}.exe"
+            upx --best --lzma "${package_dir}/${BINARY_NAME}${ext}"
           fi
 
           if [[ "${ARCHIVE_FORMAT}" == "zip" ]]; then
@@ -164,6 +162,8 @@ jobs:
               cd package
               zip -r "../dist/${artifact_base}.zip" "${artifact_base}"
             )
+            # Windows 同时产出独立 exe（zip 内仍保留带 README/LICENSE 的完整包）
+            cp "${package_dir}/${BINARY_NAME}${ext}" "dist/${artifact_base}${ext}"
           else
             tar -C package -czf "dist/${artifact_base}.tar.gz" "${artifact_base}"
           fi
@@ -228,8 +228,7 @@ jobs:
             echo "| Linux (arm64) | \`${binary_name}_${VERSION}_linux_arm64.tar.gz\` |"
             echo "| macOS (Intel) | \`${binary_name}_${VERSION}_darwin_amd64.tar.gz\` |"
             echo "| macOS (Apple Silicon) | \`${binary_name}_${VERSION}_darwin_arm64.tar.gz\` |"
-            echo "| Windows (x86_64) | \`${binary_name}_${VERSION}_windows_amd64.zip\` |"
-            echo "| Windows 推荐压缩版 | \`${binary_name}_${VERSION}_windows_amd64.exe\` (~2MB, UPX) |"
+            echo "| Windows (x86_64) | \`${binary_name}_${VERSION}_windows_amd64.exe\` / \`.zip\` |"
             echo "| 校验和 | \`checksums.txt\` |"
             echo
             echo "### 更新内容"

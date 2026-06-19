@@ -9,82 +9,85 @@
 
 <p align="center">面向 Claude Code 的使用诊断工具：把历史数据变成可解释的证据、判断和改进方向</p>
 
-cc-insights 是一个 Claude Code 使用诊断 CLI，默认输出可读摘要，也提供本地 Web Dashboard 展示使用统计，并支持时间范围筛选、缓存预聚合和并发解析优化。
+<p align="center">
+  <a href="https://github.com/gqy20/cc-insights/actions/workflows/ci.yml"><img src="https://github.com/gqy20/cc-insights/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
+  <a href="https://github.com/gqy20/cc-insights/releases"><img src="https://img.shields.io/github/v/release/gqy20/cc-insights" alt="Release" /></a>
+  <a href="https://go.dev/"><img src="https://img.shields.io/badge/Go-1.21+-00ADD8?logo=go&logoColor=white" alt="Go" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT" /></a>
+</p>
 
-## 核心理念
+cc-insights 是一个 Claude Code 使用诊断 CLI：读取历史数据、项目会话、工具调用、失败样例、Token 消耗和 Session 生命周期，整理成**可解释的证据、诊断结论和改进方向**。默认输出可读摘要，也提供本地 Web Dashboard，并支持时间范围筛选、缓存预聚合和并发解析。
 
-cc-insights 的目标不是简单展示”用了多少 token、跑了多少命令”，而是帮助人和 AI 看懂 Claude Code 的真实工作方式，并据此优化项目协作方式。
+## 目录
 
-核心问题是：
+- [为什么用 cc-insights](#为什么用-cc-insights)
+- [快速开始](#快速开始)
+- [命令速查](#命令速查)
+- [与 AI 协作](#与-ai-协作)
+- [配置与规则](#配置与规则)
+- [Dashboard](#dashboard)
+- [开发](#开发)
+- [故障排查](#故障排查)
+- [文档](#文档)
 
-- Claude Code 经常失败在什么地方？
-- 是环境、路径、依赖、权限、网络、工具参数，还是任务拆分方式的问题？
-- 哪些项目、session、命令族和工具调用消耗了最多时间与 token？
-- 应该优化 `CLAUDE.md`、hooks、MCP 配置，还是应该把高频动作封装成更稳定的工具？
+## 为什么用 cc-insights
 
-因此 CLI 命令保持收敛：
+cc-insights 的目标不是展示「用了多少 token、跑了多少命令」，而是回答**为什么 Claude Code 变慢、变贵或频繁失败**，以及**下一步该优化哪里**。
 
-- `rec` 负责诊断、解释和给出下一步方向。
-- `why`、`cmd`、`tok`、`ses` 负责证据下钻。
-- `sum` 负责全局概览。
-- `web` 负责本地可视化。
+| 传统方式（翻 JSONL / 看终端日志） | 用 cc-insights |
+|----------|-------------|
+| 手动 grep `~/.claude` 找失败 | `cc-insights rec -p 7d` → 给根因候选、证据摘要和下钻命令 |
+| 数不清 Token 花在哪 | `cc-insights tok -p 30d -j` → 按项目 / 模型 / 会话拆解 |
+| Bash 命令频繁失败，不知是哪段 | `cc-insights cmd -p 30d` → 按命令族 + 链式逐段 + 高风险命令 |
+| 长会话失控难发现 | `cc-insights ses` → 找长会话 / 高失败会话 / Plan·Task 信号 |
+| 想看可视化要自己搭 | `cc-insights web` → 单二进制本地起 Dashboard |
+| 让 AI 帮分析但数据是乱的 | 所有命令 `-j` 输出结构化 JSON → AI 直接消费 |
 
-不会为每一种解释继续增加新命令。新的分析能力优先进入 `rec` 的诊断解释层，原始证据则通过少量稳定的下钻命令查看。这样既方便人阅读，也方便 AI 用 JSON / Markdown 输出继续分析。
+**核心设计原则：**
 
-**核心特点：**
-- **单文件部署** - 静态资源嵌入二进制，完全便携
-- **高性能并发** - Producer-Consumer 模式 + Worker Pool
-- **跨平台兼容** - 静态链接构建，无外部依赖
-- **缓存加速** - 启动时构建 `~/.cc-insights/cache/cache.db`，API 优先读取预聚合数据
-- **AI 友好** - 支持 JSON / Markdown / Table 输出，便于 AI 直接调用分析结果
-- **诊断优先** - `rec` 输出异常、证据、解释、排查方向和可执行下钻命令
-- **规则可配置** - Bash 分类规则和诊断阈值通过 YAML 文件自定义，无需改代码
+- **诊断优先** — `rec` 先给判断，再给证据和可执行下钻命令；不为每种解释继续堆命令
+- **AI 友好** — JSON / Markdown / Table 三种输出，AI 直接解析继续分析
+- **单文件部署** — 静态资源内嵌二进制（UPX 后约 2.7MB），无外部依赖、无数据库
+- **规则可配置** — Bash 分类与诊断阈值用 YAML 配置，无需改代码
+- **缓存加速** — 启动时构建 `~/.cc-insights/cache/`，API 优先读预聚合数据
 
-## ✨ 功能特性
+## 快速开始
 
-- 📊 **可视化图表**
-  - 每日活动趋势（折线图）
-  - Slash Commands 使用统计（柱状图）
-  - Runtime 工具信号与 Skill 分析面板（饼图）
-  - 每日会话趋势（折线图）
-  - 项目活跃度排名（柱状图）
-  - 星期活动分布（柱状图）
-  - 模型使用分析（柱状图 + 折线图）
-  - 工作时段分布（柱状图）
+### 1. 安装
 
-- ⏱️ **时间范围筛选**
-  - 快捷预设：24h、7天、30天、90天、全部
-  - 自定义范围：选择起止日期
-  - 多维度组合筛选（项目 × 模型 × 工具 × 失败原因）
-  - 实时统计信息显示
+**下载预编译二进制（推荐，无需 Go / Node 环境）**
 
-- 🤖 **AI 友好 CLI**
-  - `sum` - 快速概览 Claude Code 使用情况
-  - `err` - 输出失败原因、失败工具和模型组合
-  - `why` - 按原因、工具、模型、项目或 Session 下钻失败样例
-  - `tok` - 输出 Token、模型、项目和会话消耗
-  - `cmd` - 输出 Bash 命令族、具体命令和高风险命令（支持链式命令逐段解析）
-  - `ses` - 输出 Session 生命周期、长会话、高失败会话和 Plan/Task 信号
-  - `rec` - 输出诊断结论、证据、触发条件、根因候选、建议动作和下钻命令
-    - `rec --detail` - 展开详细诊断信息（指标值、阈值对比、数据来源）
-    - `rec --prompts` - 从真实用户输入中整理提示词画像、协作偏好和候选规则
-    - `rec --id <id>` - 按诊断 ID 精确过滤输出
-  - `web` - 启动 Web Dashboard
-  - 支持 `--format json|markdown|table`
+从 [Releases](https://github.com/gqy20/cc-insights/releases) 下载对应平台包，解压后放到 `~/.local/bin`：
 
-- 🔧 **可配置规则**
-  - Bash 命令分类规则：`rules/bash.yml`（支持模式匹配、风险等级标记）
-  - 诊断规则说明：`rules/diagnostics.yml`（指标定义、阈值、触发解释）
+| 平台 | 文件 |
+|------|------|
+| macOS · Apple Silicon | `cc-insights_<ver>_darwin_arm64.tar.gz` |
+| macOS · Intel | `cc-insights_<ver>_darwin_amd64.tar.gz` |
+| Linux · amd64 | `cc-insights_<ver>_linux_amd64.tar.gz` |
+| Linux · arm64 | `cc-insights_<ver>_linux_arm64.tar.gz` |
+| Windows · amd64 | `cc-insights_<ver>_windows_amd64.zip` / `.exe` |
 
-## 📦 快速开始
-
-### 1. 构建
+macOS / Linux 命令行获取最新版并安装到 `~/.local/bin`：
 
 ```bash
-make build  # 静态链接构建；如果本机安装了 UPX，会自动压缩
+VERSION=$(curl -fsSL https://api.github.com/repos/gqy20/cc-insights/releases/latest | grep -m1 '"tag_name"' | cut -d'"' -f4)
+OS=$(uname -s | tr '[:upper:]' '[:lower:]')   # darwin / linux
+ARCH=$(uname -m | sed 's/x86_64/amd64/; s/aarch64/arm64/')
+curl -fsSL -o /tmp/cc-insights.tar.gz \
+  "https://github.com/gqy20/cc-insights/releases/download/${VERSION}/cc-insights_${VERSION}_${OS}_${ARCH}.tar.gz"
+mkdir -p ~/.local/bin && tar xzf /tmp/cc-insights.tar.gz -C ~/.local/bin --strip-components=1 "cc-insights_${VERSION}_${OS}_${ARCH}/cc-insights"
+chmod +x ~/.local/bin/cc-insights
 ```
 
-Windows 原生 PowerShell/cmd 环境可直接使用 Go 构建：
+Windows 直接下载 `cc-insights_<ver>_windows_amd64.exe`，放到 `~/.local/bin`（或任意 PATH 目录）；也可下 `.zip`（含 README/LICENSE）。
+
+**源码构建（需要 Go 1.21+，会自动构建前端）**
+
+```bash
+make build          # 先 pnpm 前端再 go build（static + strip + UPX），输出 ./cc-insights
+```
+
+Windows 原生 PowerShell / cmd 也可直接用 Go 构建：
 
 ```powershell
 go build -trimpath -tags=prod -o cc-insights.exe ./cmd/insights
@@ -93,38 +96,15 @@ go build -trimpath -tags=prod -o cc-insights.exe ./cmd/insights
 ### 2. 运行
 
 ```bash
-# 默认输出最近 30 天 CLI 摘要
-./cc-insights
-
-# 启动 Web Dashboard
-./cc-insights web
-
-# 指定数据目录
-./cc-insights --data /path/to/data
-
-# 指定监听地址
-./cc-insights web --addr :9090
-
-# 给 AI 使用的 JSON 输出
-./cc-insights err -p 7d -j
-./cc-insights why -p 7d --reason error_text -n 20 -j
-./cc-insights tok -p 30d -j
-./cc-insights cmd -p 30d -j
-./cc-insights ses -p 30d -j
-./cc-insights rec -p 30d -j
-./cc-insights rec -p 30d --detail
-./cc-insights rec -p 30d --prompts
-./cc-insights rec -p 30d --id performance.slowest_call -j
+cc-insights                # 默认输出最近 30 天 CLI 摘要
+cc-insights web            # 启动 Web Dashboard（默认 :8932）
+cc-insights web --addr :9090 --data /path/to/data
+cc-insights rec -p 7d      # 诊断：根因 + 证据 + 下钻命令
 ```
 
-### 3. 访问
+### 3. 数据来源
 
-打开浏览器访问:
-- 首页: http://localhost:8932
-- Dashboard: http://localhost:8932/dashboard
-- API: http://localhost:8932/api/data?preset=7d
-
-## 📁 数据目录结构
+默认读取 `~/.claude`（Claude Code 数据目录），可用 `--data` 指定任意目录：
 
 ```
 ~/.claude/
@@ -135,256 +115,131 @@ go build -trimpath -tags=prod -o cc-insights.exe ./cmd/insights
 └── debug/               # runtime 事件日志目录
 ```
 
-## 📚 项目文档
+## 命令速查
 
-- [架构说明](docs/architecture.md)
-- [诊断体系](docs/diagnostics.md)
-- [路线图](docs/roadmap.md)
-- [容错与降级策略](docs/fallbacks.md)
-- [Codex 数据源调研](docs/archive/codex.md)
+| 命令 | 作用 | 示例 |
+|------|------|------|
+| `sum` | 全局概览 | `cc-insights sum -p 7d` |
+| `rec` | 诊断结论、证据、触发条件、根因候选、建议动作、下钻命令 | `cc-insights rec -p 7d` / `rec --detail` / `rec --prompts` |
+| `why` | 按原因 / 工具 / 模型 / 项目 / Session 下钻失败样例 | `cc-insights why -p 7d --reason timeout -n 5` |
+| `cmd` | Bash 命令族、具体命令、高风险命令（含链式 `&&`/`;` 逐段解析） | `cc-insights cmd -p 30d -j` |
+| `tok` | Token、模型、项目和会话消耗 | `cc-insights tok -p 30d -j` |
+| `ses` | Session 生命周期、长会话、高失败会话、Plan/Task 信号 | `cc-insights ses -p 7d -n 5` |
+| `err` | 失败来源：失败原因、失败工具和模型组合 | `cc-insights err -p 7d -j` |
+| `web` | 启动 Web Dashboard | `cc-insights web --addr :8932` |
 
-## 🎨 Dashboard 预览
+`rec` 是主诊断入口，其余命令是稳定的原始证据下钻。新增分析能力优先进入 `rec` 的解释层，而非新增命令。
+
+**全局 flags：**
+
+| Flag | 说明 |
+|------|------|
+| `-p, --preset` | 时间范围：`24h`、`7d`、`30d`、`90d`、`all` |
+| `--start / --end` | 自定义日期范围（`YYYY-MM-DD`） |
+| `-f, --format` | 输出格式：`table`、`json`、`markdown` |
+| `-j` / `-m` | 输出 JSON / 输出 Markdown |
+| `-n` / `--limit` | Top N 数量（`why` 表示样例数） |
+| `--detail` | 展开 `rec` 的触发条件、根因候选和优化目标 |
+| `--id <id>` | 按诊断 ID 精确过滤 `rec` 输出 |
+| `--prompts` | 在 `rec` 中分析用户提示词画像、协作偏好和候选规则 |
+| `--reason / --category / --tool / --model / --project / --session` | 多维过滤 |
+| `--data <path>` | 数据目录（默认 `~/.claude`） |
+| `--cache <path>` | 缓存目录（默认 `~/.cc-insights/cache`） |
+| `--rules <path>` | Bash 分类规则（默认内置 `rules/bash.yml`，也读 `~/.cc-insights/bash.yml`） |
+
+## 与 AI 协作
+
+cc-insights 本身就是为 AI 协作设计的诊断工具。所有命令支持 `-j` / `--format json`，输出结构化数据供 Claude Code、Codex 等 AI 直接解析和继续推理：
+
+```bash
+cc-insights err -p 7d -j
+cc-insights why -p 7d --reason timeout -n 20 -j
+cc-insights tok -p 30d -j
+cc-insights cmd -p 30d -j
+cc-insights ses -p 30d -j
+cc-insights rec -p 30d -j
+cc-insights rec -p 30d --id performance.slowest_call -j
+```
+
+> **典型协作流**：先让 AI 跑 `rec -p 7d -j` 拿到诊断结论与根因候选 → 对感兴趣的 ID 跑 `rec --id <id> -j` 或对应下钻命令（`why` / `cmd` / `tok` / `ses`）取原始证据 → AI 基于证据给出优化 `CLAUDE.md` / hooks / MCP 配置或封装工具的建议。
+
+## 配置与规则
+
+| 文件 | 作用 |
+|------|------|
+| `cmd/insights/rules/bash.yml` | Bash 命令分类规则（模式匹配、风险等级标记、链式命令分段） |
+| `cmd/insights/rules/diagnostics.yml` | `rec` 诊断规则：指标定义、阈值、数据来源、触发解释 |
+
+两者均可直接修改后热重载，无需重新编译。`--rules` 可加载自定义 Bash 规则，也会自动读取 `~/.cc-insights/bash.yml`。
+
+## Dashboard
+
+`cc-insights web` 启动本地 Dashboard，一个全局筛选状态驱动整屏分析，支持暗色模式。
 
 ![Dashboard Preview](docs/dashboard.png)
 
-## 📡 API 接口
+**能力一览：**
 
-### GET /api/data
+- 每日活动 / 会话趋势（折线）、项目活跃度排名、星期与工作时段分布（柱状）
+- Slash Commands 使用、模型使用分析（含 Token）
+- 诊断建议卡（severity + 证据 + 动作）与证据下钻面板（失败 / 命令 / Token / Session / 工具 5 个 tab）
+- 时间范围快捷预设 + 自定义；模型 / 工具 / 原因 / 项目 / Session 多维联动
 
-获取筛选后的数据：
+打开浏览器访问：
 
-```
-GET /api/data?preset=7d
-GET /api/data?preset=custom&start=2025-12-01&end=2026-01-08
-```
+- Dashboard: http://localhost:8932/dashboard
+- API: http://localhost:8932/api/data?preset=7d
 
-**参数：**
-- `preset`: `24h` | `7d` | `30d` | `90d` | `all` | `custom`
-- `start`: 开始日期 (自定义范围时使用，格式: `YYYY-MM-DD`)
-- `end`: 结束日期 (自定义范围时使用，格式: `YYYY-MM-DD`)
-- `project`: 按项目路径片段过滤
-- `model`: 按模型名过滤
-- `tool`: 按工具名过滤
-- `reason`: 按失败原因过滤
-- `session`: 按 Session ID 过滤
+接口参数、响应结构和可信度（`coverage`）约定见 [API 文档](docs/api.md)。
 
-**响应：**
-
-```json
-{
-  “success”: true,
-  “data”: {
-    “timestamp”: “2026-06-15 16:02:07”,
-    “time_range”: {
-      “preset”: “7d”,
-      “start”: “2026-06-08”,
-      “end”: “2026-06-15”
-    },
-    “commands”: [
-      {“Command”: “/tdd”, “Count”: 115},
-      {“Command”: “/gh”, “Count”: 31}
-    ],
-    “hourly_counts”: {
-      “10”: 53, “11”: 44, “15”: 137
-    },
-    “daily_trend”: {
-      “dates”: [“2026-06-09”, “2026-06-10”],
-      “counts”: [7765, 7849]
-    },
-    “runtime_tools”: [
-      {“Tool”: “search_web”, “Server”: “jina”, “Count”: 1543}
-    ],
-    “sessions”: {
-      “total_sessions”: 89,
-      “peak_date”: “2026-06-12”,
-      “peak_count”: 23,
-      “valley_date”: “2026-06-08”,
-      “valley_count”: 2
-    },
-    “project_stats”: {
-      “projects”: [
-        {“project”: “/path/to/project”, “session_count”: 0, “message_count”: 892}
-      ],
-      “total_messages”: 15420,
-      “total_sessions”: 89
-    },
-    “model_usage”: [
-      {“model”: “claude-sonnet-4-6”, “count”: 120, “tokens”: 450000}
-    ]
-  }
-}
-```
-
-### 交互式分析 API
-
-用于大屏联动和局部下钻：
-
-```
-GET /api/overview?preset=7d
-GET /api/diagnostics?preset=7d&detail=true
-GET /api/diagnostics?preset=7d&id=performance.slowest_call
-GET /api/detail/failures?preset=7d&reason=timeout
-GET /api/detail/commands?preset=7d&family=test
-GET /api/detail/tokens?preset=7d&project=cc-insights
-GET /api/detail/sessions?preset=7d&session=<id>
-GET /api/detail/tools?preset=7d&tool=Bash
-GET /api/timeline?preset=all
-```
-
-这些接口返回统一 `meta`，包含数据源、缓存版本、时间范围、过滤条件和运行耗时。
-`/api/data` 也接受同一组过滤参数，前端会用同一 filter 同步刷新主图表和下钻面板。
-
-Dashboard 响应会包含 `coverage` 元数据，用来说明每个图在当前筛选下的可信度：
-
-- `exact`：可由缓存索引精确计算。
-- `sample`：只能基于样例下钻，不能代表完整总体。
-- `unavailable`：当前组合筛选没有精确数据支撑，前端会显示空态原因。
-
-当前每日趋势已支持时间范围、项目、Session、工具、失败原因和模型的部分组合精确联动，例如 `project + tool`、`project + reason`、`project + model`、`session + tool`、`session + reason`、`session + model`。无法精确重算的图表不会展示全局数据，避免造成假联动。
-
-## 🔧 CLI 用法
-
-```
-cc-insights
-cc-insights err -p 7d -j
-cc-insights why -p 7d --reason error_text -n 20 -j
-cc-insights tok -p 30d -j
-cc-insights cmd -p 30d -j
-cc-insights ses -p 30d --session SESSION_ID -j
-cc-insights rec -p 30d -j
-cc-insights rec -p 30d --detail
-cc-insights rec -p 30d --prompts
-cc-insights rec -p 30d --id performance.slowest_call -j
-cc-insights web [--addr :8932]
-
-命令：
-sum  总览
-err  失败来源
-why  失败样例下钻
-tok  Token 与成本
-cmd  Bash 命令分析（含链式命令逐段解析）
-ses  Session 生命周期
-rec  诊断、解释与下钻命令
-web  Web Dashboard
-
---data <path>     数据目录路径（默认: ~/.claude）
---cache <path>    缓存目录路径（默认: ~/.cc-insights/cache）
---rules <path>    Bash 命令分类规则（默认内置 rules/bash.yml；也会读取 ~/.cc-insights/bash.yml）
--p, --preset      时间范围：24h、7d、30d、90d、all
---start <date>    自定义开始日期（YYYY-MM-DD）
---end <date>      自定义结束日期（YYYY-MM-DD）
--f, --format      输出格式：table、json、markdown
--j                输出 JSON
--m                输出 Markdown
--n                Top N 数量；对 why 表示样例数量
---limit <n>       Top N 数量
---samples <n>     下钻样例数量
---reason <value>  按失败 reason 过滤
---category <val>  按失败 category 过滤
---tool <name>     按工具名过滤
---model <name>    按模型名过滤
---project <text>  按项目路径片段过滤
---session <id>    按 Session ID 过滤
---detail          展开 rec 的触发条件、根因候选和优化目标
---id <id>         按诊断 ID 精确过滤 rec 输出
---prompts         在 rec 中分析用户输入提示词画像、协作偏好和候选规则
---addr <addr>     Web 监听地址（默认: :8932）
-```
-
-诊断规则说明集中在 `cmd/insights/rules/diagnostics.yml`，用于描述 `rec` 的指标、阈值、数据来源和触发解释；Bash 命令分类规则位于 `cmd/insights/rules/bash.yml`。两者均可通过文件直接修改，无需重新编译。
-
-## 📊 性能测试结果
-
-### 最近 7 天数据
-
-```
-history.jsonl: 0.05s
-debug/ 日志:   5.22s
-总计:          ~5.3s
-```
-
-### 全部数据
-
-```
-history.jsonl: 0.05s
-debug/ 日志:   4.96s
-总计:          ~5.0s
-```
-
-**测试环境：** 72核 CPU，2.2G 数据
-
-## 🚀 开发
+## 开发
 
 ```bash
-# 开发模式运行
-make run-dev
-
-# 运行测试
-make test
-
-# 性能测试
-make bench
-make bench-all
-
-# 构建版本
-make build
-
-# 多平台发布包（Linux/macOS/Windows）
-make release
+make run-dev        # 开发模式运行（使用 ../data）
+make test           # production tags 下运行测试（自包含 fixture）
+go test ./...       # 开发时快速测试
+make bench          # 性能测试
+make release        # 多平台发布包（Linux/macOS/Windows）
 ```
 
-## 📝 注意事项
+前端源码在 `web/`（React + TypeScript + Vite + Tailwind + Recharts + TanStack Query），改 UI 后 `pnpm build` 产物落到 `cmd/insights/static/dist/` 经 `go:embed` 内联。详见 [前端重构计划](docs/plan/frontend-react-refactor.md)。
 
-1. **数据路径灵活**: 使用 `-data` 参数指定任意数据目录
-2. **无需外部数据库**: 直接读取 JSON/JSONL 和日志文件，缓存写入本地 JSON 文件
-3. **并发解析**: projects 和 debug 日志使用 worker 并发解析
-4. **单文件部署**: 所有依赖编译进单一可执行文件
-5. **时间筛选**: 支持多种时间范围选择方式和多维度组合过滤
-6. **静态链接**: 默认构建无外部依赖，Release 会产出 Linux、macOS 和 Windows 包
-7. **规则可配置**: Bash 分类和诊断阈值通过 YAML 文件配置，支持热重载缓存
-8. **测试状态**: `make test` 使用自包含 fixture，可在没有真实 Claude Code 数据目录的环境中运行
+性能参考：72 核机器、约 2.2G 数据，全量解析约 5 秒，`history.jsonl` 解析约 0.05 秒。
 
-## 🔧 故障排查
+## 故障排查
 
-### Dashboard 无法启动
+**Dashboard 无法启动**
 
 ```bash
-# 检查数据目录
-ls -la ~/.claude/history.jsonl
-
-# 检查端口占用
-lsof -i :8932
-
-# 查看日志
-./cc-insights -data ~/.claude 2>&1 | tee debug.log
+ls -la ~/.claude/history.jsonl     # 确认数据目录存在
+lsof -i :8932                      # 确认端口未被占用
+cc-insights --data ~/.claude 2>&1 | tee debug.log
 ```
 
-### 图表不显示
+**图表不显示 / 数据加载慢**
 
-1. 打开浏览器开发者工具 (F12)
-2. 检查 Console 是否有错误
-3. 检查 Network 是否有 API 请求失败
+1. F12 打开开发者工具，检查 Console 与 Network 是否有请求失败。
+2. 运行 `make bench` 看并发解析耗时；`nproc` 查看可用核心数。
 
-### 数据加载慢
+## 发布
 
-```bash
-# 运行性能测试
-make bench
+GitHub Actions 的 Release workflow 在打 `v*` tag 时构建并发布 5 个平台包：
 
-# 检查并发度
-nproc  # Linux 系统CPU核心数
-```
-
-## 🚢 Release 发布
-
-GitHub Actions 的 Release workflow 会在打 `v*` tag 时构建并发布以下平台包：
-
-- Linux: `amd64`, `arm64`
-- macOS: Intel (`amd64`), Apple Silicon (`arm64`)
+- Linux: `amd64`、`arm64`
+- macOS: Intel (`amd64`)、Apple Silicon (`arm64`)
 - Windows: `amd64`
 
-本地 `make release` 也能生成同样的发布包，但它依赖 Unix shell 工具。Windows 本机建议使用 Git Bash、MSYS2 或 WSL 执行，普通用户直接下载 GitHub Release 产物即可。
+本地 `make release` 也能生成同样的包（依赖 Unix shell 工具，Windows 建议用 Git Bash / WSL）。普通用户直接下载 [Release 产物](https://github.com/gqy20/cc-insights/releases)即可。
 
-## 📄 License
+## 文档
 
-MIT
+- [Web Dashboard API](docs/api.md) — 接口、参数、响应、可信度约定
+- [架构说明](docs/architecture.md)
+- [诊断体系](docs/diagnostics.md)
+- [容错与降级策略](docs/fallbacks.md)
+- [路线图](docs/roadmap.md)
+- [Codex 数据源调研](docs/archive/codex.md)
+
+## License
+
+[MIT](LICENSE)
