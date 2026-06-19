@@ -31,6 +31,19 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - name: Build frontend (produces static/dist for go:embed)
+        run: pnpm --dir web install --frozen-lockfile && pnpm --dir web build
+
       - name: Capture release metadata
         id: meta
         shell: bash
@@ -83,6 +96,19 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - name: Build frontend (produces static/dist for go:embed)
+        run: pnpm --dir web install --frozen-lockfile && pnpm --dir web build
 
       - name: Install UPX
         uses: crazy-max/ghaction-upx@v3
