@@ -251,12 +251,24 @@ export interface EventAnalysisData {
   hooks?: unknown[]
   [key: string]: unknown
 }
+export interface SkillStat {
+  name: string
+  invocation_count?: number
+  tool_use_count?: number
+  attachment_count?: number
+  failure_count?: number
+  installed?: boolean
+  [key: string]: unknown
+}
 export interface SkillAnalysisData {
   total_installed?: number
   total_invocations?: number
   tool_use_invocations?: number
   attachment_invocations?: number
   failure_count?: number
+  skills?: SkillStat[]
+  installed?: SkillStat[]
+  by_project?: unknown[]
   [key: string]: unknown
 }
 export interface RuntimeToolSignal {

@@ -1,7 +1,22 @@
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts'
 import type { SkillAnalysisData } from '@/api/types'
-import { ChartCard } from './ChartCard'
+import { ChartCard, ChartEmpty } from './ChartCard'
 
-// skill_analysis 为标量统计（无序列），以 KPI 网格呈现。
+const tooltipStyle = {
+  background: 'rgb(var(--card))',
+  border: '1px solid rgb(var(--border))',
+  borderRadius: 8,
+  fontSize: 12,
+}
+
 export function SkillAnalysisChart({
   data,
   loading,
@@ -9,37 +24,59 @@ export function SkillAnalysisChart({
   data?: SkillAnalysisData
   loading?: boolean
 }) {
-  const items: { label: string; value?: number }[] = [
-    { label: '已安装', value: data?.total_installed },
-    { label: '总调用', value: data?.total_invocations },
-    { label: '工具调用', value: data?.tool_use_invocations },
-    { label: '附件调用', value: data?.attachment_invocations },
-    { label: '失败', value: data?.failure_count },
-  ]
-  const has = items.some((x) => typeof x.value === 'number')
+  // 只展示有实际调用的 skill，按 invocation_count 排行
+  const rows = (data?.skills ?? [])
+    .filter((s) => (s.invocation_count ?? 0) > 0)
+    .slice()
+    .sort((a, b) => (b.invocation_count ?? 0) - (a.invocation_count ?? 0))
+    .slice(0, 12)
+  const has = rows.length > 0
+  const installed = data?.total_installed ?? 0
+  const total = data?.total_invocations ?? 0
 
   return (
     <ChartCard
       title="Skill 使用"
-      description="已安装与调用统计（标量指标）。"
-      insight={has ? undefined : loading ? '加载中…' : '该时间范围内没有 Skill 数据。'}
-      height={260}
+      description="按 invocation_count 排序的 Skill 调用排行。"
+      insight={
+        has ? (
+          <>
+            已安装 <strong>{installed}</strong> 个 Skill，共调用{' '}
+            <strong>{total.toLocaleString()}</strong> 次；最频繁{' '}
+            <strong className="font-mono">{rows[0].name}</strong>（{rows[0].invocation_count}）。
+          </>
+        ) : loading ? (
+          '加载中…'
+        ) : (
+          '该时间范围内没有 Skill 调用。'
+        )
+      }
+      height={340}
     >
       {has ? (
-        <div className="grid h-full grid-cols-2 content-center gap-3 sm:grid-cols-3">
-          {items.map((it) => (
-            <div key={it.label} className="rounded-lg bg-secondary p-3">
-              <div className="text-xs text-muted-foreground">{it.label}</div>
-              <div className="mt-1 font-mono text-xl font-bold tabular-nums">
-                {(it.value ?? 0).toLocaleString()}
-              </div>
-            </div>
-          ))}
-        </div>
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart layout="vertical" data={rows} margin={{ top: 4, right: 16, bottom: 4, left: 8 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="rgb(var(--border))" horizontal={false} />
+            <XAxis type="number" stroke="rgb(var(--muted-foreground))" fontSize={11} tickLine={false} axisLine={false} />
+            <YAxis
+              type="category"
+              dataKey="name"
+              width={150}
+              stroke="rgb(var(--muted-foreground))"
+              fontSize={11}
+              tickLine={false}
+              axisLine={false}
+            />
+            <Tooltip
+              contentStyle={tooltipStyle}
+              cursor={{ fill: 'rgb(var(--accent) / 0.3)' }}
+              formatter={(v: number) => [v.toLocaleString(), '调用']}
+            />
+            <Bar dataKey="invocation_count" name="调用" fill="rgb(var(--primary))" radius={[0, 4, 4, 0]} />
+          </BarChart>
+        </ResponsiveContainer>
       ) : (
-        <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-          {loading ? '加载中…' : '该时间范围内没有 Skill 数据。'}
-        </div>
+        <ChartEmpty text={loading ? '加载中…' : '该时间范围内没有 Skill 调用。'} />
       )}
     </ChartCard>
   )
