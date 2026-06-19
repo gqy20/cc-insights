@@ -40,12 +40,17 @@ func init() {
 	cfg = defaultConfig()
 }
 
+// registerConfigFlags 注册所有命令通用的配置 flag（数据/缓存/规则路径）。
 func registerConfigFlags(fs *flag.FlagSet, target *Config) {
 	fs.StringVar(&target.DataDir, "data", target.DataDir, "数据目录路径 (默认: ~/.claude)")
 	fs.StringVar(&target.CacheDir, "cache", target.CacheDir, "缓存目录路径 (默认: ~/.cc-insights/cache/)")
-	fs.StringVar(&target.ListenAddr, "addr", target.ListenAddr, "监听地址")
-	fs.StringVar(&target.BaseURL, "base", target.BaseURL, "基础URL（用于反向代理）")
 	fs.StringVar(&target.RulesPath, "rules", target.RulesPath, "Bash 命令分类规则 YAML 路径")
+}
+
+// registerServerFlags 注册仅 web 命令使用的服务 flag（监听地址/反向代理）。
+func registerServerFlags(fs *flag.FlagSet, target *Config) {
+	fs.StringVar(&target.ListenAddr, "addr", target.ListenAddr, "监听地址 (默认: :8932)")
+	fs.StringVar(&target.BaseURL, "base", target.BaseURL, "基础 URL（用于反向代理）")
 }
 
 // GetDataPath 获取数据文件路径

@@ -127,10 +127,16 @@ func TestGlobalHelpListsAllCommands(t *testing.T) {
 	if !strings.Contains(out, "我想看") {
 		t.Error("global help missing Chinese navigation section")
 	}
-	// --base/--rules 此前隐藏在旧 help，registry 后应可见
-	for _, f := range []string{"--base", "--rules"} {
+	// --rules 此前隐藏在旧 help，registry 后作为通用 flag 可见
+	for _, f := range []string{"--data", "--cache", "--rules"} {
 		if !strings.Contains(out, f) {
-			t.Errorf("global help missing config flag %q", f)
+			t.Errorf("global help missing common config flag %q", f)
+		}
+	}
+	// --addr/--base 是 web 专属，不应出现在全局 help
+	for _, f := range []string{"--addr", "--base"} {
+		if strings.Contains(out, f) {
+			t.Errorf("global help should not list web-only flag %q", f)
 		}
 	}
 }
@@ -166,7 +172,11 @@ func TestSubcommandHelpForRecShowsDetailAndPrompts(t *testing.T) {
 
 func TestSubcommandHelpForWebShowsOnlyConfigFlags(t *testing.T) {
 	var buf bytes.Buffer
-	printCommandHelp(cmdWeb, configFlagSet(), &buf)
+	fs := flag.NewFlagSet("web", flag.ContinueOnError)
+	opts := cliOptions{Config: defaultConfig()}
+	registerConfigFlags(fs, &opts.Config)
+	cmdWeb.Flags(fs, &opts)
+	printCommandHelp(cmdWeb, fs, &buf)
 	out := buf.String()
 	for _, want := range []string{"--data", "--cache", "--addr", "--base", "--rules"} {
 		if !strings.Contains(out, want) {

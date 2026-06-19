@@ -37,16 +37,18 @@ func lookupCommand(name string) *Command {
 }
 
 // registerCommonAnalysisFlags 注册所有分析命令共用的 flag（时间范围与输出）。
-// 注意：-j/-m 由 parseCLIOptions 注册（需保留指针做格式后处理），故不在此处。
+// -j/-m 也在此注册（写入 opts.jsonOut/markdownOut，由 parseCLIOptions 后处理为 Format）。
 func registerCommonAnalysisFlags(fs *flag.FlagSet, opts *cliOptions) {
 	fs.StringVar(&opts.Preset, "preset", opts.Preset, "时间范围: 24h|7d|30d|90d|all")
-	fs.StringVar(&opts.Preset, "p", opts.Preset, "短参数: --preset")
+	fs.StringVar(&opts.Preset, "p", opts.Preset, "时间范围（同 --preset）: 24h|7d|30d|90d|all")
 	fs.StringVar(&opts.Start, "start", "", "自定义开始日期 YYYY-MM-DD")
 	fs.StringVar(&opts.End, "end", "", "自定义结束日期 YYYY-MM-DD")
 	fs.StringVar(&opts.Format, "format", opts.Format, "输出格式: table|json|markdown")
-	fs.StringVar(&opts.Format, "f", opts.Format, "短参数: --format")
+	fs.StringVar(&opts.Format, "f", opts.Format, "输出格式（同 --format）: table|json|markdown")
 	fs.IntVar(&opts.Limit, "limit", opts.Limit, "Top N 结果数量")
-	fs.IntVar(&opts.Limit, "n", opts.Limit, "短参数: --limit")
+	fs.IntVar(&opts.Limit, "n", opts.Limit, "Top N 结果数量（同 --limit；why/ses 下兼作样例数）")
+	fs.BoolVar(&opts.jsonOut, "j", false, "输出 JSON（等价 --format=json）")
+	fs.BoolVar(&opts.markdownOut, "m", false, "输出 Markdown（等价 --format=markdown）")
 }
 
 // fastRun 是 err/why/tok/cmd/ses 共用的执行模板：
@@ -106,7 +108,7 @@ var cmdErr = &Command{
 var cmdWhy = &Command{
 	Name:  "why",
 	Short: "失败样例下钻（可过滤）",
-	Long:  "按 reason/category/tool/model/project/session 六维过滤，返回具体的失败样例（含内容预览）与命中统计。回答「给我看具体的失败长什么样」。",
+	Long:  "按 reason/category/tool/model/project/session 六维过滤，返回具体的失败样例（含内容预览）与命中统计，-n/--samples 控制样例数。回答「给我看具体的失败长什么样」。",
 	Examples: []string{
 		"cc-insights why -p 7d --reason error_text -n 20 -j",
 		"cc-insights why --tool Bash --model sonnet",
@@ -240,7 +242,9 @@ var cmdWeb = &Command{
 		"  · 时间轴滑动窗口、诊断建议联动下钻条件\n\n" +
 		"默认监听 :8932，启动后访问 /dashboard。",
 	Examples: []string{"cc-insights web --addr :8932"},
-	Flags:    nil, // web 仅使用 Config flag（--data/--cache/--addr/--base/--rules）
+	Flags: func(fs *flag.FlagSet, opts *cliOptions) {
+		registerServerFlags(fs, &opts.Config) // web 专属：--addr/--base
+	},
 	Run: func(opts cliOptions) error {
 		return runWebServer()
 	},

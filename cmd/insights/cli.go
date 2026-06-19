@@ -28,6 +28,9 @@ type cliOptions struct {
 	ID       string
 	Detail   bool
 	Prompts  bool
+
+	jsonOut     bool // -j：输出 JSON（仅分析命令注册）
+	markdownOut bool // -m：输出 Markdown（仅分析命令注册）
 }
 
 type resolvedCommand struct {
@@ -226,11 +229,8 @@ func parseCLIOptions(cmd *Command, args []string) (cliOptions, error) {
 	fs.SetOutput(os.Stdout)
 	registerConfigFlags(fs, &opts.Config)
 
-	var jsonOutput, markdownOutput bool
 	if cmd.Flags != nil {
-		cmd.Flags(fs, &opts)
-		fs.BoolVar(&jsonOutput, "j", false, "输出 JSON")
-		fs.BoolVar(&markdownOutput, "m", false, "输出 Markdown")
+		cmd.Flags(fs, &opts) // 分析命令注册通用分析 flag（含 -j/-m）；web 注册 --addr/--base
 	}
 
 	if err := fs.Parse(args); err != nil {
@@ -240,10 +240,10 @@ func parseCLIOptions(cmd *Command, args []string) (cliOptions, error) {
 		return opts, err
 	}
 
-	if jsonOutput {
+	if opts.jsonOut {
 		opts.Format = "json"
 	}
-	if markdownOutput {
+	if opts.markdownOut {
 		opts.Format = "markdown"
 	}
 	opts.Format = strings.ToLower(strings.TrimSpace(opts.Format))
@@ -252,9 +252,6 @@ func parseCLIOptions(cmd *Command, args []string) (cliOptions, error) {
 	}
 	if opts.Limit <= 0 {
 		opts.Limit = 10
-	}
-	if cmd.Name == "why" && opts.Samples <= 0 {
-		opts.Samples = opts.Limit
 	}
 	if opts.Samples <= 0 {
 		opts.Samples = opts.Limit
