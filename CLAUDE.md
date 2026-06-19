@@ -35,7 +35,8 @@ CLI 命令必须保持收敛：
 - `cache.go`、`cache_builder.go`：缓存结构、文件级快照、变化检测和快速查询。
 - `*_analysis.go`：成本、Session、Skill、命令、失败等专项分析。
 - `command_file_analysis.go`：Bash 命令解析，支持多段 `&&`/`;` 链式命令独立统计（含引号感知分割、同链去重、结果分发和逐段风险检测）。
-- `cmd/insights/static/`：Web Dashboard 静态资源，ECharts 已本地化。
+- `cmd/insights/static/dist/`：Web Dashboard 构建产物（Vite 输出），由 `web/` 生成后经 `go:embed` 内联进单二进制。
+- `web/`：Web Dashboard 前端源码（React + TypeScript + Vite + Tailwind + Recharts + TanStack Query），`pnpm build` 产物落到 `cmd/insights/static/dist/`。设计方向见 `docs/plan/frontend-react-refactor.md`。
 - `cmd/insights/rules/bash.yml`：内置 Bash 命令分类规则。
 - `cmd/insights/rules/diagnostics.yml`：`rec` 诊断规则说明，包括指标、阈值、数据来源和触发解释。
 - `docs/`：路线图、说明和截图。
@@ -43,13 +44,14 @@ CLI 命令必须保持收敛：
 ## 常用命令
 
 ```bash
-make build          # 构建静态 cc-insights 二进制
+make build          # 构建：先 web-build（pnpm 前端）再 go build（static + UPX），输出单二进制 cc-insights
 make run            # 构建并运行
 make run-dev        # 使用 ../data 开发运行
 make test           # production tags 下运行测试
 go test ./...       # 开发时快速测试
 make clean          # 清理构建产物
 make release        # 构建多平台发布包
+cd web && pnpm dev  # 前端开发（Vite 热更新，代理 /api 到 Go :8080；改前端用这个）
 ```
 
 常用 CLI 验证：
@@ -66,7 +68,7 @@ go run ./cmd/insights web --addr :8932
 
 - Go 文件提交前运行 `gofmt`。
 - 构建和验证编译优先用 `make build`（输出 `cc-insights`，static + strip + UPX）。不要在仓库根裸 `go build ./cmd/insights`：它默认按路径末段输出名为 `insights` 的二进制，且未被 `.gitignore` 忽略，会污染工作区。需要快速编译检查时用 `make build` 或 `go build -o /tmp/insights ./cmd/insights`。
-- 保持实现靠近所属领域：CLI 放 `cli_*.go`，聚合放 `aggregate*.go`，缓存放 `cache*.go`，前端放 `cmd/insights/static/`。
+- 保持实现靠近所属领域：CLI 放 `cli_*.go`，聚合放 `aggregate*.go`，缓存放 `cache*.go`，前端放 `web/`（构建产物落到 `cmd/insights/static/dist/`，勿手改；改 UI 在 `web/src/` 后 `pnpm build`）。
 - 不要引入重复命令；优先复用 `rec`、`why`、`cmd`、`tok`、`ses` 的职责边界。
 - 对结构化数据优先使用现有聚合和缓存结构，不要临时扫描或拼字符串。
 - 修改 Bash 分类规则时优先编辑 `cmd/insights/rules/bash.yml`，避免把可配置规则硬编码进 Go。
