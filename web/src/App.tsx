@@ -10,6 +10,11 @@ import { ProjectChart } from '@/components/charts/ProjectChart'
 import { WeekdayChart } from '@/components/charts/WeekdayChart'
 import { ModelChart } from '@/components/charts/ModelChart'
 import { WorkHoursChart } from '@/components/charts/WorkHoursChart'
+import { FailureReasonChart } from '@/components/charts/FailureReasonChart'
+import { CommandFileChart } from '@/components/charts/CommandFileChart'
+import { FileAnalysisChart } from '@/components/charts/FileAnalysisChart'
+import { ToolModelFailureChart } from '@/components/charts/ToolModelFailureChart'
+import { ToolPerformanceChart } from '@/components/charts/ToolPerformanceChart'
 
 function App() {
   const [filters, setFilters] = useFilters()
@@ -72,7 +77,8 @@ function App() {
             )}
         </section>
 
-        <section className="mt-6 grid grid-cols-1 gap-4 xl:grid-cols-2">
+        <h2 className="mt-8 text-lg font-semibold tracking-tight">使用</h2>
+        <section className="mt-3 grid grid-cols-1 gap-4 xl:grid-cols-2">
           <div className="xl:col-span-2">
             <DailyTrendChart
               trend={dashboard.data?.daily_trend}
@@ -89,6 +95,29 @@ function App() {
           <div className="xl:col-span-2">
             <WorkHoursChart
               stats={dashboard.data?.work_hours_stats}
+              loading={dashboard.isLoading}
+            />
+          </div>
+        </section>
+
+        <h2 className="mt-8 text-lg font-semibold tracking-tight">质量</h2>
+        <section className="mt-3 grid grid-cols-1 gap-4 xl:grid-cols-2">
+          <ToolModelFailureChart
+            data={dashboard.data?.tool_analysis}
+            loading={dashboard.isLoading}
+          />
+          <FailureReasonChart
+            data={dashboard.data?.failure_analysis}
+            loading={dashboard.isLoading}
+          />
+          <CommandFileChart
+            data={dashboard.data?.command_analysis}
+            loading={dashboard.isLoading}
+          />
+          <FileAnalysisChart data={dashboard.data?.file_analysis} loading={dashboard.isLoading} />
+          <div className="xl:col-span-2">
+            <ToolPerformanceChart
+              data={dashboard.data?.tool_performance}
               loading={dashboard.isLoading}
             />
           </div>

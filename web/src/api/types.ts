@@ -104,6 +104,82 @@ export interface WorkHoursStats {
   [key: string]: unknown
 }
 
+// quality 组子结构
+export interface ToolCallStat {
+  tool?: string
+  model?: string
+  call_count: number
+  success_count: number
+  failure_count: number
+  missing_result_count?: number
+  failure_rate?: number
+}
+export interface ToolAnalysisData {
+  total_calls?: number
+  total_failures?: number
+  missing_results?: number
+  tools?: ToolCallStat[]
+  by_model?: ToolCallStat[]
+  [key: string]: unknown
+}
+export interface FailureReasonStat {
+  category: string
+  reason: string
+  count: number
+}
+export interface FailureAnalysisData {
+  total_failures?: number
+  by_reason?: FailureReasonStat[]
+  [key: string]: unknown
+}
+export interface CommandFamilyStat {
+  family?: string
+  command_name?: string
+  call_count: number
+  success_count: number
+  failure_count: number
+  failure_rate?: number
+}
+export interface CommandAnalysisData {
+  bash_commands?: CommandFamilyStat[]
+  bash_families?: CommandFamilyStat[]
+  risky_commands?: CommandFamilyStat[]
+  [key: string]: unknown
+}
+export interface FileAnalysisData {
+  totals?: {
+    unique_files?: number
+    total_reads?: number
+    total_edits?: number
+    total_writes?: number
+  }
+  hot_files?: {
+    path: string
+    read_count: number
+    edit_count: number
+    write_count?: number
+  }[]
+  [key: string]: unknown
+}
+export interface ToolPerfCategoryItem {
+  category: string
+  base_tool?: string
+  call_count: number
+  success_count: number
+  error_count: number
+  missing_count?: number
+  avg_duration_ms?: number
+  error_rate?: number
+}
+export interface ToolPerformanceData {
+  total_paired_calls?: number
+  total_errors?: number
+  overall_error_rate?: number
+  overall_avg_duration_ms?: number
+  by_category?: ToolPerfCategoryItem[]
+  [key: string]: unknown
+}
+
 export interface DashboardData {
   timestamp?: string
   time_range?: TimeRange
@@ -113,7 +189,12 @@ export interface DashboardData {
   model_usage?: ModelUsageItem[]
   weekday_stats?: WeekdayStats
   work_hours_stats?: WorkHoursStats
-  // 其余子结构（tool_analysis/failure_analysis/cost 等）Phase 3b+ 补充
+  tool_analysis?: ToolAnalysisData
+  failure_analysis?: FailureAnalysisData
+  command_analysis?: CommandAnalysisData
+  file_analysis?: FileAnalysisData
+  tool_performance?: ToolPerformanceData
+  // 其余子结构（cost/session/skill/agent 等）Phase 3c+ 补充
   [key: string]: unknown
 }
 
