@@ -23,6 +23,8 @@ import { TaskPlanChart } from '@/components/charts/TaskPlanChart'
 import { EventHookChart } from '@/components/charts/EventHookChart'
 import { SkillAnalysisChart } from '@/components/charts/SkillAnalysisChart'
 import { RuntimeToolsChart } from '@/components/charts/RuntimeToolsChart'
+import { TopFilterBar } from '@/components/dashboard/TopFilterBar'
+import { DiagnosticList } from '@/components/dashboard/DiagnosticList'
 
 function App() {
   const [filters, setFilters] = useFilters()
@@ -57,6 +59,10 @@ function App() {
           </div>
         </header>
 
+        <div className="mt-4">
+          <TopFilterBar />
+        </div>
+
         <section className="mt-6 grid grid-cols-2 gap-3 md:grid-cols-4">
           {overview.isLoading || !s || !trend
             ? Array.from({ length: 4 }).map((_, i) => (
@@ -80,6 +86,14 @@ function App() {
                 <KpiCard label="Token" value={compact(s.tokens)} spark={trend.tokens} />
               </>
             )}
+        </section>
+
+        <h2 className="mt-8 text-lg font-semibold tracking-tight">诊断建议</h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          基于当前时间范围与过滤条件的诊断、证据与建议动作。
+        </p>
+        <section className="mt-3">
+          <DiagnosticList />
         </section>
 
         <h2 className="mt-8 text-lg font-semibold tracking-tight">使用</h2>
