@@ -26,6 +26,7 @@ import { RuntimeToolsChart } from '@/components/charts/RuntimeToolsChart'
 import { TopFilterBar } from '@/components/dashboard/TopFilterBar'
 import { DiagnosticList } from '@/components/dashboard/DiagnosticList'
 import { DrilldownPanel } from '@/components/dashboard/DrilldownPanel'
+import { ThemeToggle } from '@/components/dashboard/ThemeToggle'
 
 function App() {
   const [filters, setFilters] = useFilters()
@@ -45,18 +46,21 @@ function App() {
             </p>
             <h1 className="mt-1 text-2xl font-bold tracking-tight">cc-insights</h1>
           </div>
-          <div className="flex gap-1 rounded-lg bg-secondary p-1">
-            {PRESETS.map((p) => (
-              <Button
-                key={p}
-                size="sm"
-                variant={filters.preset === p ? 'default' : 'ghost'}
-                onClick={() => setFilters({ preset: p })}
-                className="px-3 font-mono"
-              >
-                {p}
-              </Button>
-            ))}
+          <div className="flex items-center gap-2">
+            <div className="flex gap-1 rounded-lg bg-secondary p-1">
+              {PRESETS.map((p) => (
+                <Button
+                  key={p}
+                  size="sm"
+                  variant={filters.preset === p ? 'default' : 'ghost'}
+                  onClick={() => setFilters({ preset: p })}
+                  className="px-3 font-mono"
+                >
+                  {p}
+                </Button>
+              ))}
+            </div>
+            <ThemeToggle />
           </div>
         </header>
 
