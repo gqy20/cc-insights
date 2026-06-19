@@ -54,7 +54,7 @@ bench-all:
 
 # ─── 发布版本 ──────────────────────────────────────────────
 # 产物: {name}_{version}_{os}_{arch}.{tar.gz|zip} + checksums.txt
-release: clean
+release: clean web-build
 	@echo "📦 构建发布版本..."
 	@mkdir -p $(RELEASE_DIR) $(PACKAGE_DIR)
 	@\
