@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none" role="img" aria-labelledby="title">
+  <title id="title">cc-insights</title>
+  <!--
+    GitHub 深色主题变体(README <picture> 用):线条暖近白 #F5F3EE,高亮点提亮赤陶 #E08560,
+    对齐 web/src/styles/globals.css 的 dark token。几何与 cc-insights.svg 完全一致。
+  -->
+  <g stroke="#F5F3EE" stroke-width="5" stroke-linecap="round" stroke-linejoin="round">
+    <polyline points="18,32 25,39 30,39 35,27 40,39 44,39 47,34"/>
+    <polyline points="25,39 18,46"/>
+  </g>
+  <circle cx="35" cy="27" r="9" fill="#E08560" opacity="0.18"/>
+  <circle cx="35" cy="27" r="5" fill="#E08560"/>
+</svg>

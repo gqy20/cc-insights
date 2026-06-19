@@ -75,6 +75,7 @@ func runWebServer() error {
 	mux.HandleFunc("/api/detail/tools", handleDetailToolsAPI)
 	mux.HandleFunc("/api/timeline", handleTimelineAPI)
 	mux.HandleFunc("/api/reload", reloadHandler)
+	mux.HandleFunc("/api/version", versionHandler)
 
 	// 静态资源：React 构建产物（cmd/insights/static/dist），由 web/ 经 Vite 生成后 embed。
 	distSub, _ := fs.Sub(distFS, "static/dist")
@@ -150,6 +151,16 @@ func reloadHandler(w http.ResponseWriter, r *http.Request) {
 		"messages":     messages,
 		"sessions":     sessions,
 		"rules_hash":   rulesHash,
+	})
+}
+
+// versionHandler 返回构建版本信息（version/commit/buildDate 由 -ldflags -X 注入）。
+func versionHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	_ = json.NewEncoder(w).Encode(map[string]string{
+		"version":   version,
+		"commit":    commit,
+		"buildDate": buildDate,
 	})
 }
 

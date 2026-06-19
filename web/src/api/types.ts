@@ -66,6 +66,13 @@ export interface DailyTrend {
   counts: number[]
 }
 
+// /api/version —— 构建版本（由 Go -ldflags -X main.version 注入）
+export interface VersionInfo {
+  version?: string
+  commit?: string
+  buildDate?: string
+}
+
 export interface CommandStat {
   command: string
   count: number

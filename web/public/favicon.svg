@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title">
+  <title id="title">cc-insights</title>
+  <!-- favicon / 头像变体:圆角暖米白底 + 固定配色,浏览器标签/社交头像用 -->
+  <rect width="64" height="64" rx="14" fill="#FAF9F5"/>
+  <g stroke="#1F1E1D" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" fill="none">
+    <polyline points="18,32 25,39 30,39 35,27 40,39 44,39 47,34"/>
+    <polyline points="25,39 18,46"/>
+  </g>
+  <circle cx="35" cy="27" r="9" fill="#C15F3C" opacity="0.16"/>
+  <circle cx="35" cy="27" r="5" fill="#C15F3C"/>
+</svg>

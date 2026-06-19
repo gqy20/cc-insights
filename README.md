@@ -1,6 +1,13 @@
-# cc-insights
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/logo/cc-insights-dark.svg" />
+    <img src="docs/logo/cc-insights.svg" width="100" height="100" alt="cc-insights" />
+  </picture>
+</p>
 
-> 面向 Claude Code 的使用诊断工具：把历史数据变成可解释的证据、判断和改进方向
+<h1 align="center">cc-insights</h1>
+
+<p align="center">面向 Claude Code 的使用诊断工具：把历史数据变成可解释的证据、判断和改进方向</p>
 
 cc-insights 是一个 Claude Code 使用诊断 CLI，默认输出可读摘要，也提供本地 Web Dashboard 展示使用统计，并支持时间范围筛选、缓存预聚合和并发解析优化。
 

@@ -1,5 +1,5 @@
 import { useFilters } from '@/hooks/useFilters'
-import { useOverview, useDashboardData } from '@/api/hooks'
+import { useOverview, useDashboardData, useVersion } from '@/api/hooks'
 import { PRESETS } from '@/api/types'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -32,6 +32,7 @@ function App() {
   const [filters, setFilters] = useFilters()
   const overview = useOverview(filters)
   const dashboard = useDashboardData(filters)
+  const version = useVersion().data?.version
 
   const s = overview.data?.summary
   const trend = overview.data?.trend
@@ -41,10 +42,14 @@ function App() {
       <div className="w-full px-6 py-6 lg:px-10">
         <header className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-primary">
-              Claude Code 使用诊断
-            </p>
-            <h1 className="mt-1 text-2xl font-bold font-serif tracking-tight">cc-insights</h1>
+            <h1 className="text-2xl font-bold font-serif tracking-tight">
+              cc-insights
+              {version && (
+                <span className="ml-2 align-middle font-mono text-xs font-normal text-muted-foreground">
+                  {version}
+                </span>
+              )}
+            </h1>
           </div>
           <div className="flex items-center gap-2">
             <div className="flex gap-1 rounded-lg bg-secondary p-1">

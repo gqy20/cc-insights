@@ -99,11 +99,16 @@ make build
 
 ## 提交约定
 
-提交信息使用简短祈使句，例如：
+提交信息遵循 [Conventional Commits](https://www.conventionalcommits.org)，格式 `<type>(<scope>): <subject>`，已由 `.pre-commit-config.yaml` 的 commit-msg 钩子强制校验（首次启用需 `pre-commit install --hook-type commit-msg`）。
+
+允许的 type：`feat`、`fix`、`docs`、`style`、`refactor`、`perf`、`test`、`build`、`ci`、`chore`、`revert`。
+
+例如：
 
 ```text
-Add fast diagnostic drilldowns
-Optimize diagnostic recommendations performance
+feat(web): apply Anthropic-style fonts (Newsreader + Geist)
+fix(parser): handle quoted && chain segments
+chore(ci): enforce conventional commit messages
 ```
 
 每个提交聚焦一个清晰主题。涉及 Web UI 或 CLI 输出格式时，在最终说明中附验证命令、截图结论或关键输出摘要。

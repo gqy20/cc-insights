@@ -6,6 +6,7 @@ import type {
   DiagnosticsReport,
   DetailKind,
   DetailReport,
+  VersionInfo,
   Filters,
   InteractiveResponse,
   ApiResponse,
@@ -95,5 +96,14 @@ export function useDetail(kind: DetailKind | null, filters: Filters) {
       return r.data
     },
     enabled: !!kind,
+  })
+}
+
+// /api/version —— 构建版本（不变，长缓存）
+export function useVersion() {
+  return useQuery({
+    queryKey: ['version'],
+    queryFn: async (): Promise<VersionInfo> => getJSON<VersionInfo>(`${BASE}/version`),
+    staleTime: Infinity,
   })
 }
