@@ -15,6 +15,14 @@ import { CommandFileChart } from '@/components/charts/CommandFileChart'
 import { FileAnalysisChart } from '@/components/charts/FileAnalysisChart'
 import { ToolModelFailureChart } from '@/components/charts/ToolModelFailureChart'
 import { ToolPerformanceChart } from '@/components/charts/ToolPerformanceChart'
+import { CostAnalysisChart } from '@/components/charts/CostAnalysisChart'
+import { SessionChart } from '@/components/charts/SessionChart'
+import { SessionAnalysisChart } from '@/components/charts/SessionAnalysisChart'
+import { AgentChart } from '@/components/charts/AgentChart'
+import { TaskPlanChart } from '@/components/charts/TaskPlanChart'
+import { EventHookChart } from '@/components/charts/EventHookChart'
+import { SkillAnalysisChart } from '@/components/charts/SkillAnalysisChart'
+import { RuntimeToolsChart } from '@/components/charts/RuntimeToolsChart'
 
 function App() {
   const [filters, setFilters] = useFilters()
@@ -115,6 +123,32 @@ function App() {
           <div className="xl:col-span-2">
             <ToolPerformanceChart
               data={dashboard.data?.tool_performance}
+              loading={dashboard.isLoading}
+            />
+          </div>
+        </section>
+
+        <h2 className="mt-8 text-lg font-semibold tracking-tight">成本</h2>
+        <section className="mt-3 grid grid-cols-1 gap-4 xl:grid-cols-2">
+          <div className="xl:col-span-2">
+            <CostAnalysisChart data={dashboard.data?.cost_analysis} loading={dashboard.isLoading} />
+          </div>
+        </section>
+
+        <h2 className="mt-8 text-lg font-semibold tracking-tight">运行时</h2>
+        <section className="mt-3 grid grid-cols-1 gap-4 xl:grid-cols-2">
+          <SessionChart stats={dashboard.data?.sessions} loading={dashboard.isLoading} />
+          <SessionAnalysisChart
+            data={dashboard.data?.session_analysis}
+            loading={dashboard.isLoading}
+          />
+          <AgentChart data={dashboard.data?.agent_analysis} loading={dashboard.isLoading} />
+          <TaskPlanChart data={dashboard.data?.task_plan_analysis} loading={dashboard.isLoading} />
+          <EventHookChart data={dashboard.data?.event_analysis} loading={dashboard.isLoading} />
+          <SkillAnalysisChart data={dashboard.data?.skill_analysis} loading={dashboard.isLoading} />
+          <div className="xl:col-span-2">
+            <RuntimeToolsChart
+              data={dashboard.data?.runtime_tools}
               loading={dashboard.isLoading}
             />
           </div>

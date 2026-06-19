@@ -180,6 +180,91 @@ export interface ToolPerformanceData {
   [key: string]: unknown
 }
 
+// cost + runtime 组子结构（Phase 3c）
+export interface CostByModel {
+  model: string
+  request_count: number
+  total_tokens?: number
+  input_tokens?: number
+  output_tokens?: number
+}
+export interface CostAnalysisData {
+  totals?: Record<string, number>
+  by_model?: CostByModel[]
+  by_project?: CostByModel[]
+  [key: string]: unknown
+}
+export interface SessionStats {
+  total_sessions?: number
+  peak_date?: string
+  peak_count?: number
+  valley_date?: string
+  valley_count?: number
+  daily_session_map?: Record<string, number>
+  [key: string]: unknown
+}
+export interface SessionOutcome {
+  outcome: string
+  count: number
+}
+export interface SessionAnalysisData {
+  sessions?: unknown[]
+  top_failures?: unknown[]
+  long_running?: unknown[]
+  outcomes?: SessionOutcome[]
+  queue_operations?: unknown[]
+  [key: string]: unknown
+}
+export interface AgentStat {
+  agent_id: string
+  is_sidechain?: boolean
+  session_count?: number
+  message_count?: number
+  tool_call_count?: number
+  tool_failure_count?: number
+  [key: string]: unknown
+}
+export interface AgentAnalysisData {
+  main_tool_calls?: number
+  sidechain_tool_calls?: number
+  agents?: AgentStat[]
+  [key: string]: unknown
+}
+export interface PlanFileStat {
+  file_path: string
+  file_name: string
+  char_count?: number
+  [key: string]: unknown
+}
+export interface TaskPlanAnalysisData {
+  plan_lifecycle?: Record<string, number>
+  plan_files?: PlanFileStat[]
+  [key: string]: unknown
+}
+export interface EventTypeStat {
+  type: string
+  count: number
+}
+export interface EventAnalysisData {
+  total_events?: number
+  by_type?: EventTypeStat[]
+  hooks?: unknown[]
+  [key: string]: unknown
+}
+export interface SkillAnalysisData {
+  total_installed?: number
+  total_invocations?: number
+  tool_use_invocations?: number
+  attachment_invocations?: number
+  failure_count?: number
+  [key: string]: unknown
+}
+export interface RuntimeToolSignal {
+  tool?: string
+  count?: number
+  [key: string]: unknown
+}
+
 export interface DashboardData {
   timestamp?: string
   time_range?: TimeRange
@@ -194,7 +279,14 @@ export interface DashboardData {
   command_analysis?: CommandAnalysisData
   file_analysis?: FileAnalysisData
   tool_performance?: ToolPerformanceData
-  // 其余子结构（cost/session/skill/agent 等）Phase 3c+ 补充
+  cost_analysis?: CostAnalysisData
+  sessions?: SessionStats
+  session_analysis?: SessionAnalysisData
+  agent_analysis?: AgentAnalysisData
+  task_plan_analysis?: TaskPlanAnalysisData
+  event_analysis?: EventAnalysisData
+  skill_analysis?: SkillAnalysisData
+  runtime_tools?: RuntimeToolSignal[]
   [key: string]: unknown
 }
 
