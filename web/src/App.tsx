@@ -5,6 +5,11 @@ import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { KpiCard } from '@/components/dashboard/KpiCard'
 import { DailyTrendChart } from '@/components/charts/DailyTrendChart'
+import { CommandsChart } from '@/components/charts/CommandsChart'
+import { ProjectChart } from '@/components/charts/ProjectChart'
+import { WeekdayChart } from '@/components/charts/WeekdayChart'
+import { ModelChart } from '@/components/charts/ModelChart'
+import { WorkHoursChart } from '@/components/charts/WorkHoursChart'
 
 function App() {
   const [filters, setFilters] = useFilters()
@@ -67,11 +72,26 @@ function App() {
             )}
         </section>
 
-        <section className="mt-6">
-          <DailyTrendChart
-            trend={dashboard.data?.daily_trend}
+        <section className="mt-6 grid grid-cols-1 gap-4 xl:grid-cols-2">
+          <div className="xl:col-span-2">
+            <DailyTrendChart
+              trend={dashboard.data?.daily_trend}
+              loading={dashboard.isLoading}
+            />
+          </div>
+          <CommandsChart data={dashboard.data?.commands} loading={dashboard.isLoading} />
+          <ProjectChart
+            data={dashboard.data?.project_stats?.projects}
             loading={dashboard.isLoading}
           />
+          <WeekdayChart stats={dashboard.data?.weekday_stats} loading={dashboard.isLoading} />
+          <ModelChart data={dashboard.data?.model_usage} loading={dashboard.isLoading} />
+          <div className="xl:col-span-2">
+            <WorkHoursChart
+              stats={dashboard.data?.work_hours_stats}
+              loading={dashboard.isLoading}
+            />
+          </div>
         </section>
 
         {overview.isError && (

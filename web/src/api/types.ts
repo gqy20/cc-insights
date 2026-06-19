@@ -66,11 +66,54 @@ export interface DailyTrend {
   counts: number[]
 }
 
+export interface CommandStat {
+  command: string
+  count: number
+}
+export interface ProjectStatItem {
+  project: string
+  session_count: number
+  message_count: number
+}
+export interface ProjectStatsData {
+  projects: ProjectStatItem[]
+  [key: string]: unknown
+}
+export interface ModelUsageItem {
+  model: string
+  count: number
+  tokens: number
+}
+export interface WeekdayItem {
+  weekday: number
+  weekday_name: string
+  message_count: number
+}
+export interface WeekdayStats {
+  weekday_data: WeekdayItem[]
+  [key: string]: unknown
+}
+export interface WorkHourItem {
+  hour: number
+  hour_label: string
+  count: number
+  is_work_hour: boolean
+}
+export interface WorkHoursStats {
+  hourly_data: WorkHourItem[]
+  [key: string]: unknown
+}
+
 export interface DashboardData {
   timestamp?: string
   time_range?: TimeRange
   daily_trend: DailyTrend
-  // 其余子结构 Phase 2+ 按需补充
+  commands?: CommandStat[]
+  project_stats?: ProjectStatsData
+  model_usage?: ModelUsageItem[]
+  weekday_stats?: WeekdayStats
+  work_hours_stats?: WorkHoursStats
+  // 其余子结构（tool_analysis/failure_analysis/cost 等）Phase 3b+ 补充
   [key: string]: unknown
 }
 
