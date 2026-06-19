@@ -63,6 +63,8 @@
   body {
     @apply bg-background text-foreground;
     font-family: theme('fontFamily.sans');
+    /* Newsreader 的 opsz 光学尺寸轴：标题大字更优雅、正文小字更易读。 */
+    font-optical-sizing: auto;
     -webkit-font-smoothing: antialiased;
     font-variant-numeric: tabular-nums;
   }

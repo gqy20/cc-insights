@@ -3,6 +3,8 @@ import ReactDOM from 'react-dom/client'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ThemeProvider } from 'next-themes'
 import App from './App'
+import '@fontsource-variable/geist'
+import '@fontsource-variable/newsreader'
 import './styles/globals.css'
 
 const queryClient = new QueryClient({

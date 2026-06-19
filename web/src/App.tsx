@@ -44,7 +44,7 @@ function App() {
             <p className="text-xs font-semibold uppercase tracking-wider text-primary">
               Claude Code 使用诊断
             </p>
-            <h1 className="mt-1 text-2xl font-bold tracking-tight">cc-insights</h1>
+            <h1 className="mt-1 text-2xl font-bold font-serif tracking-tight">cc-insights</h1>
           </div>
           <div className="flex items-center gap-2">
             <div className="flex gap-1 rounded-lg bg-secondary p-1">
@@ -93,7 +93,7 @@ function App() {
             )}
         </section>
 
-        <h2 className="mt-8 text-lg font-semibold tracking-tight">诊断建议</h2>
+        <h2 className="mt-8 text-lg font-semibold font-serif tracking-tight">诊断建议</h2>
         <p className="mt-1 text-sm text-muted-foreground">
           基于当前时间范围与过滤条件的诊断、证据与建议动作。
         </p>
@@ -101,7 +101,7 @@ function App() {
           <DiagnosticList />
         </section>
 
-        <h2 className="mt-8 text-lg font-semibold tracking-tight">证据下钻</h2>
+        <h2 className="mt-8 text-lg font-semibold font-serif tracking-tight">证据下钻</h2>
         <p className="mt-1 text-sm text-muted-foreground">
           失败、命令、Token、Session、工具明细，跟随当前过滤条件。
         </p>
@@ -109,7 +109,7 @@ function App() {
           <DrilldownPanel />
         </section>
 
-        <h2 className="mt-8 text-lg font-semibold tracking-tight">使用</h2>
+        <h2 className="mt-8 text-lg font-semibold font-serif tracking-tight">使用</h2>
         <section className="mt-3 grid grid-cols-1 gap-4 xl:grid-cols-2">
           <div className="xl:col-span-2">
             <DailyTrendChart
@@ -132,7 +132,7 @@ function App() {
           </div>
         </section>
 
-        <h2 className="mt-8 text-lg font-semibold tracking-tight">质量</h2>
+        <h2 className="mt-8 text-lg font-semibold font-serif tracking-tight">质量</h2>
         <section className="mt-3 grid grid-cols-1 gap-4 xl:grid-cols-2">
           <ToolModelFailureChart
             data={dashboard.data?.tool_analysis}
@@ -155,14 +155,14 @@ function App() {
           </div>
         </section>
 
-        <h2 className="mt-8 text-lg font-semibold tracking-tight">成本</h2>
+        <h2 className="mt-8 text-lg font-semibold font-serif tracking-tight">成本</h2>
         <section className="mt-3 grid grid-cols-1 gap-4 xl:grid-cols-2">
           <div className="xl:col-span-2">
             <CostAnalysisChart data={dashboard.data?.cost_analysis} loading={dashboard.isLoading} />
           </div>
         </section>
 
-        <h2 className="mt-8 text-lg font-semibold tracking-tight">运行时</h2>
+        <h2 className="mt-8 text-lg font-semibold font-serif tracking-tight">运行时</h2>
         <section className="mt-3 grid grid-cols-1 gap-4 xl:grid-cols-2">
           <SessionChart stats={dashboard.data?.sessions} loading={dashboard.isLoading} />
           <SessionAnalysisChart

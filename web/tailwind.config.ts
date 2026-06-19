@@ -47,7 +47,10 @@ export default {
         warning: 'rgb(var(--warning) / <alpha-value>)',
       },
       fontFamily: {
-        sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'sans-serif'],
+        // Anthropic 风双字体：正文用 Geist（Styrene 的开源替身，中性 grotesque），
+        // 标题用 Newsreader（Copernicus 的开源替身，编辑性衬线，带 opsz 光学尺寸）。
+        sans: ['Geist Variable', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'sans-serif'],
+        serif: ['Newsreader Variable', 'Georgia', '"Times New Roman"', 'serif'],
         mono: ['JetBrains Mono', 'ui-monospace', 'SFMono-Regular', 'monospace'],
       },
       borderRadius: {
