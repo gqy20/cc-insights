@@ -37,3 +37,14 @@ repos:
 
       # Testing (repo-level, optional - can be slow)
       # - id: go-test-repo-pkg
+
+  # Conventional Commits 提交信息校验（commit-msg 阶段）
+  # 规范：feat/fix/docs/style/refactor/perf/test/build/ci/chore/revert
+  # 格式：<type>(<scope>): <subject>，详见 https://www.conventionalcommits.org
+  # 首次使用需单独安装该类型钩子：
+  #   pre-commit install --hook-type commit-msg
+  - repo: https://github.com/compilerla/conventional-pre-commit
+    rev: v3.6.0
+    hooks:
+      - id: conventional-pre-commit
+        stages: [commit-msg]
