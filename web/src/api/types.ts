@@ -103,3 +103,74 @@ export interface Filters {
 
 export const PRESETS = ['24h', '7d', '30d', '90d', 'all'] as const
 export type Preset = (typeof PRESETS)[number]
+
+// /api/diagnostics —— 诊断建议（对应 cli.go diagnosticFinding）
+export interface DiagnosticEvidence {
+  label: string
+  value: string
+}
+export interface DiagnosticTrigger {
+  metric: string
+  value: string
+  threshold: string
+  source: string
+  rationale?: string
+}
+export interface DiagnosticRootCause {
+  type: string
+  confidence: string
+  summary: string
+  evidence?: string[]
+  recommendation_target: string
+}
+export interface DiagnosticExample {
+  tool: string
+  category?: string
+  reason?: string
+  project?: string
+  session_id?: string
+  timestamp?: string
+  content_preview?: string
+}
+export interface DiagnosticAction {
+  target: string
+  action: string
+  why: string
+}
+export interface DiagnosticFinding {
+  id: string
+  category: string
+  severity: string
+  title: string
+  summary: string
+  evidence: DiagnosticEvidence[]
+  trigger?: DiagnosticTrigger
+  root_causes?: DiagnosticRootCause[]
+  targets?: string[]
+  examples?: DiagnosticExample[]
+  actions?: DiagnosticAction[]
+  interpretation: string
+  next_steps: string[]
+  drilldown_commands?: unknown[]
+  confidence: string
+}
+export interface NameCount {
+  name: string
+  count: number
+}
+export interface DiagnosticsReport {
+  time_range?: TimeRange
+  total_findings: number
+  by_category: NameCount[]
+  recommendations: DiagnosticFinding[]
+  insights?: string[]
+  detail?: unknown
+}
+
+// /api/detail/* —— 下钻（各 detail 结构不同，先宽松，Phase 4 下钻 UI 阶段细化）
+export type DetailKind = 'failures' | 'commands' | 'tokens' | 'sessions' | 'tools'
+export interface DetailReport {
+  time_range?: TimeRange
+  insights?: string[]
+  [key: string]: unknown
+}

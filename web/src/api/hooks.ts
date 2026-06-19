@@ -3,6 +3,9 @@ import type {
   OverviewData,
   DashboardData,
   TimelineData,
+  DiagnosticsReport,
+  DetailKind,
+  DetailReport,
   Filters,
   InteractiveResponse,
   ApiResponse,
@@ -63,5 +66,34 @@ export function useTimeline() {
       return r.data
     },
     staleTime: 5 * 60 * 1000,
+  })
+}
+
+// /api/diagnostics —— 诊断建议（Phase 4 诊断卡）
+export function useDiagnostics(filters: Filters) {
+  return useQuery({
+    queryKey: ['diagnostics', filters],
+    queryFn: async (): Promise<DiagnosticsReport> => {
+      const r = await getJSON<InteractiveResponse<DiagnosticsReport>>(
+        `${BASE}/diagnostics?${toQuery(filters)}`,
+      )
+      if (!r.success || !r.data) throw new Error(r.error || 'diagnostics failed')
+      return r.data
+    },
+  })
+}
+
+// /api/detail/{kind} —— 下钻（failures/commands/tokens/sessions/tools）
+export function useDetail(kind: DetailKind | null, filters: Filters) {
+  return useQuery({
+    queryKey: ['detail', kind, filters],
+    queryFn: async (): Promise<DetailReport> => {
+      const r = await getJSON<InteractiveResponse<DetailReport>>(
+        `${BASE}/detail/${kind}?${toQuery(filters)}`,
+      )
+      if (!r.success || !r.data) throw new Error(r.error || 'detail failed')
+      return r.data
+    },
+    enabled: !!kind,
   })
 }
