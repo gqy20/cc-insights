@@ -2,44 +2,66 @@
 @tailwind components;
 @tailwind utilities;
 
-/* 设计 token（§3.2）：暖色 Claude 风，亮/暗双套。
-   以 RGB 通道值存储，便于 Tailwind alpha 语法与 Recharts 复用。 */
+/* 设计 token（§3.2 暖色 Claude 风）映射到 shadcn 标准变量：
+   赤陶强调 = --primary；卡片 = --card；画布 = --background。
+   以 RGB 通道值存储，供 Tailwind alpha 语法与 Recharts 复用。 */
 @layer base {
   :root {
-    --canvas: 250 249 245;          /* #FAF9F5 暖米白 */
-    --surface: 255 255 255;         /* #FFFFFF */
-    --surface-subtle: 245 243 238;  /* #F5F3EE */
-    --border: 232 228 218;          /* #E8E4DA */
-    --ink: 31 30 29;                /* #1F1E1D 暖近黑 */
-    --muted: 107 104 98;            /* #6B6862 */
-    --subtle: 156 152 144;          /* #9C9890 */
-    --accent: 193 95 60;            /* #C15F3C 赤陶橙 */
-    --accent-soft: 243 228 220;     /* #F3E4DC */
-    --success: 74 124 89;           /* #4A7C59 暖绿 */
-    --warning: 184 121 43;          /* #B8792B 暖琥珀 */
-    --danger: 178 58 58;            /* #B23A3A 暖红 */
+    --background: 250 249 245;          /* #FAF9F5 暖米白 */
+    --foreground: 31 30 29;             /* #1F1E1D 暖近黑 */
+    --card: 255 255 255;                /* #FFFFFF */
+    --card-foreground: 31 30 29;
+    --popover: 255 255 255;
+    --popover-foreground: 31 30 29;
+    --primary: 193 95 60;               /* #C15F3C 赤陶橙 */
+    --primary-foreground: 255 255 255;
+    --secondary: 245 243 238;           /* #F5F3EE surface-subtle */
+    --secondary-foreground: 31 30 29;
+    --muted: 245 243 238;
+    --muted-foreground: 107 104 98;     /* #6B6862 */
+    --accent: 243 228 220;              /* #F3E4DC accent-soft */
+    --accent-foreground: 193 95 60;
+    --destructive: 178 58 58;           /* #B23A3A 暖红 */
+    --destructive-foreground: 255 255 255;
+    --border: 232 228 218;              /* #E8E4DA */
+    --input: 232 228 218;
+    --ring: 193 95 60;
+    --success: 74 124 89;               /* #4A7C59 暖绿 */
+    --warning: 184 121 43;              /* #B8792B 暖琥珀 */
+    --radius: 0.5rem;
   }
 
   .dark {
-    --canvas: 26 25 23;             /* #1A1917 */
-    --surface: 38 36 31;            /* #26241F */
-    --surface-subtle: 47 45 39;     /* #2F2D27 */
-    --border: 58 56 51;             /* #3A3833 */
-    --ink: 245 243 238;             /* #F5F3EE */
-    --muted: 168 163 154;           /* #A8A39A */
-    --subtle: 120 116 108;
-    --accent: 224 133 96;           /* #E08560 提亮赤陶 */
-    --accent-soft: 58 42 36;
+    --background: 26 25 23;             /* #1A1917 */
+    --foreground: 245 243 238;
+    --card: 38 36 31;                   /* #26241F */
+    --card-foreground: 245 243 238;
+    --popover: 38 36 31;
+    --popover-foreground: 245 243 238;
+    --primary: 224 133 96;              /* #E08560 提亮赤陶 */
+    --primary-foreground: 38 36 31;
+    --secondary: 47 45 39;              /* #2F2D27 */
+    --secondary-foreground: 245 243 238;
+    --muted: 47 45 39;
+    --muted-foreground: 168 163 154;    /* #A8A39A */
+    --accent: 58 42 36;
+    --accent-foreground: 224 133 96;
+    --destructive: 205 92 92;
+    --destructive-foreground: 255 255 255;
+    --border: 58 56 51;                 /* #3A3833 */
+    --input: 58 56 51;
+    --ring: 224 133 96;
     --success: 106 158 121;
     --warning: 206 150 70;
-    --danger: 205 92 92;
   }
 }
 
 @layer base {
+  * {
+    @apply border-border;
+  }
   body {
-    background-color: rgb(var(--canvas));
-    color: rgb(var(--ink));
+    @apply bg-background text-foreground;
     font-family: theme('fontFamily.sans');
     -webkit-font-smoothing: antialiased;
     font-variant-numeric: tabular-nums;

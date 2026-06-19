@@ -1,51 +1,94 @@
-// Phase 0 占位页：验证 Vite→embed→单二进制闭环，并展示设计 token 是否生效。
-// Phase 1 起替换为真实布局（SidebarRail + TopFilterBar + KPI + 图表）。
+import { useFilters } from '@/hooks/useFilters'
+import { useOverview, useDashboardData } from '@/api/hooks'
+import { PRESETS } from '@/api/types'
+import { Button } from '@/components/ui/button'
+import { Skeleton } from '@/components/ui/skeleton'
+import { KpiCard } from '@/components/dashboard/KpiCard'
+import { DailyTrendChart } from '@/components/charts/DailyTrendChart'
+
 function App() {
+  const [filters, setFilters] = useFilters()
+  const overview = useOverview(filters)
+  const dashboard = useDashboardData(filters)
+
+  const s = overview.data?.summary
+  const trend = overview.data?.trend
+
   return (
-    <div className="min-h-screen bg-canvas text-ink">
-      <div className="mx-auto max-w-5xl px-6 py-16">
-        <p className="text-sm font-semibold uppercase tracking-wider text-accent">
-          Claude Code 使用诊断
-        </p>
-        <h1 className="mt-2 text-3xl font-bold">cc-insights</h1>
-        <p className="mt-3 max-w-2xl text-muted">
-          前端框架已就绪（React + Vite + Tailwind，单二进制 embed）。后续将接入 KPI 卡、
-          分组图表与诊断下钻，视觉对标 PostHog 结构 + claude.ai 暖色。
-        </p>
+    <div className="min-h-screen bg-background">
+      <div className="w-full px-6 py-6 lg:px-10">
+        <header className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wider text-primary">
+              Claude Code 使用诊断
+            </p>
+            <h1 className="mt-1 text-2xl font-bold tracking-tight">cc-insights</h1>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Phase 1 闭环：KPI 概览 + 每日趋势，preset 驱动重取。
+            </p>
+          </div>
+          <div className="flex gap-1 rounded-lg bg-secondary p-1">
+            {PRESETS.map((p) => (
+              <Button
+                key={p}
+                size="sm"
+                variant={filters.preset === p ? 'default' : 'ghost'}
+                onClick={() => setFilters({ preset: p })}
+                className="px-3 font-mono"
+              >
+                {p}
+              </Button>
+            ))}
+          </div>
+        </header>
 
-        <div className="mt-8 grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <Swatch name="canvas" className="border border-border text-ink" style="bg-canvas" />
-          <Swatch name="accent" className="text-white" style="bg-accent" />
-          <Swatch name="accent-soft" className="text-accent" style="bg-accent-soft" />
-          <Swatch name="success" className="text-white" style="bg-success" />
-          <Swatch name="warning" className="text-white" style="bg-warning" />
-          <Swatch name="danger" className="text-white" style="bg-danger" />
-          <Swatch name="surface" className="border border-border text-ink" style="bg-surface" />
-          <Swatch name="ink" className="text-canvas" style="bg-ink" />
-        </div>
+        <section className="mt-6 grid grid-cols-2 gap-3 md:grid-cols-4">
+          {overview.isLoading || !s || !trend
+            ? Array.from({ length: 4 }).map((_, i) => (
+                <Skeleton key={i} className="h-[112px] rounded-lg" />
+              ))
+            : (
+              <>
+                <KpiCard label="消息" value={s.messages.toLocaleString()} spark={trend.messages} />
+                <KpiCard
+                  label="会话"
+                  value={s.sessions.toLocaleString()}
+                  spark={trend.sessions}
+                />
+                <KpiCard
+                  label="失败率"
+                  value={s.failure_rate.toFixed(1)}
+                  unit="%"
+                  deltaGoodWhenUp={false}
+                  spark={trend.failures}
+                />
+                <KpiCard label="Token" value={compact(s.tokens)} spark={trend.tokens} />
+              </>
+            )}
+        </section>
 
-        <p className="mt-8 font-mono text-sm text-muted tabular-nums">
-          tabular-nums：128,493 ↑ 12.4% &nbsp;·&nbsp; cmd: /project/cc-insights
-        </p>
+        <section className="mt-6">
+          <DailyTrendChart
+            trend={dashboard.data?.daily_trend}
+            loading={dashboard.isLoading}
+          />
+        </section>
+
+        {overview.isError && (
+          <p className="mt-4 text-sm text-destructive">
+            概览加载失败，请确认后端 /api 可达。
+          </p>
+        )}
       </div>
     </div>
   )
 }
 
-function Swatch({
-  name,
-  className,
-  style,
-}: {
-  name: string
-  className: string
-  style: string
-}) {
-  return (
-    <div className={`rounded-lg p-3 text-xs ${style} ${className}`}>
-      <div className="font-semibold">{name}</div>
-    </div>
-  )
+function compact(n: number): string {
+  if (n >= 1e9) return (n / 1e9).toFixed(1) + 'B'
+  if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M'
+  if (n >= 1e3) return (n / 1e3).toFixed(1) + 'k'
+  return n.toLocaleString()
 }
 
 export default App
