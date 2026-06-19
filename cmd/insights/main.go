@@ -94,68 +94,13 @@ func runWebServer() error {
 	return nil
 }
 
-// indexHandler 首页
+// indexHandler 根路径重定向到 Dashboard SPA，入口统一。
 func indexHandler(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/" {
 		http.NotFound(w, r)
 		return
 	}
-
-	tmpl := `<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <title>Claude Code Dashboard</title>
-    <style>
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-            max-width: 800px;
-            margin: 100px auto;
-            padding: 20px;
-            text-align: center;
-            background: #f5f5f5;
-        }
-        h1 { color: #2c3e50; margin-bottom: 30px; }
-        .links a {
-            display: block;
-            padding: 15px 30px;
-            margin: 10px;
-            background: #3498db;
-            color: white;
-            text-decoration: none;
-            border-radius: 8px;
-            font-size: 18px;
-            transition: background 0.2s;
-        }
-        .links a:hover {
-            background: #2980b9;
-        }
-        .info {
-            margin-top: 40px;
-            padding: 20px;
-            background: white;
-            border-radius: 8px;
-            color: #7f8c8d;
-        }
-    </style>
-</head>
-<body>
-    <h1>📊 Claude Code Dashboard</h1>
-    <p style="color: #7f8c8d; margin-bottom: 30px;">数据分析可视化平台</p>
-    <div class="links">
-        <a href="/dashboard">📈 查看 Dashboard (支持时间范围筛选)</a>
-        <a href="/api/data?preset=30d">📡 API 接口</a>
-    </div>
-    <div class="info">
-        <p><strong>功能:</strong></p>
-        <p>✅ 时间范围筛选 (7天/30天/90天/全部/自定义)</p>
-        <p>✅ 实时数据刷新</p>
-        <p>✅ 交互式图表展示</p>
-    </div>
-</body>
-</html>`
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	io.WriteString(w, tmpl)
+	http.Redirect(w, r, "/dashboard", http.StatusFound)
 }
 
 // dashboardPageHandler 返回 React SPA 入口（cmd/insights/static/dist/index.html）。
