@@ -1,6 +1,6 @@
 # Web Dashboard 前端重构计划：迁移到 React + shadcn/ui
 
-> 状态：草案 v0.2（设计方向已确认，待实施评审）
+> 状态：✅ 已完成实施（2026-06-19，Phase 0–6 全部落地；19 图表 + 诊断 + 下钻 + filter + 暗色 + Anthropic 双字体，单二进制 2.7MB）
 > 日期：2026-06-19
 > 关联模块：`cmd/insights/static/`、`cmd/insights/main.go`（web 服务）
 > 变更：v0.2 新增 §3 设计方向与视觉规范（PostHog 结构 + claude.ai 暖色 + Tremor 组件）；细化 §9 文件级代码量预估
