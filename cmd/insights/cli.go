@@ -2,13 +2,13 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 )
 
 type cliOptions struct {
@@ -180,142 +180,30 @@ type diagnosticCommand struct {
 }
 
 func runCLI(args []string) error {
-	if len(args) > 0 && (args[0] == "help" || args[0] == "-h" || args[0] == "--help") {
-		printCLIHelp(os.Stdout)
+	if len(args) > 0 && isHelpRequest(args[0]) {
+		printGlobalHelp(os.Stdout)
 		return nil
 	}
 
 	resolved := resolveCLICommand(args)
-	if resolved.Name == "web" {
-		opts, err := parseCLIOptions(resolved.Name, resolved.Args, false)
-		if err != nil {
-			return err
-		}
-		cfg = opts.Config
-		return runWebServer()
+	cmd := lookupCommand(resolved.Name)
+	if cmd == nil {
+		return fmt.Errorf("未知命令 %q，运行 cc-insights help 查看用法", resolved.Name)
 	}
 
-	command := resolved.Name
-	commandArgs := resolved.Args
-	if command != "sum" && command != "err" && command != "why" && command != "tok" && command != "cmd" && command != "rec" && command != "ses" {
-		return fmt.Errorf("未知命令 %q，运行 cc-insights help 查看用法", command)
-	}
-
-	opts, err := parseCLIOptions(command, commandArgs, true)
+	opts, err := parseCLIOptions(cmd, resolved.Args)
 	if err != nil {
+		if errors.Is(err, errHelp) {
+			return nil
+		}
 		return err
 	}
 	cfg = opts.Config
-
-	tf, preset, err := timeFilterFromCLIOptions(opts)
-	if err != nil {
-		return err
-	}
-
-	if command == "rec" {
-		startedAt := time.Now()
-		prepareStartedAt := time.Now()
-		if err := prepareCLIDataForRecommendations(); err != nil {
-			return err
-		}
-		prepareDuration := time.Since(prepareStartedAt)
-		defer CloseLogger()
-		if opts.Prompts {
-			reportStartedAt := time.Now()
-			report, err := buildCLIPromptReport(tf, preset, opts)
-			if err != nil {
-				return err
-			}
-			report.Runtime = &cliRuntimeInfo{
-				Source:                   "raw-jsonl",
-				PrepareDurationMs:        prepareDuration.Milliseconds(),
-				RecommendationDurationMs: time.Since(reportStartedAt).Milliseconds(),
-				TotalDurationMs:          time.Since(startedAt).Milliseconds(),
-			}
-			return outputCLI(report, opts.Format, os.Stdout)
-		}
-		dataStartedAt := time.Now()
-		data, source, err := buildRecommendationDashboardData(tf, preset)
-		if err != nil {
-			return err
-		}
-		dataDuration := time.Since(dataStartedAt)
-		reportStartedAt := time.Now()
-		report := buildCLIRecommendationReport(data, opts)
-		recommendationDuration := time.Since(reportStartedAt)
-		report.Runtime = &cliRuntimeInfo{
-			Source:                   source,
-			PrepareDurationMs:        prepareDuration.Milliseconds(),
-			DataDurationMs:           dataDuration.Milliseconds(),
-			RecommendationDurationMs: recommendationDuration.Milliseconds(),
-			TotalDurationMs:          time.Since(startedAt).Milliseconds(),
-		}
-		return outputCLI(report, opts.Format, os.Stdout)
-	}
-
-	if isFastAnalysisCommand(command) {
-		return runFastAnalysisCommand(command, opts, tf, preset)
-	}
-
-	if err := prepareCLIData(); err != nil {
-		return err
-	}
-	defer CloseLogger()
-
-	data, _, err := buildDashboardData(tf, preset)
-	if err != nil {
-		return err
-	}
-
-	switch command {
-	case "sum":
-		return outputCLI(buildCLISummary(data), opts.Format, os.Stdout)
-	case "err":
-		return outputCLI(buildCLIFailureReport(data, opts.Limit), opts.Format, os.Stdout)
-	case "tok":
-		return outputCLI(buildCLICostReport(data, opts.Limit), opts.Format, os.Stdout)
-	case "why":
-		return outputCLI(buildCLIInspectFailuresReport(data, opts), opts.Format, os.Stdout)
-	case "cmd":
-		return outputCLI(buildCLICommandReport(data, opts.Limit), opts.Format, os.Stdout)
-	case "ses":
-		return outputCLI(buildCLISessionReport(data, opts), opts.Format, os.Stdout)
-	}
-	return nil
+	return cmd.Run(opts)
 }
 
-func isFastAnalysisCommand(command string) bool {
-	switch command {
-	case "err", "why", "tok", "cmd", "ses":
-		return true
-	default:
-		return false
-	}
-}
-
-func runFastAnalysisCommand(command string, opts cliOptions, tf TimeFilter, preset string) error {
-	if err := prepareCLIDataForRecommendations(); err != nil {
-		return err
-	}
-	defer CloseLogger()
-	data, _, err := buildRecommendationDashboardData(tf, preset)
-	if err != nil {
-		return err
-	}
-	switch command {
-	case "err":
-		return outputCLI(buildCLIFailureReport(data, opts.Limit), opts.Format, os.Stdout)
-	case "tok":
-		return outputCLI(buildCLICostReport(data, opts.Limit), opts.Format, os.Stdout)
-	case "why":
-		return outputCLI(buildCLIInspectFailuresReport(data, opts), opts.Format, os.Stdout)
-	case "cmd":
-		return outputCLI(buildCLICommandReport(data, opts.Limit), opts.Format, os.Stdout)
-	case "ses":
-		return outputCLI(buildCLISessionReport(data, opts), opts.Format, os.Stdout)
-	default:
-		return fmt.Errorf("不支持快速分析命令 %q", command)
-	}
+func isHelpRequest(arg string) bool {
+	return arg == "help" || arg == "-h" || arg == "--help"
 }
 
 func resolveCLICommand(args []string) resolvedCommand {
@@ -325,7 +213,7 @@ func resolveCLICommand(args []string) resolvedCommand {
 	return resolvedCommand{Name: args[0], Args: args[1:]}
 }
 
-func parseCLIOptions(command string, args []string, analysisCommand bool) (cliOptions, error) {
+func parseCLIOptions(cmd *Command, args []string) (cliOptions, error) {
 	opts := cliOptions{
 		Config:  defaultConfig(),
 		Preset:  "30d",
@@ -333,46 +221,30 @@ func parseCLIOptions(command string, args []string, analysisCommand bool) (cliOp
 		Limit:   10,
 		Samples: -1,
 	}
-	fs := flag.NewFlagSet(command, flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
+	fs := flag.NewFlagSet(cmd.Name, flag.ContinueOnError)
+	fs.Usage = func() { printCommandHelp(cmd, fs, os.Stdout) }
+	fs.SetOutput(os.Stdout)
 	registerConfigFlags(fs, &opts.Config)
-	var jsonOutput *bool
-	var markdownOutput *bool
-	if analysisCommand {
-		fs.StringVar(&opts.Preset, "preset", opts.Preset, "时间范围: 24h|7d|30d|90d|all")
-		fs.StringVar(&opts.Preset, "p", opts.Preset, "短参数: --preset")
-		fs.StringVar(&opts.Start, "start", "", "自定义开始日期 YYYY-MM-DD")
-		fs.StringVar(&opts.End, "end", "", "自定义结束日期 YYYY-MM-DD")
-		fs.StringVar(&opts.Format, "format", opts.Format, "输出格式: table|json|markdown")
-		fs.StringVar(&opts.Format, "f", opts.Format, "短参数: --format")
-		jsonOutput = fs.Bool("j", false, "输出 JSON")
-		markdownOutput = fs.Bool("m", false, "输出 Markdown")
-		fs.IntVar(&opts.Limit, "limit", opts.Limit, "Top N 结果数量")
-		fs.IntVar(&opts.Limit, "n", opts.Limit, "Top N / 样例数量")
-		fs.IntVar(&opts.Samples, "samples", opts.Samples, "失败样例数量")
-		fs.StringVar(&opts.Reason, "reason", "", "按失败 reason 过滤")
-		fs.StringVar(&opts.Category, "category", "", "按失败 category 过滤")
-		fs.StringVar(&opts.Tool, "tool", "", "按工具名过滤")
-		fs.StringVar(&opts.Model, "model", "", "按模型名过滤")
-		fs.StringVar(&opts.Project, "project", "", "按项目路径片段过滤")
-		fs.StringVar(&opts.Session, "session", "", "按 session_id 过滤")
-		fs.StringVar(&opts.ID, "id", "", "按诊断 ID 过滤")
-		fs.BoolVar(&opts.Detail, "detail", false, "展开诊断触发条件、根因候选和优化目标")
-		fs.BoolVar(&opts.Prompts, "prompts", false, "分析用户输入提示词画像")
+
+	var jsonOutput, markdownOutput bool
+	if cmd.Flags != nil {
+		cmd.Flags(fs, &opts)
+		fs.BoolVar(&jsonOutput, "j", false, "输出 JSON")
+		fs.BoolVar(&markdownOutput, "m", false, "输出 Markdown")
 	}
+
 	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return opts, errHelp
+		}
 		return opts, err
 	}
-	if analysisCommand {
-		if *jsonOutput {
-			opts.Format = "json"
-		}
-		if *markdownOutput {
-			opts.Format = "markdown"
-		}
-		if command == "why" && opts.Samples <= 0 {
-			opts.Samples = opts.Limit
-		}
+
+	if jsonOutput {
+		opts.Format = "json"
+	}
+	if markdownOutput {
+		opts.Format = "markdown"
 	}
 	opts.Format = strings.ToLower(strings.TrimSpace(opts.Format))
 	if opts.Format == "" {
@@ -380,6 +252,9 @@ func parseCLIOptions(command string, args []string, analysisCommand bool) (cliOp
 	}
 	if opts.Limit <= 0 {
 		opts.Limit = 10
+	}
+	if cmd.Name == "why" && opts.Samples <= 0 {
+		opts.Samples = opts.Limit
 	}
 	if opts.Samples <= 0 {
 		opts.Samples = opts.Limit
@@ -593,51 +468,4 @@ func outputCLI(value any, format string, w io.Writer) error {
 	default:
 		return fmt.Errorf("不支持的输出格式 %q，支持 table|json|markdown", format)
 	}
-}
-
-func printCLIHelp(w io.Writer) {
-	fmt.Fprintln(w, `cc-insights analyzes Claude Code usage data.
-
-Usage:
-  cc-insights
-  cc-insights err -p 7d -j
-  cc-insights tok -p 30d -j
-  cc-insights why -p 7d --reason error_text -n 20 -j
-  cc-insights cmd -p 30d -j
-  cc-insights ses -p 30d --session SESSION_ID -j
-  cc-insights rec -p 30d --detail
-  cc-insights rec -p 30d --prompts
-  cc-insights rec -p 30d --id performance.slowest_call -j
-  cc-insights web [--addr :8932]
-
-Commands:
-  sum   usage summary
-  err   failure breakdown
-  why   failure samples with filters
-  tok   token and cost breakdown
-  cmd   bash command families
-  ses   session lifecycle summary
-  rec   diagnostic recommendations
-  web   dashboard server
-
-Global flags:
-  --data PATH    Claude Code data directory, default ~/.claude
-  --cache PATH   cache directory, default ~/.cc-insights/cache
-
-Time flags:
-  -p, --preset 24h|7d|30d|90d|all
-  --start YYYY-MM-DD --end YYYY-MM-DD
-  -j              output JSON
-  -m              output Markdown
-  -f, --format    table|json|markdown
-  -n              Top N / sample count
-
-Inspect failure filters:
-  --reason VALUE --category VALUE --tool VALUE --model VALUE
-  --project VALUE --session VALUE --samples N
-
-Diagnostic flags:
-  --detail        expand trigger, root causes, and optimization targets
-  --id VALUE      show one diagnostic finding by exact ID
-  --prompts       analyze user prompt patterns and collaboration preferences`)
 }

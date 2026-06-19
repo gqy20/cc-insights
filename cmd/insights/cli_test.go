@@ -1,6 +1,11 @@
 package main
 
-import "testing"
+import (
+	"bytes"
+	"flag"
+	"strings"
+	"testing"
+)
 
 func TestResolveCLICommand(t *testing.T) {
 	tests := []struct {
@@ -39,7 +44,7 @@ func TestResolveCLICommand(t *testing.T) {
 }
 
 func TestParseCLIOptionsShortFlags(t *testing.T) {
-	opts, err := parseCLIOptions("err", []string{"-p", "7d", "-j", "-n", "5"}, true)
+	opts, err := parseCLIOptions(cmdErr, []string{"-p", "7d", "-j", "-n", "5"})
 	if err != nil {
 		t.Fatalf("parseCLIOptions returned error: %v", err)
 	}
@@ -55,7 +60,7 @@ func TestParseCLIOptionsShortFlags(t *testing.T) {
 }
 
 func TestParseCLIOptionsInspectUsesLimitAsSamples(t *testing.T) {
-	opts, err := parseCLIOptions("why", []string{"-p", "7d", "-n", "3", "--reason", "error_text", "-m"}, true)
+	opts, err := parseCLIOptions(cmdWhy, []string{"-p", "7d", "-n", "3", "--reason", "error_text", "-m"})
 	if err != nil {
 		t.Fatalf("parseCLIOptions returned error: %v", err)
 	}
@@ -71,7 +76,7 @@ func TestParseCLIOptionsInspectUsesLimitAsSamples(t *testing.T) {
 }
 
 func TestParseCLIOptionsRecommendationDetail(t *testing.T) {
-	opts, err := parseCLIOptions("rec", []string{"-p", "7d", "--detail", "--id", "performance.slowest_call"}, true)
+	opts, err := parseCLIOptions(cmdRec, []string{"-p", "7d", "--detail", "--id", "performance.slowest_call"})
 	if err != nil {
 		t.Fatalf("parseCLIOptions returned error: %v", err)
 	}
@@ -84,7 +89,7 @@ func TestParseCLIOptionsRecommendationDetail(t *testing.T) {
 }
 
 func TestParseCLIOptionsPromptProfile(t *testing.T) {
-	opts, err := parseCLIOptions("rec", []string{"-p", "30d", "--prompts", "--project", "cc-insights"}, true)
+	opts, err := parseCLIOptions(cmdRec, []string{"-p", "30d", "--prompts", "--project", "cc-insights"})
 	if err != nil {
 		t.Fatalf("parseCLIOptions returned error: %v", err)
 	}
@@ -103,5 +108,88 @@ func TestRunCLIRejectsLegacyLongCommands(t *testing.T) {
 				t.Fatalf("runCLI(%q) returned nil error", command)
 			}
 		})
+	}
+}
+
+// ============================================================
+// Help 系统（registry 派生）锚定测试，防止命令/flag 描述漂移
+// ============================================================
+
+func TestGlobalHelpListsAllCommands(t *testing.T) {
+	var buf bytes.Buffer
+	printGlobalHelp(&buf)
+	out := buf.String()
+	for _, name := range []string{"sum", "err", "why", "tok", "cmd", "ses", "rec", "web"} {
+		if !strings.Contains(out, name) {
+			t.Errorf("global help missing command %q", name)
+		}
+	}
+	if !strings.Contains(out, "我想看") {
+		t.Error("global help missing Chinese navigation section")
+	}
+	// --base/--rules 此前隐藏在旧 help，registry 后应可见
+	for _, f := range []string{"--base", "--rules"} {
+		if !strings.Contains(out, f) {
+			t.Errorf("global help missing config flag %q", f)
+		}
+	}
+}
+
+func TestSubcommandHelpWorks(t *testing.T) {
+	var buf bytes.Buffer
+	fs := flag.NewFlagSet("why", flag.ContinueOnError)
+	cmdWhy.Flags(fs, &cliOptions{})
+	printCommandHelp(cmdWhy, fs, &buf)
+	out := buf.String()
+	for _, want := range []string{"--reason", "--category", "--tool", "--model"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("why help missing filter flag %q", want)
+		}
+	}
+	if !strings.Contains(out, "失败样例") {
+		t.Error("why help missing Chinese long description")
+	}
+}
+
+func TestSubcommandHelpForRecShowsDetailAndPrompts(t *testing.T) {
+	var buf bytes.Buffer
+	fs := flag.NewFlagSet("rec", flag.ContinueOnError)
+	cmdRec.Flags(fs, &cliOptions{})
+	printCommandHelp(cmdRec, fs, &buf)
+	out := buf.String()
+	for _, want := range []string{"--detail", "--id", "--prompts"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("rec help missing flag %q", want)
+		}
+	}
+}
+
+func TestSubcommandHelpForWebShowsOnlyConfigFlags(t *testing.T) {
+	var buf bytes.Buffer
+	printCommandHelp(cmdWeb, configFlagSet(), &buf)
+	out := buf.String()
+	for _, want := range []string{"--data", "--cache", "--addr", "--base", "--rules"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("web help missing config flag %q", want)
+		}
+	}
+	for _, unwanted := range []string{"--preset", "--reason", "--detail"} {
+		if strings.Contains(out, unwanted) {
+			t.Errorf("web help should not show analysis flag %q", unwanted)
+		}
+	}
+}
+
+func TestSubcommandHelpHTriggersHelpExit(t *testing.T) {
+	// cc-insights why -h 应静默退出（errHelp），不再泄露 "flag: help requested"
+	if err := runCLI([]string{"why", "-h"}); err != nil {
+		t.Fatalf("runCLI why -h returned error: %v", err)
+	}
+}
+
+func TestFlagRestriction_SumRejectsReason(t *testing.T) {
+	// sum 不归属 --reason，应被 flag 包拒绝（专属 flag 按命令归属限制的行为变化锚定）
+	if err := runCLI([]string{"sum", "--reason", "x"}); err == nil {
+		t.Fatal("runCLI sum --reason should error: reason is not a sum flag")
 	}
 }

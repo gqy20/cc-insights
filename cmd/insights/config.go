@@ -38,7 +38,6 @@ func defaultConfig() Config {
 
 func init() {
 	cfg = defaultConfig()
-	registerConfigFlags(flag.CommandLine, &cfg)
 }
 
 func registerConfigFlags(fs *flag.FlagSet, target *Config) {
