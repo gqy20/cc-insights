@@ -25,6 +25,7 @@ import { SkillAnalysisChart } from '@/components/charts/SkillAnalysisChart'
 import { RuntimeToolsChart } from '@/components/charts/RuntimeToolsChart'
 import { TopFilterBar } from '@/components/dashboard/TopFilterBar'
 import { DiagnosticList } from '@/components/dashboard/DiagnosticList'
+import { DrilldownPanel } from '@/components/dashboard/DrilldownPanel'
 
 function App() {
   const [filters, setFilters] = useFilters()
@@ -94,6 +95,14 @@ function App() {
         </p>
         <section className="mt-3">
           <DiagnosticList />
+        </section>
+
+        <h2 className="mt-8 text-lg font-semibold tracking-tight">证据下钻</h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          失败、命令、Token、Session、工具明细，跟随当前过滤条件。
+        </p>
+        <section className="mt-3">
+          <DrilldownPanel />
         </section>
 
         <h2 className="mt-8 text-lg font-semibold tracking-tight">使用</h2>
