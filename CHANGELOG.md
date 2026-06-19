@@ -9,6 +9,33 @@
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-06-20
+
+### 新增
+- **Web Dashboard 全面重构**：前端从「原生 JS + ECharts」迁移到「React + TypeScript + Vite + Tailwind + Recharts + TanStack Query」，源码独立到 `web/`，构建产物经 Go `embed` 内联进单二进制（UPX 后 2.7MB）。
+  - 19 个图表全部迁移到 Recharts（双轴组合图、饼图、堆叠柱、条件着色）。
+  - KPI 卡（数字 + sparkline）、诊断建议卡（severity + 证据 + 动作）、证据下钻面板（5 个 tab 表格：失败 / 命令 / Token / Session / 工具）。
+  - filter 联动：模型 / 工具 / 原因下拉（候选项稳定，选中后仍可切换）+ 项目搜索，全部同步到 URL search params。
+  - 暗色模式（亮 / 暗一键切换，图表通过 CSS 变量自动适配）。
+- **Anthropic 风视觉**：暖色设计系统（claude.ai 风赤陶橙 + cream 底），双字体（Geist 正文 + Newsreader 衬线标题），对标 PostHog 结构 + claude.ai 配色。
+- **GitHub Actions CI**：`verify`（gofmt / vet / test / build）+ 5 平台交叉编译（linux / darwin × amd64 / arm64 + windows / amd64）并上传 artifact。
+
+### 改进
+- **CLI 命令体系**：统一命令注册与分发，CLI help 收敛为 web-only 与自描述 flags。
+- **Token 显示**：十亿级 Token 用 `B` 替代 `G`，避免与 Giga 混淆。
+- **每模型下钻**：跨分析模块支持按模型维度下钻。
+- **构建链**：`make build` 含 `web-build`（pnpm 前端），`make release` 依赖 `web-build` 保证多平台前端一致；前端 `code-split`（react / recharts / query / fonts 独立 chunk，业务首屏 gzip ~20KB）。
+- **数字规范**：所有百分比统一两位小数；Dashboard 改为全宽布局适配数据密集场景。
+
+### 移除
+- **旧 ECharts 前端**：删除 `echarts.min.js`（1MB）等共 1.2MB 旧资源。
+- **旧首页**：`/` 重定向到 `/dashboard`，删除旧蓝灰欢迎页 HTML（57 行）。
+- dead code（`timeFilterFromAPIPreset`）。
+
+### 修复
+- **双轴图 tooltip**：修正 Recharts formatter 用 series `name`（非 dataKey）判断，失败率 / 错误率不再误显示为失败数。
+- 忽略工作区误产生的 `insights` 二进制，并补充构建规则说明。
+
 ## [0.1.1] - 2026-06-15
 
 ### 新增
