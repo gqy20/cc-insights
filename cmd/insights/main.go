@@ -14,8 +14,8 @@ import (
 	"time"
 )
 
-//go:embed static/*
-var staticFS embed.FS
+//go:embed static/dist
+var distFS embed.FS
 
 // 版本信息（通过 -ldflags 注入）
 var version = "dev"
@@ -64,6 +64,7 @@ func runWebServer() error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", indexHandler)
 	mux.HandleFunc("/dashboard", dashboardPageHandler)
+	mux.HandleFunc("/dashboard/", dashboardPageHandler)
 	mux.HandleFunc("/api/data", handleDataAPI)
 	mux.HandleFunc("/api/overview", handleOverviewAPI)
 	mux.HandleFunc("/api/diagnostics", handleDiagnosticsAPI)
@@ -75,9 +76,9 @@ func runWebServer() error {
 	mux.HandleFunc("/api/timeline", handleTimelineAPI)
 	mux.HandleFunc("/api/reload", reloadHandler)
 
-	// 静态资源（使用嵌入的文件系统）
-	staticSub, _ := fs.Sub(staticFS, "static")
-	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.FS(staticSub))))
+	// 静态资源：React 构建产物（cmd/insights/static/dist），由 web/ 经 Vite 生成后 embed。
+	distSub, _ := fs.Sub(distFS, "static/dist")
+	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.FS(distSub))))
 
 	// 包装日志中间件
 	handler := LoggingMiddleware(mux)
@@ -157,127 +158,21 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
 	io.WriteString(w, tmpl)
 }
 
-// dashboardPageHandler Dashboard 页面（新的带侧边栏版本）
+// dashboardPageHandler 返回 React SPA 入口（cmd/insights/static/dist/index.html）。
+// /dashboard 与 /dashboard/* 都回退到该入口，兼容前端客户端路由。
 func dashboardPageHandler(w http.ResponseWriter, r *http.Request) {
-	// 直接读取文件系统
-	templateContent := `<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Claude Code Dashboard</title>
-    <link rel="stylesheet" href="/static/app.css?v=interactive">
-</head>
-<body>
-    <div class="container">
-        <main class="main-content">
-            <div class="content-inner">
-                <header class="dashboard-header">
-                    <div class="page-header">
-                        <p class="eyebrow">Claude Code 使用诊断</p>
-                        <h1>把历史会话变成可下钻的优化证据</h1>
-                        <p>统一时间范围驱动概览、失败、命令、Token、工具和 session 分析。</p>
-                    </div>
-                    <div class="status-strip" aria-live="polite">
-                        <div><span>最后更新</span><strong id="lastUpdate">-</strong></div>
-                        <div><span>数据来源</span><strong id="dataSource">-</strong></div>
-                        <div><span>耗时</span><strong id="runtimeInfo">-</strong></div>
-                    </div>
-                </header>
-
-                <section class="control-panel" aria-label="全局筛选">
-                    <div class="control-row">
-                        <div class="preset-buttons" role="group" aria-label="快捷时间范围">
-                            <button class="preset-btn" data-preset="24h">24h</button>
-                            <button class="preset-btn" data-preset="7d">7d</button>
-                            <button class="preset-btn active" data-preset="30d">30d</button>
-                            <button class="preset-btn" data-preset="90d">90d</button>
-                            <button class="preset-btn" data-preset="all">All</button>
-                        </div>
-                        <div class="custom-range">
-                            <label for="startDate">开始</label>
-                            <input type="date" id="startDate">
-                            <label for="endDate">结束</label>
-                            <input type="date" id="endDate">
-                            <button id="applyRangeBtn" type="button">应用</button>
-                        </div>
-                    </div>
-                    <div class="timeline-control">
-                        <div>
-                            <label for="timelineSlider">时间轴</label>
-                            <p id="timelineLabel">正在加载时间轴</p>
-                        </div>
-                        <input type="range" id="timelineSlider" min="0" max="0" value="0" disabled>
-                        <select id="windowSize" aria-label="滑动窗口大小">
-                            <option value="1">1 天</option>
-                            <option value="7" selected>7 天</option>
-                            <option value="30">30 天</option>
-                            <option value="90">90 天</option>
-                        </select>
-                    </div>
-                    <div class="filter-row">
-                        <input id="projectFilter" type="search" placeholder="项目过滤">
-                        <input id="toolFilter" type="search" placeholder="工具过滤">
-                        <input id="modelFilter" type="search" placeholder="模型过滤" list="modelCandidates">
-                        <datalist id="modelCandidates"></datalist>
-                        <input id="reasonFilter" type="search" placeholder="失败原因过滤">
-                        <button id="clearFiltersBtn" type="button">清空过滤</button>
-                    </div>
-                    <nav class="section-nav" aria-label="分析分组">
-                        <a href="#section-overview">概览</a>
-                        <a href="#section-diagnostics">诊断</a>
-                        <a href="#section-details">下钻</a>
-                        <a href="#section-usage">使用</a>
-                        <a href="#section-quality">质量</a>
-                        <a href="#section-cost">成本</a>
-                        <a href="#section-runtime">运行时</a>
-                    </nav>
-                </section>
-                <div id="errorMessage"></div>
-                <div id="loadingIndicator" class="loading">
-                    <div class="loading-container">
-                        <div class="spinner"></div>
-                        <div class="loading-text">正在加载数据</div>
-                        <div class="progress-bar">
-                            <div class="progress-bar-fill"></div>
-                        </div>
-                        <div class="loading-progress" id="loadingProgress">正在读取数据文件...</div>
-                        <div class="loading-eta" id="loadingEta">预计需要 2-3 秒</div>
-                        <div class="loading-tip" id="loadingTip">☕ 顺便喝口水吧~</div>
-                    </div>
-                </div>
-                <section id="section-overview" class="summary-panel" style="display:none;">
-                    <div class="section-heading">
-                        <h2>概览</h2>
-                        <p id="summaryRange">-</p>
-                    </div>
-                    <div id="summaryGrid" class="summary-grid"></div>
-                </section>
-                <section id="section-diagnostics" class="diagnostics-panel" style="display:none;">
-                    <div class="section-heading">
-                        <h2>诊断建议</h2>
-                        <p>点击建议可以把下钻条件同步到详情面板。</p>
-                    </div>
-                    <div id="diagnosticList" class="diagnostic-list"></div>
-                </section>
-                <section id="section-details" class="details-panel" style="display:none;">
-                    <div class="section-heading">
-                        <h2>证据下钻</h2>
-                        <p id="detailContext">跟随当前时间和过滤条件。</p>
-                    </div>
-                    <div id="detailGrid" class="detail-grid"></div>
-                </section>
-                <div id="chartsContainer" class="charts-container" style="display:none;"></div>
-            </div>
-        </main>
-    </div>
-    <script src="/static/echarts.min.js?v=interactive" defer></script>
-    <script src="/static/app.js?v=interactive" defer></script>
-</body>
-</html>`
-
+	indexBytes, err := distIndexBytes()
+	if err != nil {
+		http.Error(w, "Dashboard 资源缺失，请先构建前端 (make web-build)", http.StatusInternalServerError)
+		return
+	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	io.WriteString(w, templateContent)
+	w.Write(indexBytes)
+}
+
+// distIndexBytes 读取嵌入的 React 构建产物 index.html。
+func distIndexBytes() ([]byte, error) {
+	return fs.ReadFile(distFS, "static/dist/index.html")
 }
 
 // reloadHandler 重新加载数据

@@ -1,4 +1,4 @@
-.PHONY: build run run-dev clean test bench bench-all release help
+.PHONY: web-build build run run-dev clean test bench bench-all release help
 
 BINARY=cc-insights
 VERSION=$(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
@@ -11,8 +11,14 @@ PACKAGE_DIR=package
 # 默认目标
 all: build
 
+# 构建前端（React + Vite 产物落到 cmd/insights/static/dist，供 go:embed）
+web-build:
+	@echo "🎨 构建前端 (web/)..."
+	@cd web && pnpm install --silent && pnpm run build
+	@echo "✅ 前端构建完成 -> cmd/insights/static/dist/"
+
 # 构建单二进制文件（静态链接 + UPX 压缩，可直接运行）
-build:
+build: web-build
 	@echo "🔨 构建 $(BINARY)..."
 	@CGO_ENABLED=0 go build -trimpath -tags=prod $(LDFLAGS) -o $(BINARY) ./cmd/insights
 	@echo "✅ 构建完成: ./$(BINARY) ($$(ls -lh $(BINARY) | awk '{print $$5}'))"

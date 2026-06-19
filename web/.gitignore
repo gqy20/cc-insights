@@ -1,0 +1,9 @@
+node_modules/
+dist/
+*.log
+.DS_Store
+
+# tsc -b 增量构建产物（不入库）
+*.tsbuildinfo
+vite.config.js
+vite.config.d.ts
