@@ -33,9 +33,6 @@ function App() {
               Claude Code 使用诊断
             </p>
             <h1 className="mt-1 text-2xl font-bold tracking-tight">cc-insights</h1>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Phase 1 闭环：KPI 概览 + 每日趋势，preset 驱动重取。
-            </p>
           </div>
           <div className="flex gap-1 rounded-lg bg-secondary p-1">
             {PRESETS.map((p) => (
@@ -67,7 +64,7 @@ function App() {
                 />
                 <KpiCard
                   label="失败率"
-                  value={s.failure_rate.toFixed(1)}
+                  value={s.failure_rate.toFixed(2)}
                   unit="%"
                   deltaGoodWhenUp={false}
                   spark={trend.failures}

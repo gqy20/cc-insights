@@ -40,7 +40,7 @@ export function ToolPerformanceChart({
       insight={
         has ? (
           <>
-            整体错误率 <strong>{overallRate.toFixed(1)}%</strong>
+            整体错误率 <strong>{overallRate.toFixed(2)}%</strong>
             {slowest && (
               <>
                 ，最慢 <strong className="font-mono">{slowest.category}</strong>（均值{' '}
@@ -90,7 +90,15 @@ export function ToolPerformanceChart({
               width={40}
               unit="%"
             />
-            <Tooltip contentStyle={tooltipStyle} cursor={{ fill: 'rgb(var(--accent) / 0.3)' }} />
+            <Tooltip
+              contentStyle={tooltipStyle}
+              cursor={{ fill: 'rgb(var(--accent) / 0.3)' }}
+              formatter={(v: number, n: string) =>
+                n === '错误率%'
+                  ? [`${(v as number).toFixed(2)}%`, '错误率']
+                  : [(v as number).toLocaleString(), '调用数']
+              }
+            />
             <Bar yAxisId="left" dataKey="call_count" name="调用数" fill="rgb(var(--primary))" radius={[4, 4, 0, 0]} />
             <Line
               yAxisId="right"

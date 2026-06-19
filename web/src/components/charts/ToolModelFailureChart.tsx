@@ -48,7 +48,7 @@ export function ToolModelFailureChart({
         has ? (
           <>
             共 <strong>{totalFail.toLocaleString()}</strong> 次失败，最差组合{' '}
-            <strong className="font-mono">{worst.label}</strong>（{worst.failure_count} 次，{(worst.failure_rate ?? 0).toFixed(1)}%）。
+            <strong className="font-mono">{worst.label}</strong>（{worst.failure_count} 次，{(worst.failure_rate ?? 0).toFixed(2)}%）。
           </>
         ) : loading ? (
           '加载中…'
@@ -91,7 +91,15 @@ export function ToolModelFailureChart({
               width={40}
               unit="%"
             />
-            <Tooltip contentStyle={tooltipStyle} cursor={{ fill: 'rgb(var(--destructive) / 0.1)' }} />
+            <Tooltip
+              contentStyle={tooltipStyle}
+              cursor={{ fill: 'rgb(var(--destructive) / 0.1)' }}
+              formatter={(v: number, n: string) =>
+                n === '失败率%'
+                  ? [`${(v as number).toFixed(2)}%`, '失败率']
+                  : [(v as number).toLocaleString(), '失败数']
+              }
+            />
             <Bar yAxisId="left" dataKey="failure_count" name="失败数" fill="rgb(var(--destructive))" radius={[4, 4, 0, 0]} />
             <Line
               yAxisId="right"

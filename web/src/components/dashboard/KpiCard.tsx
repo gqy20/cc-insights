@@ -43,7 +43,7 @@ export function KpiCard({
             )}
           >
             {up ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
-            {Math.abs(delta as number).toFixed(1)}%
+            {Math.abs(delta as number).toFixed(2)}%
           </span>
         )}
       </div>

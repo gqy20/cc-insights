@@ -39,7 +39,7 @@ export function CommandFileChart({
           <>
             共 <strong>{total.toLocaleString()}</strong> 次调用，最高失败率族{' '}
             <strong className="font-mono">{riskiest.family}</strong>（
-            {(riskiest.failure_rate ?? 0).toFixed(1)}%）。
+            {(riskiest.failure_rate ?? 0).toFixed(2)}%）。
           </>
         ) : loading ? (
           '加载中…'
@@ -67,7 +67,7 @@ export function CommandFileChart({
               contentStyle={tooltipStyle}
               cursor={{ fill: 'rgb(var(--accent) / 0.3)' }}
               formatter={(v: number, n: string) =>
-                n === 'failure_rate' ? [`${(v as number).toFixed(1)}%`, '失败率'] : [v.toLocaleString(), '调用']
+                n === 'failure_rate' ? [`${(v as number).toFixed(2)}%`, '失败率'] : [v.toLocaleString(), '调用']
               }
             />
             <Bar dataKey="call_count" name="call_count" fill="rgb(var(--primary))" radius={[0, 4, 4, 0]} />
