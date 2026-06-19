@@ -65,6 +65,7 @@ go run ./cmd/insights web --addr :8932
 ## 开发原则
 
 - Go 文件提交前运行 `gofmt`。
+- 构建和验证编译优先用 `make build`（输出 `cc-insights`，static + strip + UPX）。不要在仓库根裸 `go build ./cmd/insights`：它默认按路径末段输出名为 `insights` 的二进制，且未被 `.gitignore` 忽略，会污染工作区。需要快速编译检查时用 `make build` 或 `go build -o /tmp/insights ./cmd/insights`。
 - 保持实现靠近所属领域：CLI 放 `cli_*.go`，聚合放 `aggregate*.go`，缓存放 `cache*.go`，前端放 `cmd/insights/static/`。
 - 不要引入重复命令；优先复用 `rec`、`why`、`cmd`、`tok`、`ses` 的职责边界。
 - 对结构化数据优先使用现有聚合和缓存结构，不要临时扫描或拼字符串。
