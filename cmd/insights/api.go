@@ -116,19 +116,6 @@ func handleDataAPI(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func timeFilterFromAPIPreset(preset string) (TimeFilter, error) {
-	preset = strings.TrimSpace(preset)
-	if preset == "" || preset == string(RangeAll) {
-		return TimeFilter{Start: nil, End: nil}, nil
-	}
-	switch RangePreset(preset) {
-	case Range24Hours, Range7Days, Range30Days, Range90Days:
-		return NewTimeFilterFromPreset(RangePreset(preset)), nil
-	default:
-		return TimeFilter{}, fmt.Errorf("不支持的 preset %q，支持 24h|7d|30d|90d|all", preset)
-	}
-}
-
 // buildDataFromCache 从缓存数据构建 API 响应
 func buildDataFromCache(tf TimeFilter, preset string) (*DashboardData, error) {
 	startedAt := time.Now()

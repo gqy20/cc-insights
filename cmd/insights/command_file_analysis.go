@@ -84,7 +84,7 @@ func recordStructuredToolInputLocked(agg *ProjectAggregate, call *pendingToolCal
 		if len(segments) == 0 {
 			return
 		}
-		// 主命令名 = 第一段（保持 pendingToolCall.CommandName 向后兼容）
+		// 主命令名 = 链首段（ChainCommands 为全部分段，CommandName 为主命令）
 		primaryName := bashCommandName(segments[0])
 		call.CommandName = primaryName
 
