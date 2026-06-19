@@ -1,5 +1,5 @@
 (function() {
-    const assetVersion = 'interactive-coverage-v3';
+    const assetVersion = 'interactive-coverage-v4';
     const scripts = [
         '/static/app_state.js',
         '/static/app_formatters.js',

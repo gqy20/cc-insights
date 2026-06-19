@@ -99,6 +99,7 @@ func recordStructuredToolInputLocked(agg *ProjectAggregate, call *pendingToolCal
 
 			stat := ensureBashCommandStat(agg, cmdName)
 			stat.CallCount++
+			ensureBashCommandModelStat(agg, cmdName, call.Model).CallCount++
 			if stat.SampleCommand == "" {
 				stat.SampleCommand = previewString(input.Command, 180)
 			}
@@ -127,9 +128,43 @@ func recordStructuredToolInputLocked(agg *ProjectAggregate, call *pendingToolCal
 			agg.FileOperationStats[key] = &FileOperationStat{Operation: call.Tool, Path: path}
 		}
 		agg.FileOperationStats[key].CallCount++
+		ensureFileOperationModelStat(agg, call.Tool, path, call.Model).CallCount++
 		// file_analysis: 按路径聚合（跨操作类型）
 		recordFileHotStatLocked(agg, call.Tool, path)
 	}
+}
+
+// ensureBashCommandModelStat 取得或创建按模型归因的 Bash 命令统计。
+func ensureBashCommandModelStat(agg *ProjectAggregate, commandName, model string) *BashCommandModelStat {
+	if agg.BashCommandModelStats == nil {
+		agg.BashCommandModelStats = make(map[string]*BashCommandModelStat)
+	}
+	if commandName == "" {
+		commandName = "unknown"
+	}
+	if model == "" {
+		model = "unknown"
+	}
+	key := model + "\x00" + commandName
+	if agg.BashCommandModelStats[key] == nil {
+		agg.BashCommandModelStats[key] = &BashCommandModelStat{Model: model, CommandName: commandName}
+	}
+	return agg.BashCommandModelStats[key]
+}
+
+// ensureFileOperationModelStat 取得或创建按模型归因的文件操作统计。
+func ensureFileOperationModelStat(agg *ProjectAggregate, operation, path, model string) *FileOperationModelStat {
+	if agg.FileOperationModelStats == nil {
+		agg.FileOperationModelStats = make(map[string]*FileOperationModelStat)
+	}
+	if model == "" {
+		model = "unknown"
+	}
+	key := model + "\x00" + operation + "\x00" + path
+	if agg.FileOperationModelStats[key] == nil {
+		agg.FileOperationModelStats[key] = &FileOperationModelStat{Model: model, Operation: operation, Path: path}
+	}
+	return agg.FileOperationModelStats[key]
 }
 
 // --- file_analysis: 按路径聚合的文件活跃度统计 ---
@@ -182,16 +217,33 @@ func updateBashResultStat(stat *BashCommandStat, failed, missing bool) {
 	}
 }
 
+// applyBashCommandModelResult 更新按模型归因的 Bash 命令结果计数。
+func applyBashCommandModelResult(stat *BashCommandModelStat, failed, missing bool) {
+	if stat == nil {
+		return
+	}
+	switch {
+	case missing:
+		stat.MissingResultCount++
+	case failed:
+		stat.FailureCount++
+	default:
+		stat.SuccessCount++
+	}
+}
+
 func addCommandOrFileResultLocked(agg *ProjectAggregate, call pendingToolCall, failed bool, missing bool) {
 	if call.CommandName != "" {
 		// 主命令
 		updateBashResultStat(ensureBashCommandStat(agg, call.CommandName), failed, missing)
+		applyBashCommandModelResult(ensureBashCommandModelStat(agg, call.CommandName, call.Model), failed, missing)
 		// 链中其他命令：结果全局分发（整个链共享同一成败状态）
 		for _, name := range call.ChainCommands {
 			if name == call.CommandName {
 				continue
 			}
 			updateBashResultStat(ensureBashCommandStat(agg, name), failed, missing)
+			applyBashCommandModelResult(ensureBashCommandModelStat(agg, name, call.Model), failed, missing)
 		}
 	}
 	if call.FileOpKey != "" && agg.FileOperationStats[call.FileOpKey] != nil {
@@ -203,6 +255,16 @@ func addCommandOrFileResultLocked(agg *ProjectAggregate, call pendingToolCall, f
 			stat.FailureCount++
 		default:
 			stat.SuccessCount++
+		}
+		if mStat := ensureFileOperationModelStat(agg, stat.Operation, stat.Path, call.Model); mStat != nil {
+			switch {
+			case missing:
+				mStat.MissingResultCount++
+			case failed:
+				mStat.FailureCount++
+			default:
+				mStat.SuccessCount++
+			}
 		}
 	}
 	// file_analysis: 同步更新按路径聚合的统计

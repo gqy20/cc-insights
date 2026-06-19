@@ -111,6 +111,13 @@ function initModelChart(modelData) {
 
     chart.setOption(option);
 
+    // 点击柱子直接下钻到该模型
+    chart.on('click', function(params) {
+        if (params && params.dataIndex != null && params.dataIndex >= 0 && modelData[params.dataIndex]) {
+            setFilter({ model: modelData[params.dataIndex].model }, { immediate: true });
+        }
+    });
+
     // 生成数据洞察
     const topModelShare = ((topModel.count / totalRequests) * 100).toFixed(1);
 

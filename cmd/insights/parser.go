@@ -621,6 +621,7 @@ func addEventSampleLocked(agg *ProjectAggregate, eventType, project, sessionID s
 func addAgentToolCallLocked(agg *ProjectAggregate, call pendingToolCall) {
 	agent := ensureAgentStat(agg, call.AgentID, call.IsSidechain)
 	agent.ToolCallCount++
+	ensureAgentModelStat(agg, call.AgentID, call.Model, call.IsSidechain).ToolCallCount++
 	if call.IsSidechain {
 		return
 	}
@@ -633,6 +634,13 @@ func addAgentToolResultLocked(agg *ProjectAggregate, call pendingToolCall, faile
 	}
 	if missing {
 		agent.MissingResultCount++
+	}
+	mStat := ensureAgentModelStat(agg, call.AgentID, call.Model, call.IsSidechain)
+	if failed {
+		mStat.ToolFailureCount++
+	}
+	if missing {
+		mStat.MissingResultCount++
 	}
 }
 
@@ -654,6 +662,30 @@ func ensureAgentStat(agg *ProjectAggregate, agentID string, isSidechain bool) *A
 		agg.AgentStats[agentID].IsSidechain = true
 	}
 	return agg.AgentStats[agentID]
+}
+
+func ensureAgentModelStat(agg *ProjectAggregate, agentID, model string, isSidechain bool) *AgentModelStat {
+	if agg.AgentModelStats == nil {
+		agg.AgentModelStats = make(map[string]*AgentModelStat)
+	}
+	if agentID == "" {
+		if isSidechain {
+			agentID = "sidechain:unknown"
+		} else {
+			agentID = "main"
+		}
+	}
+	if model == "" {
+		model = "unknown"
+	}
+	key := model + "\x00" + agentID
+	if agg.AgentModelStats[key] == nil {
+		agg.AgentModelStats[key] = &AgentModelStat{Model: model, AgentID: agentID, IsSidechain: isSidechain}
+	}
+	if isSidechain {
+		agg.AgentModelStats[key].IsSidechain = true
+	}
+	return agg.AgentModelStats[key]
 }
 
 func ensureToolStat(agg *ProjectAggregate, tool string) *ToolStatItem {

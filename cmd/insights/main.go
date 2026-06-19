@@ -218,7 +218,8 @@ func dashboardPageHandler(w http.ResponseWriter, r *http.Request) {
                     <div class="filter-row">
                         <input id="projectFilter" type="search" placeholder="项目过滤">
                         <input id="toolFilter" type="search" placeholder="工具过滤">
-                        <input id="modelFilter" type="search" placeholder="模型过滤">
+                        <input id="modelFilter" type="search" placeholder="模型过滤" list="modelCandidates">
+                        <datalist id="modelCandidates"></datalist>
                         <input id="reasonFilter" type="search" placeholder="失败原因过滤">
                         <button id="clearFiltersBtn" type="button">清空过滤</button>
                     </div>

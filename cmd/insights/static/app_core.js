@@ -402,6 +402,16 @@ async function loadTimelineIndex() {
     renderTimelineControl();
 }
 
+function populateModelCandidates(modelUsage) {
+    const dl = document.getElementById('modelCandidates');
+    if (!dl || !Array.isArray(modelUsage)) {
+        return;
+    }
+    dl.innerHTML = modelUsage
+        .map(item => item && item.model ? `<option value="${escapeHtml(item.model)}">` : '')
+        .join('');
+}
+
 async function loadData(params) {
     if (params) {
         const parsed = Object.fromEntries(new URLSearchParams(params).entries());
@@ -442,6 +452,10 @@ async function loadData(params) {
         updateLoadingProgress(loadingStages[loadingStages.length - 1]);
 
         dashboardState.data = { dashboard, overview, diagnostics, failures, commands, tokens, sessions, tools };
+        // 仅在未按模型筛选时刷新候选下拉，避免选中模型后候选只剩单一项
+        if (!dashboardState.filters.model) {
+            populateModelCandidates(dashboard.data.model_usage);
+        }
         updateStatsInfo(dashboard.data, overview.meta);
         renderSummary(dashboard.data, overview.data);
         renderDiagnostics(diagnostics.data);

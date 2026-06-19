@@ -60,8 +60,12 @@ func buildCoverage(filter AnalysisFilter) map[string]CoverageInfo {
 	}
 
 	mark("unavailable", []string{"workHoursChart"}, "当前筛选没有小时维度索引。")
-	if filter.Family != "" && filter.Project == "" && filter.Session == "" && filter.Tool == "" && filter.Model == "" && filter.Reason == "" && filter.Category == "" {
+	familyOnly := filter.Family != "" && filter.Project == "" && filter.Session == "" && filter.Tool == "" && filter.Model == "" && filter.Reason == "" && filter.Category == ""
+	onlyModel := filter.Model != "" && filter.Project == "" && filter.Session == "" && filter.Tool == "" && filter.Reason == "" && filter.Category == "" && filter.Family == ""
+	if familyOnly {
 		mark("exact", []string{"commands"}, "基于 Bash 命令族聚合过滤。")
+	} else if onlyModel {
+		mark("exact", []string{"commands"}, "基于 Bash 命令 + 模型交叉索引重建。")
 	} else {
 		mark("unavailable", []string{"commands"}, "当前筛选没有 Slash 命令交叉维度索引。")
 	}
@@ -80,11 +84,18 @@ func buildCoverage(filter AnalysisFilter) map[string]CoverageInfo {
 	if filter.Project != "" || filter.Session != "" {
 		mark("unavailable", []string{"toolModelFailureChart", "toolPerformanceChart"}, "项目或 session 筛选缺少工具维度精确索引。")
 	}
-	if filter.Tool != "" || filter.Reason != "" || filter.Category != "" || filter.Model != "" || filter.Family != "" {
+	if filter.Tool != "" || filter.Reason != "" || filter.Category != "" || filter.Family != "" {
 		mark("unavailable", []string{"sessionChart", "sessionAnalysisChart"}, "当前筛选不能精确还原 session 生命周期。")
+	} else if onlyModel {
+		mark("exact", []string{"sessionChart", "sessionAnalysisChart"}, "基于 session 内模型使用集合过滤（含用过该模型的混合会话）。")
+	}
+	if filter.Project != "" || filter.Tool != "" || filter.Reason != "" || filter.Category != "" || filter.Session != "" || filter.Family != "" {
+		mark("unavailable", []string{"fileAnalysisChart", "agentChart"}, "当前筛选缺少该模块的交叉维度索引。")
+	} else if onlyModel {
+		mark("exact", []string{"fileAnalysisChart", "agentChart"}, "基于模型交叉索引重建（文件操作/agent 调用按模型归因）。")
 	}
 	if filter.Project != "" || filter.Tool != "" || filter.Reason != "" || filter.Category != "" || filter.Session != "" || filter.Model != "" || filter.Family != "" {
-		mark("unavailable", []string{"fileAnalysisChart", "eventHookChart", "skillAnalysisChart", "agentChart", "taskPlanChart"}, "当前筛选缺少该模块的交叉维度索引。")
+		mark("unavailable", []string{"eventHookChart", "skillAnalysisChart", "taskPlanChart"}, "该维度无模型归因锚点，按模型筛选不可用。")
 	}
 	if filter.Family != "" {
 		mark("unavailable", []string{"failureReasonChart"}, "命令族筛选尚不能精确归因到失败原因。")
@@ -406,6 +417,92 @@ func filterModels(data *DashboardData, model string) {
 			return matchContains(model, item.Model)
 		})
 	}
+	// command: 按模型归因重建该模型的 Bash 命令主列表（不用跨模型总数）
+	if data.CommandAnalysis != nil {
+		data.CommandAnalysis.ByModel = filterSlice(data.CommandAnalysis.ByModel, func(item BashCommandModelStat) bool {
+			return matchContains(model, item.Model)
+		})
+		data.CommandAnalysis.BashCommands = rebuildBashCommandsFromModel(data.CommandAnalysis.ByModel)
+	}
+	// file 操作: 按模型归因重建该模型的文件操作主列表
+	if data.FileAnalysis != nil {
+		data.FileAnalysis.ByModel = filterSlice(data.FileAnalysis.ByModel, func(item FileOperationModelStat) bool {
+			return matchContains(model, item.Model)
+		})
+		if data.CommandAnalysis != nil {
+			data.CommandAnalysis.FileOperations = rebuildFileOperationsFromModel(data.FileAnalysis.ByModel)
+		}
+	}
+	// agent: 按模型归因过滤 agent 统计
+	if data.AgentAnalysis != nil {
+		data.AgentAnalysis.ByModel = filterSlice(data.AgentAnalysis.ByModel, func(item AgentModelStat) bool {
+			return matchContains(model, item.Model)
+		})
+	}
+}
+
+// rebuildBashCommandsFromModel 把按模型归因的命令统计还原为 BashCommandStat 列表。
+func rebuildBashCommandsFromModel(byModel []BashCommandModelStat) []BashCommandStat {
+	out := make([]BashCommandStat, 0, len(byModel))
+	for _, m := range byModel {
+		out = append(out, BashCommandStat{
+			CommandName:        m.CommandName,
+			CallCount:          m.CallCount,
+			SuccessCount:       m.SuccessCount,
+			FailureCount:       m.FailureCount,
+			MissingResultCount: m.MissingResultCount,
+			FailureRate:        m.FailureRate,
+		})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].CallCount == out[j].CallCount {
+			return out[i].CommandName < out[j].CommandName
+		}
+		return out[i].CallCount > out[j].CallCount
+	})
+	if len(out) > 50 {
+		out = out[:50]
+	}
+	return out
+}
+
+// rebuildFileOperationsFromModel 把按模型归因的文件操作统计还原为 FileOperationStat 列表。
+func rebuildFileOperationsFromModel(byModel []FileOperationModelStat) []FileOperationStat {
+	out := make([]FileOperationStat, 0, len(byModel))
+	for _, m := range byModel {
+		out = append(out, FileOperationStat{
+			Operation:          m.Operation,
+			Path:               m.Path,
+			CallCount:          m.CallCount,
+			SuccessCount:       m.SuccessCount,
+			FailureCount:       m.FailureCount,
+			MissingResultCount: m.MissingResultCount,
+			FailureRate:        m.FailureRate,
+		})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].FailureCount == out[j].FailureCount {
+			if out[i].CallCount == out[j].CallCount {
+				return out[i].Path < out[j].Path
+			}
+			return out[i].CallCount > out[j].CallCount
+		}
+		return out[i].FailureCount > out[j].FailureCount
+	})
+	if len(out) > 100 {
+		out = out[:100]
+	}
+	return out
+}
+
+// sessionUsedModel 判断该 session 是否使用过指定模型（支持部分匹配）。
+func sessionUsedModel(stat SessionAnalysisItem, model string) bool {
+	for m := range stat.ModelsUsed {
+		if matchContains(model, m) {
+			return true
+		}
+	}
+	return false
 }
 
 func filterTools(data *DashboardData, tool string) {
@@ -472,6 +569,17 @@ func filterSessions(data *DashboardData, filter AnalysisFilter) {
 	data.SessionAnalysis.Sessions = filterSessionItems(data.SessionAnalysis.Sessions, sf)
 	data.SessionAnalysis.TopFailures = filterSessionItems(data.SessionAnalysis.TopFailures, sf)
 	data.SessionAnalysis.LongRunning = filterSessionItems(data.SessionAnalysis.LongRunning, sf)
+	if filter.Model != "" {
+		data.SessionAnalysis.Sessions = filterSlice(data.SessionAnalysis.Sessions, func(item SessionAnalysisItem) bool {
+			return sessionUsedModel(item, filter.Model)
+		})
+		data.SessionAnalysis.TopFailures = filterSlice(data.SessionAnalysis.TopFailures, func(item SessionAnalysisItem) bool {
+			return sessionUsedModel(item, filter.Model)
+		})
+		data.SessionAnalysis.LongRunning = filterSlice(data.SessionAnalysis.LongRunning, func(item SessionAnalysisItem) bool {
+			return sessionUsedModel(item, filter.Model)
+		})
+	}
 	if filter.Session != "" {
 		data.SessionAnalysis.QueueOperations = nil
 	}
@@ -589,14 +697,18 @@ func applyPrecisionGuard(data *DashboardData, filter AnalysisFilter) {
 	if filter.Project != "" && data.CostAnalysis != nil {
 		data.CostAnalysis.ByModel = nil
 	}
-	if filter.Tool != "" || filter.Reason != "" || filter.Category != "" || filter.Model != "" || filter.Family != "" {
+	if filter.Tool != "" || filter.Reason != "" || filter.Category != "" || filter.Family != "" {
 		data.SessionAnalysis = nil
 		data.Sessions = nil
 	}
-	if filter.Project != "" || filter.Tool != "" || filter.Reason != "" || filter.Category != "" || filter.Session != "" || filter.Model != "" || filter.Family != "" {
+	// file/agent 已有模型交叉索引，仅 model 筛选时保留（由 filterModels 重建主列表）
+	if filter.Project != "" || filter.Tool != "" || filter.Reason != "" || filter.Category != "" || filter.Session != "" || filter.Family != "" {
 		data.FileAnalysis = nil
-		data.EventAnalysis = nil
 		data.AgentAnalysis = nil
+	}
+	// event/skill/taskplan 无模型归因锚点，任何维度筛选都清空
+	if filter.Project != "" || filter.Tool != "" || filter.Reason != "" || filter.Category != "" || filter.Session != "" || filter.Model != "" || filter.Family != "" {
+		data.EventAnalysis = nil
 		data.SkillAnalysis = nil
 		data.TaskPlanAnalysis = nil
 		normalizeFailureAnalysis(data, filter)

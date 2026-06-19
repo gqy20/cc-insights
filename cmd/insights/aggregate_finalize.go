@@ -325,6 +325,27 @@ func (agg *ProjectAggregate) finalizeAgentAnalysis() {
 		}
 		return analysis.Agents[i].ToolFailureCount > analysis.Agents[j].ToolFailureCount
 	})
+
+	analysis.ByModel = make([]AgentModelStat, 0, len(agg.AgentModelStats))
+	for _, stat := range agg.AgentModelStats {
+		statCopy := *stat
+		if statCopy.ToolCallCount > 0 {
+			statCopy.FailureRate = float64(statCopy.ToolFailureCount) / float64(statCopy.ToolCallCount) * 100
+		}
+		analysis.ByModel = append(analysis.ByModel, statCopy)
+	}
+	sort.Slice(analysis.ByModel, func(i, j int) bool {
+		if analysis.ByModel[i].ToolFailureCount == analysis.ByModel[j].ToolFailureCount {
+			if analysis.ByModel[i].ToolCallCount == analysis.ByModel[j].ToolCallCount {
+				if analysis.ByModel[i].Model == analysis.ByModel[j].Model {
+					return analysis.ByModel[i].AgentID < analysis.ByModel[j].AgentID
+				}
+				return analysis.ByModel[i].Model < analysis.ByModel[j].Model
+			}
+			return analysis.ByModel[i].ToolCallCount > analysis.ByModel[j].ToolCallCount
+		}
+		return analysis.ByModel[i].ToolFailureCount > analysis.ByModel[j].ToolFailureCount
+	})
 	agg.AgentAnalysis = analysis
 }
 
@@ -414,6 +435,30 @@ func (agg *ProjectAggregate) finalizeCommandAnalysis() {
 	}
 	if len(analysis.FileOperations) > 100 {
 		analysis.FileOperations = analysis.FileOperations[:100]
+	}
+
+	analysis.ByModel = make([]BashCommandModelStat, 0, len(agg.BashCommandModelStats))
+	for _, stat := range agg.BashCommandModelStats {
+		statCopy := *stat
+		if statCopy.CallCount > 0 {
+			statCopy.FailureRate = float64(statCopy.FailureCount) / float64(statCopy.CallCount) * 100
+		}
+		analysis.ByModel = append(analysis.ByModel, statCopy)
+	}
+	sort.Slice(analysis.ByModel, func(i, j int) bool {
+		if analysis.ByModel[i].FailureCount == analysis.ByModel[j].FailureCount {
+			if analysis.ByModel[i].CallCount == analysis.ByModel[j].CallCount {
+				if analysis.ByModel[i].Model == analysis.ByModel[j].Model {
+					return analysis.ByModel[i].CommandName < analysis.ByModel[j].CommandName
+				}
+				return analysis.ByModel[i].Model < analysis.ByModel[j].Model
+			}
+			return analysis.ByModel[i].CallCount > analysis.ByModel[j].CallCount
+		}
+		return analysis.ByModel[i].FailureCount > analysis.ByModel[j].FailureCount
+	})
+	if len(analysis.ByModel) > 200 {
+		analysis.ByModel = analysis.ByModel[:200]
 	}
 	agg.CommandAnalysis = analysis
 }
@@ -584,6 +629,29 @@ func (agg *ProjectAggregate) finalizeFileAnalysis() {
 		EditedFileCount:        analysis.Totals.EditedFileCount,
 	}
 
+	analysis.ByModel = make([]FileOperationModelStat, 0, len(agg.FileOperationModelStats))
+	for _, stat := range agg.FileOperationModelStats {
+		statCopy := *stat
+		if statCopy.CallCount > 0 {
+			statCopy.FailureRate = float64(statCopy.FailureCount) / float64(statCopy.CallCount) * 100
+		}
+		analysis.ByModel = append(analysis.ByModel, statCopy)
+	}
+	sort.Slice(analysis.ByModel, func(i, j int) bool {
+		if analysis.ByModel[i].FailureCount == analysis.ByModel[j].FailureCount {
+			if analysis.ByModel[i].CallCount == analysis.ByModel[j].CallCount {
+				if analysis.ByModel[i].Model == analysis.ByModel[j].Model {
+					return analysis.ByModel[i].Path < analysis.ByModel[j].Path
+				}
+				return analysis.ByModel[i].Model < analysis.ByModel[j].Model
+			}
+			return analysis.ByModel[i].CallCount > analysis.ByModel[j].CallCount
+		}
+		return analysis.ByModel[i].FailureCount > analysis.ByModel[j].FailureCount
+	})
+	if len(analysis.ByModel) > 200 {
+		analysis.ByModel = analysis.ByModel[:200]
+	}
 	agg.FileAnalysis = analysis
 }
 

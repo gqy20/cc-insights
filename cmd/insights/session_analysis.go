@@ -84,6 +84,12 @@ func mergeSessionStat(dst, src *SessionAnalysisItem) {
 	if src.Outcome != "" && src.Outcome != "unknown" {
 		dst.Outcome = src.Outcome
 	}
+	for model, count := range src.ModelsUsed {
+		if dst.ModelsUsed == nil {
+			dst.ModelsUsed = make(map[string]int)
+		}
+		dst.ModelsUsed[model] += count
+	}
 }
 
 func recordSessionRecordLocked(agg *ProjectAggregate, record ProjectRecord, timestamp time.Time, projectName string) {
@@ -244,6 +250,10 @@ func addSessionToolCallLocked(agg *ProjectAggregate, call pendingToolCall) {
 		return
 	}
 	stat.ToolCallCount++
+	if stat.ModelsUsed == nil {
+		stat.ModelsUsed = make(map[string]int)
+	}
+	stat.ModelsUsed[call.Model]++
 }
 
 func addSessionToolResultLocked(agg *ProjectAggregate, call pendingToolCall, failed bool, missing bool) {
@@ -360,6 +370,22 @@ func finalizeSessionItem(stat *SessionAnalysisItem) {
 		stat.Title = previewString(stat.LastPromptPreview, 80)
 		stat.TitleSource = "last-prompt"
 	}
+	if len(stat.ModelsUsed) > 0 {
+		stat.PrimaryModel = primarySessionModel(stat.ModelsUsed)
+	}
+}
+
+// primarySessionModel 返回 session 内使用次数最多的模型（平手按模型名排序）。
+func primarySessionModel(modelsUsed map[string]int) string {
+	best := ""
+	bestCount := -1
+	for model, count := range modelsUsed {
+		if count > bestCount || (count == bestCount && model < best) {
+			best = model
+			bestCount = count
+		}
+	}
+	return best
 }
 
 func limitSessionAnalysis(analysis *SessionAnalysisData) {
