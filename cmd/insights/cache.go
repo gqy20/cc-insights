@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-const CacheVersion = "3.6"
+const CacheVersion = "3.7"
 
 // CacheFile 缓存文件结构
 type CacheFile struct {
@@ -126,6 +126,10 @@ type ProjectFileAggregate struct {
 	ReminderAgg             *ReminderAgg                               `json:"reminder_agg,omitempty"`
 	ToolPerfStats           map[string]ToolPerfAgg                     `json:"tool_perf_stats,omitempty"`
 	SlowestCalls            []ToolSlowCallItem                         `json:"slowest_calls,omitempty"`
+	TurnCount               int64                                      `json:"turn_count,omitempty"`
+	TurnTotalDurationMs     int64                                      `json:"turn_total_duration_ms,omitempty"`
+	TurnMaxDurationMs       int64                                      `json:"turn_max_duration_ms,omitempty"`
+	SlowTurns               []TurnSlowItem                             `json:"slow_turns,omitempty"`
 }
 
 // DayAggregate 每日聚合数据
@@ -403,6 +407,7 @@ func cloneToolPerformance(source *ToolPerformanceData) *ToolPerformanceData {
 	}
 	copyVal.SlowestCalls = append([]ToolSlowCallItem(nil), source.SlowestCalls...)
 	copyVal.QualityDistribution = append([]QualityBucketItem(nil), source.QualityDistribution...)
+	copyVal.SlowTurns = append([]TurnSlowItem(nil), source.SlowTurns...)
 	return &copyVal
 }
 

@@ -71,6 +71,7 @@ func (agg *ProjectAggregate) finalize() {
 	agg.finalizeFileAnalysis()
 	agg.finalizeTaskPlanAnalysis()
 	agg.finalizeToolPerformance()
+	agg.finalizeTurnDuration()
 
 	// 8. 生成工作时段统计
 	var workHoursCount, offHoursCount int

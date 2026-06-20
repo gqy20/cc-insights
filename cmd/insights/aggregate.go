@@ -607,6 +607,8 @@ func mergeProjectAggregate(dst, src *ProjectAggregate) {
 			sortSlowCallsDesc(dst.SlowestCalls)
 		}
 	}
+	// Merge turn duration stats (keep global top-N slow turns)
+	mergeTurnStats(dst, src)
 }
 
 func aggregateToProjectFileAggregate(src *ProjectAggregate) ProjectFileAggregate {
@@ -672,6 +674,10 @@ func aggregateToProjectFileAggregateWithDaily(src *ProjectAggregate, includeDail
 		ReminderAgg:             serializeReminderAgg(src.ReminderAgg),
 		ToolPerfStats:           make(map[string]ToolPerfAgg, len(src.ToolPerfStats)),
 		SlowestCalls:            append([]ToolSlowCallItem(nil), src.SlowestCalls...),
+		TurnCount:               src.TurnCount,
+		TurnTotalDurationMs:     src.TurnTotalDurationMs,
+		TurnMaxDurationMs:       src.TurnMaxDurationMs,
+		SlowTurns:               append([]TurnSlowItem(nil), src.SlowTurns...),
 	}
 	if !includeDaily {
 		out.DailyRuntime = nil
@@ -1005,6 +1011,11 @@ func projectFileAggregateToAggregate(src ProjectFileAggregate) *ProjectAggregate
 		out.ToolPerfStats[key] = &statCopy
 	}
 	out.SlowestCalls = append([]ToolSlowCallItem(nil), src.SlowestCalls...)
+	// turn duration: restore scalars + slow turns Top-N
+	out.TurnCount = src.TurnCount
+	out.TurnTotalDurationMs = src.TurnTotalDurationMs
+	out.TurnMaxDurationMs = src.TurnMaxDurationMs
+	out.SlowTurns = append([]TurnSlowItem(nil), src.SlowTurns...)
 	return out
 }
 

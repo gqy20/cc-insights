@@ -120,6 +120,7 @@ func parseProjectFileAggregate(filePath string, tf TimeFilter, agg *ProjectAggre
 
 	pendingTools := make(map[string]pendingToolCall)
 	sessionActiveSkills := make(map[string][]string)
+	lastMsgTs := make(map[string]time.Time) // sessionID -> 上一条带 timestamp 的 message 行时间，用于算单请求 round-trip
 	decoder := json.NewDecoder(f)
 	for {
 		var record ProjectRecord
@@ -157,8 +158,25 @@ func parseProjectFileAggregate(filePath string, tf TimeFilter, agg *ProjectAggre
 			}
 		}
 
+		// system/turn_duration：官方一整轮耗时，按 project/daily/session 四层累积（session 维度
+		// 的 SystemDurationMs 已由 recordSessionSystemEvent 维护，这里补充其余维度 + 慢回合 Top-N）。
+		if record.Type == "system" && record.Subtype == "turn_duration" && hasTimestamp {
+			dur := int64(record.DurationMs)
+			msgCount := record.MessageCount
+			sid := record.SessionID
+			dateKey := timestamp.Format("2006-01-02")
+			recordTurnDurationLocked(agg, dur, msgCount, sid, projectName, timestamp)
+			recordTurnDurationLocked(ensureDailyRuntimeAggregate(agg, dateKey), dur, msgCount, sid, projectName, timestamp)
+			recordTurnDurationLocked(ensureDailyProjectRuntimeAggregate(agg, dateKey, projectName), dur, msgCount, sid, projectName, timestamp)
+			recordTurnDurationLocked(ensureDailySessionRuntimeAggregate(agg, dateKey, sid), dur, msgCount, sid, projectName, timestamp)
+			continue
+		}
+
 		if record.Type == "user" {
 			parseToolResults(record, timestamp, projectName, pendingTools, agg)
+			if hasTimestamp && record.SessionID != "" {
+				lastMsgTs[record.SessionID] = timestamp
+			}
 			continue
 		}
 
@@ -228,13 +246,18 @@ func parseProjectFileAggregate(filePath string, tf TimeFilter, agg *ProjectAggre
 				agg.DailyModelTokens[dateKey] = make(map[string]int)
 			}
 			agg.DailyModelTokens[dateKey][msg.Model] += tokens
-			recordCostUsageLocked(agg, msg, record, projectName)
-			recordCostUsageLocked(dailyRuntimeAgg, msg, record, projectName)
-			recordCostUsageLocked(dailyProjectRuntimeAgg, msg, record, projectName)
-			recordCostUsageLocked(dailySessionRuntimeAgg, msg, record, projectName)
+			roundTripMs := requestRoundTripMs(lastMsgTs, record.SessionID, timestamp, hasTimestamp)
+			recordCostUsageLocked(agg, msg, record, projectName, roundTripMs)
+			recordCostUsageLocked(dailyRuntimeAgg, msg, record, projectName, roundTripMs)
+			recordCostUsageLocked(dailyProjectRuntimeAgg, msg, record, projectName, roundTripMs)
+			recordCostUsageLocked(dailySessionRuntimeAgg, msg, record, projectName, roundTripMs)
 		}
 
 		// 6. 工具调用统计
+		// 更新 lastMsgTs：作为同一 session 下一条 assistant 的 round-trip 起点（在 cost 统计之后更新）。
+		if hasTimestamp && record.SessionID != "" {
+			lastMsgTs[record.SessionID] = timestamp
+		}
 		for _, content := range msg.Content {
 			if content.Type != "tool_use" || content.ID == "" || content.Name == "" {
 				continue
@@ -322,6 +345,23 @@ func parseProjectFileAggregate(filePath string, tf TimeFilter, agg *ProjectAggre
 			}
 		}
 	}
+}
+
+// requestRoundTripMs 计算本次 assistant 响应与上一条 message 行的时间差(ms)。
+// 返回 0 表示无法测量（无前驱、倒序或间隔异常被排除）。间隔 >= 30min 视为会话挂起/中断，不计入。
+func requestRoundTripMs(lastMsgTs map[string]time.Time, sessionID string, ts time.Time, hasTs bool) int64 {
+	if !hasTs || sessionID == "" {
+		return 0
+	}
+	prev, ok := lastMsgTs[sessionID]
+	if !ok {
+		return 0
+	}
+	d := ts.Sub(prev).Milliseconds()
+	if d <= 0 || d >= 30*60*1000 {
+		return 0
+	}
+	return d
 }
 
 func parseProjectRecordTimestamp(value string) (time.Time, bool) {

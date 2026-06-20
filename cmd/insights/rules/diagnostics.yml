@@ -70,3 +70,13 @@ rules:
     threshold: Plan 进入 >= 10 且退出 = 0
     source: task_plan_analysis.plan_lifecycle
     rationale: Plan 生命周期不完整会影响任务阶段判断。
+  - id: performance.turn.slow
+    metric: turn_avg_duration
+    threshold: 平均回合 >= 60s 或单回合 >= 10min
+    source: tool_performance.avg_turn_duration_ms
+    rationale: 回合耗时含工具执行，偏长通常意味着工具/hooks 慢或任务拆分过细；结合吞吐可区分工具与模型瓶颈。
+  - id_prefix: performance.throughput.low.
+    metric: model_output_tokens_per_sec
+    threshold: 模型请求 >= 10 且吞吐 < 10 tok/s
+    source: cost_analysis.by_model.output_tokens_per_sec
+    rationale: 吞吐偏低可能与大上下文 cache miss、限流或模型档位相关，影响整体响应速度。

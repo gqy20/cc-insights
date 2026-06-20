@@ -545,6 +545,11 @@ type TokenUsageBreakdown struct {
 	CacheReadCostCNY         float64 `json:"cache_read_cost_cny"`
 	CacheCreationCostCNY     float64 `json:"cache_creation_cost_cny"`
 	CostCNY                  float64 `json:"cost_cny"`
+	// 单请求 round-trip（assistant 行 timestamp 与上一条 message 行 timestamp 之差）
+	// 汇总，反映端到端响应速度。不含首 token 延迟粒度。
+	TotalRoundTripMs   int64   `json:"total_round_trip_ms,omitempty"`
+	AvgRoundTripMs     float64 `json:"avg_round_trip_ms,omitempty"`
+	OutputTokensPerSec float64 `json:"output_tokens_per_sec,omitempty"`
 }
 
 // CostModelStat 按模型统计 token
@@ -564,36 +569,43 @@ type CostModelStat struct {
 	CacheReadCostCNY      float64 `json:"cache_read_cost_cny"`
 	CacheCreationCostCNY  float64 `json:"cache_creation_cost_cny"`
 	CostCNY               float64 `json:"cost_cny"`
+	// 单请求 round-trip 累计耗时（ms），用于派生 AvgRoundTripMs / OutputTokensPerSec。
+	TotalRoundTripMs   int64   `json:"total_round_trip_ms,omitempty"`
+	AvgRoundTripMs     float64 `json:"avg_round_trip_ms,omitempty"`
+	OutputTokensPerSec float64 `json:"output_tokens_per_sec,omitempty"`
 }
 
 // CostProjectStat 按项目统计 token
 type CostProjectStat struct {
-	Project      string `json:"project"`
-	RequestCount int    `json:"request_count"`
-	TotalTokens  int    `json:"total_tokens"`
-	InputTokens  int    `json:"input_tokens"`
-	OutputTokens int    `json:"output_tokens"`
+	Project          string `json:"project"`
+	RequestCount     int    `json:"request_count"`
+	TotalTokens      int    `json:"total_tokens"`
+	InputTokens      int    `json:"input_tokens"`
+	OutputTokens     int    `json:"output_tokens"`
+	TotalRoundTripMs int64  `json:"total_round_trip_ms,omitempty"`
 }
 
 // CostSessionStat 按会话统计 token
 type CostSessionStat struct {
-	SessionID    string `json:"session_id"`
-	Project      string `json:"project"`
-	Model        string `json:"model,omitempty"`
-	RequestCount int    `json:"request_count"`
-	TotalTokens  int    `json:"total_tokens"`
-	InputTokens  int    `json:"input_tokens"`
-	OutputTokens int    `json:"output_tokens"`
+	SessionID        string `json:"session_id"`
+	Project          string `json:"project"`
+	Model            string `json:"model,omitempty"`
+	RequestCount     int    `json:"request_count"`
+	TotalTokens      int    `json:"total_tokens"`
+	InputTokens      int    `json:"input_tokens"`
+	OutputTokens     int    `json:"output_tokens"`
+	TotalRoundTripMs int64  `json:"total_round_trip_ms,omitempty"`
 }
 
 // CostAgentStat 按 agent/subagent 统计 token
 type CostAgentStat struct {
-	AgentID      string `json:"agent_id"`
-	IsSidechain  bool   `json:"is_sidechain"`
-	RequestCount int    `json:"request_count"`
-	TotalTokens  int    `json:"total_tokens"`
-	InputTokens  int    `json:"input_tokens"`
-	OutputTokens int    `json:"output_tokens"`
+	AgentID          string `json:"agent_id"`
+	IsSidechain      bool   `json:"is_sidechain"`
+	RequestCount     int    `json:"request_count"`
+	TotalTokens      int    `json:"total_tokens"`
+	InputTokens      int    `json:"input_tokens"`
+	OutputTokens     int    `json:"output_tokens"`
+	TotalRoundTripMs int64  `json:"total_round_trip_ms,omitempty"`
 }
 
 // CostAnalysisData token/成本分析结果
@@ -899,6 +911,12 @@ type ToolPerformanceData struct {
 	CategoryGroups      map[string][]ToolPerfCategoryItem `json:"category_groups,omitempty"` // 按 BaseTool 分组（前端可选展示）
 	SlowestCalls        []ToolSlowCallItem                `json:"slowest_calls"`
 	QualityDistribution []QualityBucketItem               `json:"quality_distribution"`
+	// 回合(turn)耗时：来自 system/turn_duration 行，代表用户发起一轮到 AI 回复完成的总时长（含工具执行）。
+	// 与单请求吞吐(OutputTokensPerSec)互补：turn 长 + 吞吐高 → 慢在工具；turn 正常 + 吞吐低 → 慢在模型。
+	TurnCount         int64          `json:"turn_count"`
+	AvgTurnDurationMs float64        `json:"avg_turn_duration_ms"`
+	MaxTurnDurationMs int64          `json:"max_turn_duration_ms"`
+	SlowTurns         []TurnSlowItem `json:"slow_turns,omitempty"`
 }
 
 // ToolPerfCategoryItem 单个细分类别的工具性能统计
@@ -935,6 +953,16 @@ type ToolSlowCallItem struct {
 	ResultSize  int    `json:"result_size"`
 	Timestamp   string `json:"timestamp"`
 	SampleInput string `json:"sample_input,omitempty"`
+}
+
+// TurnSlowItem 最慢的单次回合(turn)记录，来自 system/turn_duration 行
+type TurnSlowItem struct {
+	SessionID    string `json:"session_id,omitempty"`
+	Project      string `json:"project,omitempty"`
+	Model        string `json:"model,omitempty"`
+	DurationMs   int64  `json:"duration_ms"`
+	MessageCount int    `json:"message_count,omitempty"`
+	Timestamp    string `json:"timestamp"`
 }
 
 // QualityBucketItem 结果质量分桶
@@ -1054,11 +1082,17 @@ type ProjectAggregate struct {
 	TaskAgg          *TaskAgg              `json:"-"`                  // tasks/ 目录扫描结果
 	TaskPlanAnalysis *TaskPlanAnalysisData `json:"task_plan_analysis"` // Task/Plan 分析（输出格式）
 	// --- tool_performance (Milestone 5) ---
-	ToolPerfStats   map[string]*ToolPerfAgg `json:"-"`                // M5: 工具性能中间聚合
-	SlowestCalls    []ToolSlowCallItem      `json:"-"`                // M5: 全局最慢 Top-N 调用
-	ToolPerformance *ToolPerformanceData    `json:"tool_performance"` // M5: 输出格式
-	WorkHoursStats  *WorkHoursStats         `json:"work_hours"`       // 工作时段统计
-	mu              sync.RWMutex            `json:"-"`                // 保护并发写入
+	ToolPerfStats map[string]*ToolPerfAgg `json:"-"` // M5: 工具性能中间聚合
+	SlowestCalls  []ToolSlowCallItem      `json:"-"` // M5: 全局最慢 Top-N 调用
+	// 回合(turn)耗时中间聚合：来自 system/turn_duration 行。session 级已累加 SystemDurationMs，
+	// 这里补充 project/daily 维度 + 慢回合 Top-N，供 finalize 输出。
+	TurnCount           int64                `json:"-"`                // 回合计数
+	TurnTotalDurationMs int64                `json:"-"`                // 回合总耗时(ms)
+	TurnMaxDurationMs   int64                `json:"-"`                // 回合最大耗时(ms)
+	SlowTurns           []TurnSlowItem       `json:"-"`                // 最慢回合 Top-N
+	ToolPerformance     *ToolPerformanceData `json:"tool_performance"` // M5: 输出格式
+	WorkHoursStats      *WorkHoursStats      `json:"work_hours"`       // 工作时段统计
+	mu                  sync.RWMutex         `json:"-"`                // 保护并发写入
 }
 
 // ProjectRecord projects/*.jsonl 记录

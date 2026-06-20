@@ -2,7 +2,9 @@ package main
 
 import "sort"
 
-func recordCostUsageLocked(agg *ProjectAggregate, msg AssistantMessage, record ProjectRecord, projectName string) {
+// roundTripMs 是本次 assistant 响应与上一条 message 行的时间差（ms）。
+// <=0 表示无法测量（该 session 首请求、或间隔异常被排除），此时不累加耗时。
+func recordCostUsageLocked(agg *ProjectAggregate, msg AssistantMessage, record ProjectRecord, projectName string, roundTripMs int64) {
 	if msg.Model == "" {
 		return
 	}
@@ -21,12 +23,18 @@ func recordCostUsageLocked(agg *ProjectAggregate, msg AssistantMessage, record P
 	modelStat.CacheCreationTokens += msg.Usage.CacheCreationInputTokens
 	modelStat.ServerToolUseRequests += serverToolUseRequests
 	modelStat.TotalTokens += totalTokens
+	if roundTripMs > 0 {
+		modelStat.TotalRoundTripMs += roundTripMs
+	}
 
 	projectStat := ensureCostProjectStat(agg, projectName)
 	projectStat.RequestCount++
 	projectStat.InputTokens += msg.Usage.InputTokens
 	projectStat.OutputTokens += msg.Usage.OutputTokens
 	projectStat.TotalTokens += totalTokens
+	if roundTripMs > 0 {
+		projectStat.TotalRoundTripMs += roundTripMs
+	}
 
 	if record.SessionID != "" {
 		sessionStat := ensureCostSessionStat(agg, record.SessionID, projectName)
@@ -34,6 +42,9 @@ func recordCostUsageLocked(agg *ProjectAggregate, msg AssistantMessage, record P
 		sessionStat.InputTokens += msg.Usage.InputTokens
 		sessionStat.OutputTokens += msg.Usage.OutputTokens
 		sessionStat.TotalTokens += totalTokens
+		if roundTripMs > 0 {
+			sessionStat.TotalRoundTripMs += roundTripMs
+		}
 		if sessionStat.Model == "" {
 			sessionStat.Model = msg.Model
 		} else if sessionStat.Model != msg.Model {
@@ -47,6 +58,9 @@ func recordCostUsageLocked(agg *ProjectAggregate, msg AssistantMessage, record P
 	agentStat.InputTokens += msg.Usage.InputTokens
 	agentStat.OutputTokens += msg.Usage.OutputTokens
 	agentStat.TotalTokens += totalTokens
+	if roundTripMs > 0 {
+		agentStat.TotalRoundTripMs += roundTripMs
+	}
 }
 
 func ensureCostModelStat(agg *ProjectAggregate, model string) *CostModelStat {
@@ -119,6 +133,7 @@ func mergeCostModelStat(dst *CostModelStat, src *CostModelStat) {
 	dst.CacheCreationTokens += src.CacheCreationTokens
 	dst.ServerToolUseRequests += src.ServerToolUseRequests
 	dst.TotalTokens += src.TotalTokens
+	dst.TotalRoundTripMs += src.TotalRoundTripMs
 }
 
 func mergeCostProjectStat(dst *CostProjectStat, src *CostProjectStat) {
@@ -126,6 +141,7 @@ func mergeCostProjectStat(dst *CostProjectStat, src *CostProjectStat) {
 	dst.InputTokens += src.InputTokens
 	dst.OutputTokens += src.OutputTokens
 	dst.TotalTokens += src.TotalTokens
+	dst.TotalRoundTripMs += src.TotalRoundTripMs
 }
 
 func mergeCostSessionStat(dst *CostSessionStat, src *CostSessionStat) {
@@ -133,6 +149,7 @@ func mergeCostSessionStat(dst *CostSessionStat, src *CostSessionStat) {
 	dst.InputTokens += src.InputTokens
 	dst.OutputTokens += src.OutputTokens
 	dst.TotalTokens += src.TotalTokens
+	dst.TotalRoundTripMs += src.TotalRoundTripMs
 }
 
 func mergeCostAgentStat(dst *CostAgentStat, src *CostAgentStat) {
@@ -140,6 +157,7 @@ func mergeCostAgentStat(dst *CostAgentStat, src *CostAgentStat) {
 	dst.InputTokens += src.InputTokens
 	dst.OutputTokens += src.OutputTokens
 	dst.TotalTokens += src.TotalTokens
+	dst.TotalRoundTripMs += src.TotalRoundTripMs
 }
 
 func (agg *ProjectAggregate) finalizeCostAnalysis() {
@@ -158,6 +176,10 @@ func (agg *ProjectAggregate) finalizeCostAnalysis() {
 		statCopy := *stat
 		if statCopy.RequestCount > 0 {
 			statCopy.AvgOutputTokens = float64(statCopy.OutputTokens) / float64(statCopy.RequestCount)
+			if statCopy.TotalRoundTripMs > 0 {
+				statCopy.AvgRoundTripMs = float64(statCopy.TotalRoundTripMs) / float64(statCopy.RequestCount)
+				statCopy.OutputTokensPerSec = float64(statCopy.OutputTokens) / (float64(statCopy.TotalRoundTripMs) / 1000.0)
+			}
 		}
 		inputTotal := statCopy.InputTokens + statCopy.CacheReadTokens + statCopy.CacheCreationTokens
 		if inputTotal > 0 {
@@ -182,9 +204,14 @@ func (agg *ProjectAggregate) finalizeCostAnalysis() {
 		analysis.Totals.ServerToolUseRequests += statCopy.ServerToolUseRequests
 		analysis.Totals.TotalTokens += statCopy.TotalTokens
 		analysis.Totals.RequestCount += statCopy.RequestCount
+		analysis.Totals.TotalRoundTripMs += statCopy.TotalRoundTripMs
 		analysis.ByModel = append(analysis.ByModel, statCopy)
 	}
 	analysis.Totals.BillableInputTokens = analysis.Totals.InputTokens + analysis.Totals.CacheCreationInputTokens
+	if analysis.Totals.RequestCount > 0 && analysis.Totals.TotalRoundTripMs > 0 {
+		analysis.Totals.AvgRoundTripMs = float64(analysis.Totals.TotalRoundTripMs) / float64(analysis.Totals.RequestCount)
+		analysis.Totals.OutputTokensPerSec = float64(analysis.Totals.OutputTokens) / (float64(analysis.Totals.TotalRoundTripMs) / 1000.0)
+	}
 
 	sort.Slice(analysis.ByModel, func(i, j int) bool {
 		if analysis.ByModel[i].TotalTokens == analysis.ByModel[j].TotalTokens {

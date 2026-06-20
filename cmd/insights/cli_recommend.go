@@ -150,6 +150,10 @@ func diagnosticTriggerValue(finding diagnosticFinding) string {
 		return evidenceValue(finding, "耗时")
 	case finding.ID == "performance.cache.build_cost":
 		return evidenceValue(finding, "构建耗时")
+	case finding.ID == "performance.turn.slow":
+		return evidenceValue(finding, "平均回合耗时")
+	case strings.HasPrefix(finding.ID, "performance.throughput.low."):
+		return evidenceValue(finding, "吞吐")
 	case finding.ID == "context.project.token_concentration":
 		return evidenceValue(finding, "占比")
 	case finding.ID == "context.session.large_token":
@@ -930,6 +934,68 @@ func buildPerformanceDiagnostics(data *DashboardData) []diagnosticFinding {
 			Confidence: "medium",
 		})
 	}
+	// 单轮请求(turn)耗时：来自 system/turn_duration，含工具执行。与吞吐互补区分瓶颈位置。
+	if data.ToolPerformance != nil && data.ToolPerformance.TurnCount > 0 {
+		tp := data.ToolPerformance
+		if tp.AvgTurnDurationMs >= 60_000 || tp.MaxTurnDurationMs >= 10*60*1000 {
+			evidence := []diagnosticEvidence{
+				{Label: "回合数", Value: formatInt(int(tp.TurnCount))},
+				{Label: "平均回合耗时", Value: formatDurationMs(int64(tp.AvgTurnDurationMs))},
+				{Label: "最长回合", Value: formatDurationMs(tp.MaxTurnDurationMs)},
+			}
+			if len(tp.SlowTurns) > 0 {
+				evidence = append(evidence, diagnosticEvidence{Label: "最慢回合", Value: formatDurationMs(tp.SlowTurns[0].DurationMs)})
+			}
+			findings = append(findings, diagnosticFinding{
+				ID:             "performance.turn.slow",
+				Category:       "performance",
+				Severity:       severityFromDuration(tp.AvgTurnDurationMs),
+				Title:          "单轮请求耗时偏长",
+				Summary:        fmt.Sprintf("平均一轮耗时 %s，最长 %s，共 %s 轮。", formatDurationMs(int64(tp.AvgTurnDurationMs)), formatDurationMs(tp.MaxTurnDurationMs), formatInt(int(tp.TurnCount))),
+				Evidence:       evidence,
+				Interpretation: "回合耗时含工具执行。若吞吐正常则慢点在工具/hooks/任务拆分；若吞吐也低则慢点在模型本身。",
+				NextSteps: []string{
+					"查看 slow_turns 样例，确认慢回合集中在哪些项目、session。",
+					"对照按模型吞吐，区分慢在工具执行还是模型生成。",
+				},
+				Confidence: "medium",
+			})
+		}
+	}
+	// 模型吞吐(output_tokens / 单请求耗时)：找吞吐最低且样本充足的模型
+	if data.CostAnalysis != nil && len(data.CostAnalysis.ByModel) > 0 {
+		var slowest *CostModelStat
+		for i := range data.CostAnalysis.ByModel {
+			m := &data.CostAnalysis.ByModel[i]
+			if m.OutputTokensPerSec <= 0 || m.RequestCount < 10 {
+				continue
+			}
+			if slowest == nil || m.OutputTokensPerSec < slowest.OutputTokensPerSec {
+				slowest = m
+			}
+		}
+		if slowest != nil && slowest.OutputTokensPerSec < 10 {
+			findings = append(findings, diagnosticFinding{
+				ID:       "performance.throughput.low." + sanitizeID(slowest.Model),
+				Category: "performance",
+				Severity: severityFromThroughput(slowest.OutputTokensPerSec),
+				Title:    "模型响应吞吐偏低",
+				Summary:  fmt.Sprintf("%s 平均吞吐 %.1f tok/s，平均单请求 %s。", slowest.Model, slowest.OutputTokensPerSec, formatDurationMs(int64(slowest.AvgRoundTripMs))),
+				Evidence: []diagnosticEvidence{
+					{Label: "模型", Value: slowest.Model},
+					{Label: "吞吐", Value: fmt.Sprintf("%.1f tok/s", slowest.OutputTokensPerSec)},
+					{Label: "平均单请求", Value: formatDurationMs(int64(slowest.AvgRoundTripMs))},
+					{Label: "请求数", Value: formatInt(slowest.RequestCount)},
+				},
+				Interpretation: "吞吐 = output_tokens / 单请求耗时。偏低通常与大上下文 cache miss、限流或模型档位相关。",
+				NextSteps: []string{
+					"检查该模型的 cache_read 占比：cache miss 高会拉低吞吐。",
+					"对比其他模型吞吐，确认是否特定模型/档位问题。",
+				},
+				Confidence: "medium",
+			})
+		}
+	}
 	return findings
 }
 
@@ -1415,6 +1481,18 @@ func severityFromDuration(avgMs float64) string {
 	case avgMs >= 30_000:
 		return "high"
 	case avgMs >= 5_000:
+		return "medium"
+	default:
+		return "low"
+	}
+}
+
+// severityFromThroughput 按吞吐(tok/s)定级：越低越严重。
+func severityFromThroughput(tokPerSec float64) string {
+	switch {
+	case tokPerSec < 5:
+		return "high"
+	case tokPerSec < 15:
 		return "medium"
 	default:
 		return "low"
