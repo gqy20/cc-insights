@@ -444,7 +444,8 @@ func recordRuntimeEventLocked(agg *ProjectAggregate, record ProjectRecord, times
 			eventType = "attachment:" + attachment.Type
 			switch attachment.Type {
 			case "hook_success", "hook_cancelled", "hook_non_blocking_error":
-				recordHookEventLocked(agg, attachment.Type, attachment.HookName, attachment.HookEvent, attachment.Command, attachment.Stderr, attachment.DurationMs)
+				recordHookEventLocked(agg, attachment.Type, attachment.HookName, attachment.HookEvent, attachment.Command, attachment.Stderr, attachment.DurationMs, record.SessionID)
+				recordSessionHookLocked(agg, record.SessionID, projectName, attachment.Type, attachment.HookName, attachment.HookEvent, attachment.Stderr, attachment.DurationMs)
 			case "invoked_skills":
 				for _, skill := range attachment.Skills {
 					recordSkillLocked(agg, skill.Name, skill.Path)
@@ -533,7 +534,7 @@ func recordRuntimeEventLocked(agg *ProjectAggregate, record ProjectRecord, times
 	}
 }
 
-func recordHookEventLocked(agg *ProjectAggregate, attachmentType, hookName, hookEvent, command, stderr string, durationMs int) {
+func recordHookEventLocked(agg *ProjectAggregate, attachmentType, hookName, hookEvent, command, stderr string, durationMs int, sessionID string) {
 	if hookName == "" {
 		hookName = "unknown"
 	}
@@ -560,6 +561,13 @@ func recordHookEventLocked(agg *ProjectAggregate, attachmentType, hookName, hook
 	if durationMs > 0 {
 		previous := float64(stat.TotalCount - 1)
 		stat.AvgDurationMs = (stat.AvgDurationMs*previous + float64(durationMs)) / float64(stat.TotalCount)
+	}
+	// 记录该 hook 涉及的 session（去重），用于 hook→session 关联。
+	if sessionID != "" {
+		if stat.SessionIDs == nil {
+			stat.SessionIDs = make(map[string]bool)
+		}
+		stat.SessionIDs[sessionID] = true
 	}
 }
 

@@ -90,6 +90,63 @@ func mergeSessionStat(dst, src *SessionAnalysisItem) {
 		}
 		dst.ModelsUsed[model] += count
 	}
+	for name, h := range src.HookBreakdown {
+		if dst.HookBreakdown == nil {
+			dst.HookBreakdown = make(map[string]*SessionHookStat)
+		}
+		if dst.HookBreakdown[name] == nil {
+			hc := *h
+			dst.HookBreakdown[name] = &hc
+			continue
+		}
+		dh := dst.HookBreakdown[name]
+		oldTotal := dh.TotalCount
+		dh.SuccessCount += h.SuccessCount
+		dh.CancelledCount += h.CancelledCount
+		dh.ErrorCount += h.ErrorCount
+		dh.TotalCount += h.TotalCount
+		if dh.TotalCount > 0 {
+			dh.AvgDurationMs = (dh.AvgDurationMs*float64(oldTotal) + h.AvgDurationMs*float64(h.TotalCount)) / float64(dh.TotalCount)
+		}
+		if h.LastError != "" {
+			dh.LastError = h.LastError
+		}
+	}
+}
+
+// recordSessionHookLocked 把一次 hook 执行记进对应 session 的 HookBreakdown（session→hook 关联）。
+func recordSessionHookLocked(agg *ProjectAggregate, sessionID, project, attachmentType, hookName, hookEvent, stderr string, durationMs int) {
+	stat := ensureSessionStat(agg, sessionID, project)
+	if stat == nil {
+		return
+	}
+	if hookName == "" {
+		hookName = "unknown"
+	}
+	if stat.HookBreakdown == nil {
+		stat.HookBreakdown = make(map[string]*SessionHookStat)
+	}
+	h := stat.HookBreakdown[hookName]
+	if h == nil {
+		h = &SessionHookStat{HookName: hookName, HookEvent: hookEvent}
+		stat.HookBreakdown[hookName] = h
+	}
+	h.TotalCount++
+	switch attachmentType {
+	case "hook_success":
+		h.SuccessCount++
+	case "hook_cancelled":
+		h.CancelledCount++
+	default:
+		h.ErrorCount++
+		if stderr != "" {
+			h.LastError = previewString(stderr, 240)
+		}
+	}
+	if durationMs > 0 {
+		previous := float64(h.TotalCount - 1)
+		h.AvgDurationMs = (h.AvgDurationMs*previous + float64(durationMs)) / float64(h.TotalCount)
+	}
 }
 
 func recordSessionRecordLocked(agg *ProjectAggregate, record ProjectRecord, timestamp time.Time, projectName string) {
@@ -344,6 +401,11 @@ func (agg *ProjectAggregate) finalizeSessionAnalysis() {
 }
 
 func finalizeSessionItem(stat *SessionAnalysisItem) {
+	for _, h := range stat.HookBreakdown {
+		if h.TotalCount > 0 {
+			h.FailureRate = float64(h.CancelledCount+h.ErrorCount) / float64(h.TotalCount) * 100
+		}
+	}
 	if stat.StartedAt != "" && stat.EndedAt != "" {
 		if start, err := time.Parse(time.RFC3339, stat.StartedAt); err == nil {
 			if end, err := time.Parse(time.RFC3339, stat.EndedAt); err == nil && end.After(start) {

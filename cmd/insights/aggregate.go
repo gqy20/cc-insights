@@ -228,6 +228,13 @@ func mergeProjectAggregate(dst, src *ProjectAggregate) {
 	for key, stat := range src.HookStats {
 		if dst.HookStats[key] == nil {
 			statCopy := *stat
+			// 深拷贝 SessionIDs：值拷贝会共享底层 map，后续 dst record 时 mutate 会污染 src。
+			if stat.SessionIDs != nil {
+				statCopy.SessionIDs = make(map[string]bool, len(stat.SessionIDs))
+				for sid := range stat.SessionIDs {
+					statCopy.SessionIDs[sid] = true
+				}
+			}
 			dst.HookStats[key] = &statCopy
 			continue
 		}
@@ -245,6 +252,12 @@ func mergeProjectAggregate(dst, src *ProjectAggregate) {
 		}
 		if stat.LastCommand != "" {
 			dstStat.LastCommand = stat.LastCommand
+		}
+		for sid := range stat.SessionIDs {
+			if dstStat.SessionIDs == nil {
+				dstStat.SessionIDs = make(map[string]bool)
+			}
+			dstStat.SessionIDs[sid] = true
 		}
 	}
 	for name, stat := range src.SkillStats {

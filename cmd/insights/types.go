@@ -223,8 +223,26 @@ type HookStatItem struct {
 	TotalCount     int     `json:"total_count"`
 	FailureRate    float64 `json:"failure_rate"`
 	AvgDurationMs  float64 `json:"avg_duration_ms"`
+	// SessionIDs 为该 hook 涉及的 session 去重集合（运行时维护，序列化以支持缓存往返；
+	// finalize 时转成 SessionCount + SampleSessionIDs 输出，本身不直接出现在 EventAnalysis）。
+	SessionIDs    map[string]bool `json:"session_ids,omitempty"`
+	SessionCount  int             `json:"session_count"`
+	SampleSession []string        `json:"sample_session,omitempty"`
+	LastError     string          `json:"last_error,omitempty"`
+	LastCommand   string          `json:"last_command,omitempty"`
+}
+
+// SessionHookStat 单个 session 内某个 hook 的执行统计（纯标量，便于值拷贝合并）。
+type SessionHookStat struct {
+	HookName       string  `json:"hook_name"`
+	HookEvent      string  `json:"hook_event,omitempty"`
+	SuccessCount   int     `json:"success_count"`
+	CancelledCount int     `json:"cancelled_count"`
+	ErrorCount     int     `json:"error_count"`
+	TotalCount     int     `json:"total_count"`
+	FailureRate    float64 `json:"failure_rate"`
+	AvgDurationMs  float64 `json:"avg_duration_ms"`
 	LastError      string  `json:"last_error,omitempty"`
-	LastCommand    string  `json:"last_command,omitempty"`
 }
 
 // SkillStatItem skill 调用统计
@@ -286,41 +304,42 @@ type SessionAnalysisData struct {
 
 // SessionAnalysisItem 单个 session 摘要
 type SessionAnalysisItem struct {
-	SessionID             string         `json:"session_id"`
-	Project               string         `json:"project"`
-	Title                 string         `json:"title,omitempty"`
-	TitleSource           string         `json:"title_source,omitempty"`
-	FirstPromptPreview    string         `json:"first_prompt_preview,omitempty"`
-	LastPromptPreview     string         `json:"last_prompt_preview,omitempty"`
-	StartedAt             string         `json:"started_at,omitempty"`
-	EndedAt               string         `json:"ended_at,omitempty"`
-	DurationMs            int64          `json:"duration_ms"`
-	SystemDurationMs      int64          `json:"system_duration_ms"`
-	Outcome               string         `json:"outcome"`
-	StopReason            string         `json:"stop_reason,omitempty"`
-	PreventedContinuation bool           `json:"prevented_continuation"`
-	MessageCount          int            `json:"message_count"`
-	AssistantMessageCount int            `json:"assistant_message_count"`
-	UserMessageCount      int            `json:"user_message_count"`
-	SystemEventCount      int            `json:"system_event_count"`
-	ToolCallCount         int            `json:"tool_call_count"`
-	ToolFailureCount      int            `json:"tool_failure_count"`
-	MissingResultCount    int            `json:"missing_result_count"`
-	TotalTokens           int            `json:"total_tokens"`
-	InputTokens           int            `json:"input_tokens"`
-	OutputTokens          int            `json:"output_tokens"`
-	PermissionModeChanges int            `json:"permission_mode_changes"`
-	ModeChanges           int            `json:"mode_changes"`
-	PlanModeCount         int            `json:"plan_mode_count"`
-	PlanModeExitCount     int            `json:"plan_mode_exit_count"`
-	QueueOperationCount   int            `json:"queue_operation_count"`
-	HookCount             int            `json:"hook_count"`
-	HookErrorCount        int            `json:"hook_error_count"`
-	LastPermissionMode    string         `json:"last_permission_mode,omitempty"`
-	LastMode              string         `json:"last_mode,omitempty"`
-	QueueOperationsSample string         `json:"queue_operations_sample,omitempty"`
-	PrimaryModel          string         `json:"primary_model,omitempty"`
-	ModelsUsed            map[string]int `json:"models_used,omitempty"`
+	SessionID             string                      `json:"session_id"`
+	Project               string                      `json:"project"`
+	Title                 string                      `json:"title,omitempty"`
+	TitleSource           string                      `json:"title_source,omitempty"`
+	FirstPromptPreview    string                      `json:"first_prompt_preview,omitempty"`
+	LastPromptPreview     string                      `json:"last_prompt_preview,omitempty"`
+	StartedAt             string                      `json:"started_at,omitempty"`
+	EndedAt               string                      `json:"ended_at,omitempty"`
+	DurationMs            int64                       `json:"duration_ms"`
+	SystemDurationMs      int64                       `json:"system_duration_ms"`
+	Outcome               string                      `json:"outcome"`
+	StopReason            string                      `json:"stop_reason,omitempty"`
+	PreventedContinuation bool                        `json:"prevented_continuation"`
+	MessageCount          int                         `json:"message_count"`
+	AssistantMessageCount int                         `json:"assistant_message_count"`
+	UserMessageCount      int                         `json:"user_message_count"`
+	SystemEventCount      int                         `json:"system_event_count"`
+	ToolCallCount         int                         `json:"tool_call_count"`
+	ToolFailureCount      int                         `json:"tool_failure_count"`
+	MissingResultCount    int                         `json:"missing_result_count"`
+	TotalTokens           int                         `json:"total_tokens"`
+	InputTokens           int                         `json:"input_tokens"`
+	OutputTokens          int                         `json:"output_tokens"`
+	PermissionModeChanges int                         `json:"permission_mode_changes"`
+	ModeChanges           int                         `json:"mode_changes"`
+	PlanModeCount         int                         `json:"plan_mode_count"`
+	PlanModeExitCount     int                         `json:"plan_mode_exit_count"`
+	QueueOperationCount   int                         `json:"queue_operation_count"`
+	HookCount             int                         `json:"hook_count"`
+	HookErrorCount        int                         `json:"hook_error_count"`
+	HookBreakdown         map[string]*SessionHookStat `json:"hook_breakdown,omitempty"`
+	LastPermissionMode    string                      `json:"last_permission_mode,omitempty"`
+	LastMode              string                      `json:"last_mode,omitempty"`
+	QueueOperationsSample string                      `json:"queue_operations_sample,omitempty"`
+	PrimaryModel          string                      `json:"primary_model,omitempty"`
+	ModelsUsed            map[string]int              `json:"models_used,omitempty"`
 }
 
 // SessionOutcomeStat session outcome 聚合

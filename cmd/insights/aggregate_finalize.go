@@ -223,6 +223,22 @@ func (agg *ProjectAggregate) finalizeFailureAnalysis() {
 	agg.FailureAnalysis = analysis
 }
 
+// sampleSessionIDs 从 session 去重集合取前 limit 个 session id（确定性排序），用于 hook→session 下钻入口。
+func sampleSessionIDs(ids map[string]bool, limit int) []string {
+	if len(ids) == 0 {
+		return nil
+	}
+	keys := make([]string, 0, len(ids))
+	for sid := range ids {
+		keys = append(keys, sid)
+	}
+	sort.Strings(keys)
+	if len(keys) > limit {
+		keys = keys[:limit]
+	}
+	return keys
+}
+
 func (agg *ProjectAggregate) finalizeEventAnalysis() {
 	analysis := &EventAnalysisData{
 		ByType:          make([]EventTypeStat, 0, len(agg.EventTypes)),
@@ -248,6 +264,10 @@ func (agg *ProjectAggregate) finalizeEventAnalysis() {
 		if statCopy.TotalCount > 0 {
 			statCopy.FailureRate = float64(statCopy.CancelledCount+statCopy.ErrorCount) / float64(statCopy.TotalCount) * 100
 		}
+		// hook→session：把去重集合转成计数 + 代表 session，完整集合不随 EventAnalysis 输出。
+		statCopy.SessionCount = len(statCopy.SessionIDs)
+		statCopy.SampleSession = sampleSessionIDs(statCopy.SessionIDs, 8)
+		statCopy.SessionIDs = nil
 		analysis.Hooks = append(analysis.Hooks, statCopy)
 	}
 	sort.Slice(analysis.Hooks, func(i, j int) bool {
