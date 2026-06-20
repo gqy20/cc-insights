@@ -88,6 +88,10 @@ func runWebServer() error {
 		"url", "http://localhost"+cfg.ListenAddr,
 		"dashboard", "http://localhost"+cfg.ListenAddr+"/dashboard",
 	)
+	// 枚举局域网/Tailscale/ZeroTier 等外部可达地址，方便分享给同网段或 overlay 内的设备。
+	for _, u := range accessibleDashboardURLs(cfg.ListenAddr) {
+		Info("可访问地址", u.Iface, u.URL)
+	}
 	if err := http.ListenAndServe(cfg.ListenAddr, handler); err != nil {
 		Error("启动失败", "error", err.Error())
 		return err
