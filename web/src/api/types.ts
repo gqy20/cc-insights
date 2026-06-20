@@ -194,6 +194,13 @@ export interface CostByModel {
   total_tokens?: number
   input_tokens?: number
   output_tokens?: number
+  cache_read_input_tokens?: number
+  cache_creation_input_tokens?: number
+  input_cost_cny?: number
+  output_cost_cny?: number
+  cache_read_cost_cny?: number
+  cache_creation_cost_cny?: number
+  cost_cny?: number
 }
 export interface CostAnalysisData {
   totals?: Record<string, number>

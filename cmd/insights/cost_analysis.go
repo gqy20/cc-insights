@@ -151,6 +151,9 @@ func (agg *ProjectAggregate) finalizeCostAnalysis() {
 		BudgetTimeline: append([]BudgetTimelineItem(nil), agg.BudgetTimeline...),
 	}
 
+	// 定价规则加载失败时跳过成本计算（CostCNY 保持 0），不影响其他统计。
+	rules, _ := currentPricingRules()
+
 	for _, stat := range agg.CostModelStats {
 		statCopy := *stat
 		if statCopy.RequestCount > 0 {
@@ -159,6 +162,18 @@ func (agg *ProjectAggregate) finalizeCostAnalysis() {
 		inputTotal := statCopy.InputTokens + statCopy.CacheReadTokens + statCopy.CacheCreationTokens
 		if inputTotal > 0 {
 			statCopy.CacheReadRatio = float64(statCopy.CacheReadTokens) / float64(inputTotal) * 100
+		}
+		if price, ok := rules.matchPrice(statCopy.Model); ok {
+			statCopy.InputCostCNY = float64(statCopy.InputTokens) * price.Input / 1e6
+			statCopy.OutputCostCNY = float64(statCopy.OutputTokens) * price.Output / 1e6
+			statCopy.CacheReadCostCNY = float64(statCopy.CacheReadTokens) * price.CacheRead / 1e6
+			statCopy.CacheCreationCostCNY = float64(statCopy.CacheCreationTokens) * price.CacheCreation / 1e6
+			statCopy.CostCNY = statCopy.InputCostCNY + statCopy.OutputCostCNY + statCopy.CacheReadCostCNY + statCopy.CacheCreationCostCNY
+			analysis.Totals.InputCostCNY += statCopy.InputCostCNY
+			analysis.Totals.OutputCostCNY += statCopy.OutputCostCNY
+			analysis.Totals.CacheReadCostCNY += statCopy.CacheReadCostCNY
+			analysis.Totals.CacheCreationCostCNY += statCopy.CacheCreationCostCNY
+			analysis.Totals.CostCNY += statCopy.CostCNY
 		}
 		analysis.Totals.InputTokens += statCopy.InputTokens
 		analysis.Totals.OutputTokens += statCopy.OutputTokens

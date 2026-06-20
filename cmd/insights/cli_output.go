@@ -31,14 +31,15 @@ func writeTable(value any, w io.Writer) error {
 		writeInsights(w, v.Insights)
 	case cliCostReport:
 		fmt.Fprintf(w, "Claude Code Cost · %s\n\n", formatRange(v.TimeRange))
-		fmt.Fprintf(w, "请求: %s  Token: %s  输出: %s  缓存读取: %s\n\n",
+		fmt.Fprintf(w, "请求: %s  Token: %s  输出: %s  成本: %s  缓存读取: %s\n\n",
 			formatInt(v.Totals.RequestCount),
 			formatCompactInt(v.Totals.TotalTokens),
 			formatCompactInt(v.Totals.OutputTokens),
+			formatCNY(v.Totals.CostCNY),
 			formatCompactInt(v.Totals.CacheReadInputTokens))
 		fmt.Fprintln(w, "Top 模型:")
 		for _, item := range v.ByModel {
-			fmt.Fprintf(w, "  %-28s %8s  %s requests\n", item.Model, formatCompactInt(item.TotalTokens), formatInt(item.RequestCount))
+			fmt.Fprintf(w, "  %-26s %10s  %10s  %s requests\n", item.Model, formatCompactInt(item.TotalTokens), formatCNY(item.CostCNY), formatInt(item.RequestCount))
 		}
 		writeInsights(w, v.Insights)
 	case cliCommandReport:
@@ -191,11 +192,11 @@ func writeMarkdown(value any, w io.Writer) error {
 		writeMarkdownInsights(w, v.Insights)
 	case cliCostReport:
 		fmt.Fprintf(w, "# Claude Code Cost\n\n范围: %s\n\n", formatRange(v.TimeRange))
-		fmt.Fprintf(w, "- 请求: %s\n- Token: %s\n- 输出: %s\n- 缓存读取: %s\n\n", formatInt(v.Totals.RequestCount), formatCompactInt(v.Totals.TotalTokens), formatCompactInt(v.Totals.OutputTokens), formatCompactInt(v.Totals.CacheReadInputTokens))
+		fmt.Fprintf(w, "- 请求: %s\n- Token: %s\n- 输出: %s\n- 成本: %s\n- 缓存读取: %s\n\n", formatInt(v.Totals.RequestCount), formatCompactInt(v.Totals.TotalTokens), formatCompactInt(v.Totals.OutputTokens), formatCNY(v.Totals.CostCNY), formatCompactInt(v.Totals.CacheReadInputTokens))
 		fmt.Fprintln(w, "## Top 模型")
 		fmt.Fprintln(w)
 		for _, item := range v.ByModel {
-			fmt.Fprintf(w, "- `%s`: %s (%s requests)\n", item.Model, formatCompactInt(item.TotalTokens), formatInt(item.RequestCount))
+			fmt.Fprintf(w, "- `%s`: %s · %s (%s requests)\n", item.Model, formatCompactInt(item.TotalTokens), formatCNY(item.CostCNY), formatInt(item.RequestCount))
 		}
 		writeMarkdownInsights(w, v.Insights)
 	case cliCommandReport:
@@ -766,4 +767,18 @@ func formatCompactInt(value int) string {
 
 func formatFailureRate(value float64) string {
 	return strconv.FormatFloat(value, 'f', 1, 64)
+}
+
+// formatCNY 格式化人民币成本（单位：元）：大数取整、小值保留小数位，便于阅读。
+func formatCNY(value float64) string {
+	switch {
+	case value >= 1000:
+		return fmt.Sprintf("¥%.0f", value)
+	case value >= 100:
+		return fmt.Sprintf("¥%.1f", value)
+	case value >= 1:
+		return fmt.Sprintf("¥%.2f", value)
+	default:
+		return fmt.Sprintf("¥%.3f", value)
+	}
 }

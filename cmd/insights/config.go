@@ -8,11 +8,12 @@ import (
 
 // Config 应用配置
 type Config struct {
-	DataDir    string
-	CacheDir   string
-	ListenAddr string
-	BaseURL    string
-	RulesPath  string
+	DataDir     string
+	CacheDir    string
+	ListenAddr  string
+	BaseURL     string
+	RulesPath   string
+	PricingPath string
 }
 
 var cfg Config
@@ -28,11 +29,12 @@ func defaultConfig() Config {
 	defaultCacheDir := filepath.Join(insightsHome, "cache")
 
 	return Config{
-		DataDir:    defaultDataDir,
-		CacheDir:   defaultCacheDir,
-		ListenAddr: ":8932",
-		BaseURL:    "",
-		RulesPath:  "",
+		DataDir:     defaultDataDir,
+		CacheDir:    defaultCacheDir,
+		ListenAddr:  ":8932",
+		BaseURL:     "",
+		RulesPath:   "",
+		PricingPath: "",
 	}
 }
 
@@ -45,6 +47,7 @@ func registerConfigFlags(fs *flag.FlagSet, target *Config) {
 	fs.StringVar(&target.DataDir, "data", target.DataDir, "数据目录路径 (默认: ~/.claude)")
 	fs.StringVar(&target.CacheDir, "cache", target.CacheDir, "缓存目录路径 (默认: ~/.cc-insights/cache/)")
 	fs.StringVar(&target.RulesPath, "rules", target.RulesPath, "Bash 命令分类规则 YAML 路径")
+	fs.StringVar(&target.PricingPath, "pricing", target.PricingPath, "模型定价规则 YAML 路径（默认内置 rules/pricing.yml，可用 ~/.cc-insights/pricing.yml 覆盖）")
 }
 
 // registerServerFlags 注册仅 web 命令使用的服务 flag（监听地址/反向代理）。

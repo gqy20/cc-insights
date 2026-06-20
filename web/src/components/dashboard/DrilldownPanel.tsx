@@ -63,6 +63,7 @@ const KINDS: Record<DetailKind, KindCfg> = {
               Number(r.input_tokens ?? 0) + Number(r.output_tokens ?? 0),
           ),
       },
+      { header: '成本', cell: (r) => `¥${Number(r.cost_cny ?? 0).toFixed(2)}` },
     ],
   },
   sessions: {

@@ -532,14 +532,19 @@ type FailureModelReasonStat struct {
 
 // TokenUsageBreakdown token 类型拆分
 type TokenUsageBreakdown struct {
-	InputTokens              int `json:"input_tokens"`
-	OutputTokens             int `json:"output_tokens"`
-	CacheReadInputTokens     int `json:"cache_read_input_tokens"`
-	CacheCreationInputTokens int `json:"cache_creation_input_tokens"`
-	ServerToolUseRequests    int `json:"server_tool_use_requests"`
-	TotalTokens              int `json:"total_tokens"`
-	BillableInputTokens      int `json:"billable_input_tokens"`
-	RequestCount             int `json:"request_count"`
+	InputTokens              int     `json:"input_tokens"`
+	OutputTokens             int     `json:"output_tokens"`
+	CacheReadInputTokens     int     `json:"cache_read_input_tokens"`
+	CacheCreationInputTokens int     `json:"cache_creation_input_tokens"`
+	ServerToolUseRequests    int     `json:"server_tool_use_requests"`
+	TotalTokens              int     `json:"total_tokens"`
+	BillableInputTokens      int     `json:"billable_input_tokens"`
+	RequestCount             int     `json:"request_count"`
+	InputCostCNY             float64 `json:"input_cost_cny"`
+	OutputCostCNY            float64 `json:"output_cost_cny"`
+	CacheReadCostCNY         float64 `json:"cache_read_cost_cny"`
+	CacheCreationCostCNY     float64 `json:"cache_creation_cost_cny"`
+	CostCNY                  float64 `json:"cost_cny"`
 }
 
 // CostModelStat 按模型统计 token
@@ -554,6 +559,11 @@ type CostModelStat struct {
 	TotalTokens           int     `json:"total_tokens"`
 	AvgOutputTokens       float64 `json:"avg_output_tokens"`
 	CacheReadRatio        float64 `json:"cache_read_ratio"`
+	InputCostCNY          float64 `json:"input_cost_cny"`
+	OutputCostCNY         float64 `json:"output_cost_cny"`
+	CacheReadCostCNY      float64 `json:"cache_read_cost_cny"`
+	CacheCreationCostCNY  float64 `json:"cache_creation_cost_cny"`
+	CostCNY               float64 `json:"cost_cny"`
 }
 
 // CostProjectStat 按项目统计 token

@@ -1,0 +1,66 @@
+version: 1
+
+# 模型定价表
+# ─────────────────────────────────────────────────────────────────────────────
+# 单位：人民币 ¥ / 百万 token（per 1M tokens）
+# 匹配顺序：models 精确命中 → prefixes 最长前缀命中 → default 兜底
+# 缺省派生：cache_read 省略时按 input × 0.1；cache_creation 省略时按 input × 1.25
+# 用法：内置此文件；用户可在 ~/.cc-insights/pricing.yml 放同名文件覆盖（与 bash.yml 同机制）
+# 数据来源：各厂官方/中转真实计费，采集于 2026-06；标注"限时免费"项促销结束后需手动更新
+# ─────────────────────────────────────────────────────────────────────────────
+
+currency: CNY
+
+default:
+  input: 5.0
+  output: 20.0
+  rationale: 匹配不到任何模型时的兜底价，取 GLM-5-Turbo 级别保守值
+
+models:
+  glm-5v-turbo:
+    input: 5.0
+    output: 22.0
+    cache_read: 0.0        # 限时免费，促销结束后需手动更新
+    cache_creation: 1.2
+    rationale: 智谱 GLM-5-Turbo，输入长度 [0,32K) 档；>32K 档为 input 7 / output 26（cc-insights 无法按单请求输入长度分档，默认取低档）
+  glm-5.2:
+    input: 8.0
+    output: 28.0
+    cache_read: 0.0        # 限时免费
+    cache_creation: 2.0
+    rationale: 智谱 GLM-5.2 新品，1M 上下文
+  MiniMax-M3:
+    input: 2.1
+    output: 8.4
+    cache_read: 0.42
+    cache_creation: 2.625  # 官方未列 M3 缓存写入，借用 M2.7 值，待核对
+    rationale: MiniMax-M3 上下文 ≤512K 永久五折后实付价；512K~1M 档翻倍（input 4.2 / output 16.8）
+  MiniMax-M2.7-highspeed:
+    input: 4.2
+    output: 16.8
+    cache_read: 0.42
+    cache_creation: 2.625
+    rationale: MiniMax-M2.7-highspeed，相对 M2.7 标准版输入/输出翻倍
+  step-3.7-flash:
+    input: 1.35
+    output: 8.1
+    cache_read: 0.27
+    rationale: 阶跃星辰 step-3.7-flash，缓存未命中 1.35 / 缓存命中 0.27
+  mimo-v2.5-pro:
+    input: 3.0
+    output: 6.0
+    cache_read: 0.025     # 缓存命中价极低（约 input 的 1/120），非标准 0.1× 倍率，故显式列出
+    rationale: 小米 MiMo v2.5-pro 官方价（未命中 ¥3 / 命中 ¥0.025 / 输出 ¥6）
+  mimo-v2.5:
+    input: 1.0
+    output: 2.0
+    cache_read: 0.02
+    rationale: 小米 MiMo v2.5 官方价（历史未出现，备查）
+
+# 前缀匹配（model 字段以 key 开头即命中，按 key 长度降序）；用于兜住带后缀的变体
+prefixes:
+  glm-5.2:                 # 兜住历史里出现的 glm-5.2[1m] 等后缀变体
+    input: 8.0
+    output: 28.0
+    cache_read: 0.0
+    cache_creation: 2.0
