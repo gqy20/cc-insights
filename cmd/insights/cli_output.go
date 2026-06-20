@@ -147,6 +147,11 @@ func writeTable(value any, w io.Writer) error {
 			}
 			fmt.Fprintln(w)
 		}
+		if len(v.SessionHooks) > 0 {
+			writeSessionHooksTable(w, v.SessionHooks)
+		} else {
+			writeHookStatsTable(w, v.Hooks)
+		}
 		writeInsights(w, v.Insights)
 	case cliInspectFailuresReport:
 		fmt.Fprintf(w, "Claude Code Failure Inspection · %s\n\n", formatRange(v.TimeRange))
@@ -302,6 +307,11 @@ func writeMarkdown(value any, w io.Writer) error {
 			}
 			fmt.Fprintln(w)
 		}
+		if len(v.SessionHooks) > 0 {
+			writeSessionHooksMarkdown(w, v.SessionHooks)
+		} else {
+			writeHookStatsMarkdown(w, v.Hooks)
+		}
 		writeMarkdownInsights(w, v.Insights)
 	case cliInspectFailuresReport:
 		fmt.Fprintf(w, "# Claude Code Failure Inspection\n\n范围: %s\n\n", formatRange(v.TimeRange))
@@ -454,6 +464,72 @@ func writeSessionItemsTable(w io.Writer, title string, items []SessionAnalysisIt
 		if item.Title != "" {
 			fmt.Fprintf(w, "    %s\n", item.Title)
 		}
+	}
+	fmt.Fprintln(w)
+}
+
+func writeHookStatsTable(w io.Writer, items []HookStatItem) {
+	if len(items) == 0 {
+		return
+	}
+	fmt.Fprintln(w, "Hook 运行时间与效果:")
+	fmt.Fprintf(w, "  %-22s %-16s %8s %8s %8s %7s %7s  %s\n", "NAME", "EVENT", "SUCCESS", "CANCEL", "ERROR", "FAIL%", "SESSIONS", "AVG")
+	for _, item := range items {
+		fmt.Fprintf(w, "  %-22.22s %-16.16s %8s %8s %8s %6.1f%% %7s  %s\n",
+			item.HookName, item.HookEvent,
+			formatInt(item.SuccessCount), formatInt(item.CancelledCount), formatInt(item.ErrorCount),
+			item.FailureRate, formatInt(item.SessionCount), formatDurationMs(int64(item.AvgDurationMs)))
+		if item.LastCommand != "" {
+			fmt.Fprintf(w, "    %s\n", item.LastCommand)
+		}
+	}
+	fmt.Fprintln(w)
+}
+
+func writeHookStatsMarkdown(w io.Writer, items []HookStatItem) {
+	if len(items) == 0 {
+		return
+	}
+	fmt.Fprintln(w, "## Hook 运行时间与效果")
+	fmt.Fprintln(w)
+	for _, item := range items {
+		fmt.Fprintf(w, "- `%s` (%s): 成功 %s / 取消 %s / 失败 %s, 失败率 %.1f%%, 平均 %s, 涉及 %s session\n",
+			item.HookName, item.HookEvent,
+			formatInt(item.SuccessCount), formatInt(item.CancelledCount), formatInt(item.ErrorCount),
+			item.FailureRate, formatDurationMs(int64(item.AvgDurationMs)), formatInt(item.SessionCount))
+	}
+	fmt.Fprintln(w)
+}
+
+func writeSessionHooksTable(w io.Writer, items []SessionHookStat) {
+	if len(items) == 0 {
+		return
+	}
+	fmt.Fprintln(w, "该 Session 的 Hook 明细:")
+	fmt.Fprintf(w, "  %-22s %-16s %8s %8s %8s %7s  %s\n", "NAME", "EVENT", "SUCCESS", "CANCEL", "ERROR", "FAIL%", "AVG")
+	for _, item := range items {
+		fmt.Fprintf(w, "  %-22.22s %-16.16s %8s %8s %8s %6.1f%%  %s\n",
+			item.HookName, item.HookEvent,
+			formatInt(item.SuccessCount), formatInt(item.CancelledCount), formatInt(item.ErrorCount),
+			item.FailureRate, formatDurationMs(int64(item.AvgDurationMs)))
+		if item.LastError != "" {
+			fmt.Fprintf(w, "    %s\n", item.LastError)
+		}
+	}
+	fmt.Fprintln(w)
+}
+
+func writeSessionHooksMarkdown(w io.Writer, items []SessionHookStat) {
+	if len(items) == 0 {
+		return
+	}
+	fmt.Fprintln(w, "## 该 Session 的 Hook 明细")
+	fmt.Fprintln(w)
+	for _, item := range items {
+		fmt.Fprintf(w, "- `%s` (%s): 成功 %s / 取消 %s / 失败 %s, 失败率 %.1f%%, 平均 %s\n",
+			item.HookName, item.HookEvent,
+			formatInt(item.SuccessCount), formatInt(item.CancelledCount), formatInt(item.ErrorCount),
+			item.FailureRate, formatDurationMs(int64(item.AvgDurationMs)))
 	}
 	fmt.Fprintln(w)
 }

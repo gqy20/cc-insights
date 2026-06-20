@@ -21,6 +21,7 @@ import { SessionAnalysisChart } from '@/components/charts/SessionAnalysisChart'
 import { AgentChart } from '@/components/charts/AgentChart'
 import { TaskPlanChart } from '@/components/charts/TaskPlanChart'
 import { EventHookChart } from '@/components/charts/EventHookChart'
+import { HookStatChart } from '@/components/charts/HookStatChart'
 import { SkillAnalysisChart } from '@/components/charts/SkillAnalysisChart'
 import { RuntimeToolsChart } from '@/components/charts/RuntimeToolsChart'
 import { TopFilterBar } from '@/components/dashboard/TopFilterBar'
@@ -177,6 +178,7 @@ function App() {
           <AgentChart data={dashboard.data?.agent_analysis} loading={dashboard.isLoading} />
           <TaskPlanChart data={dashboard.data?.task_plan_analysis} loading={dashboard.isLoading} />
           <EventHookChart data={dashboard.data?.event_analysis} loading={dashboard.isLoading} />
+          <HookStatChart data={dashboard.data?.event_analysis} loading={dashboard.isLoading} />
           <SkillAnalysisChart data={dashboard.data?.skill_analysis} loading={dashboard.isLoading} />
           <div className="xl:col-span-2">
             <RuntimeToolsChart

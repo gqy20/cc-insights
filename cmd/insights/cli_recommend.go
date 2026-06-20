@@ -47,6 +47,7 @@ func buildRecommendationDashboardData(tf TimeFilter, preset string) (*DashboardD
 		ToolPerformance:  cloneToolPerformance(cached.ToolPerformance),
 		CostAnalysis:     cloneCostAnalysis(cached.CostAnalysis),
 		SessionAnalysis:  cloneSessionAnalysis(cached.SessionAnalysis),
+		EventAnalysis:    cloneEventAnalysis(cached.EventAnalysis),
 		TaskPlanAnalysis: cloneTaskPlanAnalysis(cached.TaskPlanAnalysis),
 	}, "cache", nil
 }

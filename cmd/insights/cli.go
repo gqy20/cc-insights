@@ -105,6 +105,8 @@ type cliSessionReport struct {
 	TopTaskSessions []ReminderSessionItem  `json:"top_task_sessions"`
 	TopTodoSessions []ReminderSessionItem  `json:"top_todo_sessions"`
 	FailureSamples  []ToolFailureSample    `json:"failure_samples"`
+	Hooks           []HookStatItem         `json:"hooks"`
+	SessionHooks    []SessionHookStat      `json:"session_hooks,omitempty"`
 	Filter          cliSessionReportFilter `json:"filter"`
 	Insights        []string               `json:"insights"`
 }

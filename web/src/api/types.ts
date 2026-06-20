@@ -255,8 +255,24 @@ export interface EventTypeStat {
 export interface EventAnalysisData {
   total_events?: number
   by_type?: EventTypeStat[]
-  hooks?: unknown[]
+  hooks?: HookStat[]
   [key: string]: unknown
+}
+
+// 单个 hook 的执行状态统计：运行时间 + 成功/取消/失败分布
+export interface HookStat {
+  hook_name: string
+  hook_event?: string
+  success_count?: number
+  cancelled_count?: number
+  error_count?: number
+  total_count?: number
+  failure_rate?: number
+  avg_duration_ms?: number
+  session_count?: number
+  sample_session?: string[]
+  last_error?: string
+  last_command?: string
 }
 export interface SkillStat {
   name: string
