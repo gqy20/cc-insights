@@ -12,7 +12,7 @@ func main() {
 	rangePreset := flag.String("range", "7d", "测试时间范围: 7d 或 all")
 	flag.Parse()
 
-	fmt.Println("=== Claude Code Dashboard 性能测试 ===")
+	fmt.Println("=== Claude Code Insights 性能测试 ===")
 	fmt.Printf("数据目录: %s\n\n", cfg.DataDir)
 
 	preset := Range7Days

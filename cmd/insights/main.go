@@ -1,5 +1,3 @@
-//go:build !bench
-
 package main
 
 import (
@@ -21,13 +19,6 @@ var distFS embed.FS
 var version = "dev"
 var commit = "unknown"
 var buildDate = ""
-
-func main() {
-	if err := runCLI(os.Args[1:]); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
-	}
-}
 
 func runWebServer() error {
 	// 初始化日志系统（在所有操作之前）
