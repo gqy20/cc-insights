@@ -25,6 +25,9 @@ func buildRecommendationDashboardData(tf TimeFilter, preset string) (*DashboardD
 	}
 	queryStartedAt := time.Now()
 	cached := globalCache.QueryByTimeRange(start, end)
+	if cached.Provider == "" {
+		cached.Provider = globalCache.Provider
+	}
 	Debug("诊断缓存查询完成",
 		"preset", preset,
 		"query_duration", time.Since(queryStartedAt).Round(time.Millisecond),
@@ -41,6 +44,8 @@ func buildRecommendationDashboardData(tf TimeFilter, preset string) (*DashboardD
 
 	return &DashboardData{
 		TimeRange:        rangeInfo,
+		Provider:         firstNonEmpty(cached.Provider, string(resolveProvider(cfg.Provider, cfg.DataDir))),
+		ModelUsage:       modelUsageItemsFromCache(cached),
 		ToolAnalysis:     cloneToolAnalysis(cached.ToolAnalysis),
 		CommandAnalysis:  cloneCommandAnalysis(cached.CommandAnalysis),
 		FailureAnalysis:  cloneFailureAnalysis(cached.FailureAnalysis),
@@ -53,7 +58,7 @@ func buildRecommendationDashboardData(tf TimeFilter, preset string) (*DashboardD
 }
 
 func buildCLIRecommendationReport(data *DashboardData, opts cliOptions) cliRecommendationReport {
-	report := cliRecommendationReport{TimeRange: data.TimeRange, Detail: opts.Detail, FilterID: strings.TrimSpace(opts.ID)}
+	report := cliRecommendationReport{Provider: data.Provider, TimeRange: data.TimeRange, Detail: opts.Detail, FilterID: strings.TrimSpace(opts.ID)}
 	findings := make([]diagnosticFinding, 0, 12)
 	findings = append(findings, buildCommandDiagnostics(data)...)
 	findings = append(findings, buildFailureDiagnostics(data)...)

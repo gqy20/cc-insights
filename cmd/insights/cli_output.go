@@ -10,7 +10,7 @@ import (
 func writeTable(value any, w io.Writer) error {
 	switch v := value.(type) {
 	case cliSummary:
-		fmt.Fprintf(w, "Claude Code Insights · %s\n\n", formatRange(v.TimeRange))
+		fmt.Fprintf(w, "%s Insights · %s\n\n", providerTitle(v.Provider), formatRange(v.TimeRange))
 		fmt.Fprintf(w, "%-12s %s\n", "消息数", formatInt(v.Messages))
 		fmt.Fprintf(w, "%-12s %s\n", "会话数", formatInt(v.Sessions))
 		fmt.Fprintf(w, "%-12s %s\n", "命令调用", formatInt(v.Commands))
@@ -21,7 +21,7 @@ func writeTable(value any, w io.Writer) error {
 		fmt.Fprintf(w, "%-12s %s\n", "Top 模型", v.TopModel)
 		writeInsights(w, v.Insights)
 	case cliFailureReport:
-		fmt.Fprintf(w, "Claude Code Failures · %s\n\n", formatRange(v.TimeRange))
+		fmt.Fprintf(w, "%s Failures · %s\n\n", providerTitle(v.Provider), formatRange(v.TimeRange))
 		fmt.Fprintf(w, "工具调用: %s  失败: %s  Missing: %s  失败率: %.1f%%\n\n",
 			formatInt(v.TotalCalls), formatInt(v.TotalFailures), formatInt(v.MissingResults), v.FailureRate)
 		fmt.Fprintln(w, "Top 失败原因:")
@@ -30,7 +30,7 @@ func writeTable(value any, w io.Writer) error {
 		}
 		writeInsights(w, v.Insights)
 	case cliCostReport:
-		fmt.Fprintf(w, "Claude Code Cost · %s\n\n", formatRange(v.TimeRange))
+		fmt.Fprintf(w, "%s Cost · %s\n\n", providerTitle(v.Provider), formatRange(v.TimeRange))
 		fmt.Fprintf(w, "请求: %s  Token: %s  输出: %s  成本: %s  缓存读取: %s\n\n",
 			formatInt(v.Totals.RequestCount),
 			formatCompactInt(v.Totals.TotalTokens),
@@ -43,7 +43,7 @@ func writeTable(value any, w io.Writer) error {
 		}
 		writeInsights(w, v.Insights)
 	case cliCommandReport:
-		fmt.Fprintf(w, "Claude Code Commands · %s\n\n", formatRange(v.TimeRange))
+		fmt.Fprintf(w, "%s Commands · %s\n\n", providerTitle(v.Provider), formatRange(v.TimeRange))
 		fmt.Fprintf(w, "命令族: %s  具体命令: %s  调用: %s\n\n", formatInt(len(v.ByFamily)), formatInt(v.TotalCommands), formatInt(v.TotalCalls))
 		fmt.Fprintln(w, "Top 命令族:")
 		for _, item := range v.ByFamily {
@@ -60,7 +60,7 @@ func writeTable(value any, w io.Writer) error {
 		}
 		writeInsights(w, v.Insights)
 	case cliRecommendationReport:
-		fmt.Fprintf(w, "Claude Code Diagnostics · %s\n\n", formatRange(v.TimeRange))
+		fmt.Fprintf(w, "%s Diagnostics · %s\n\n", providerTitle(v.Provider), formatRange(v.TimeRange))
 		fmt.Fprintf(w, "诊断项: %s\n\n", formatInt(v.TotalFindings))
 		if v.Runtime != nil {
 			fmt.Fprintf(w, "耗时: prepare=%s  data=%s  rec=%s  total=%s  source=%s\n\n",
@@ -128,7 +128,7 @@ func writeTable(value any, w io.Writer) error {
 		}
 		writeInsights(w, v.Insights)
 	case cliSessionReport:
-		fmt.Fprintf(w, "Claude Code Sessions · %s\n\n", formatRange(v.TimeRange))
+		fmt.Fprintf(w, "%s Sessions · %s\n\n", providerTitle(v.Provider), formatRange(v.TimeRange))
 		writeSessionFilter(w, v.Filter)
 		fmt.Fprintf(w, "Session: %s  Plan: %s in / %s out  Task reminders: %s  Todo reminders: %s\n\n",
 			formatInt(v.TotalSessions),
@@ -178,12 +178,12 @@ func writeTable(value any, w io.Writer) error {
 func writeMarkdown(value any, w io.Writer) error {
 	switch v := value.(type) {
 	case cliSummary:
-		fmt.Fprintf(w, "# Claude Code Insights\n\n范围: %s\n\n", formatRange(v.TimeRange))
+		fmt.Fprintf(w, "# %s Insights\n\n范围: %s\n\n", providerTitle(v.Provider), formatRange(v.TimeRange))
 		fmt.Fprintf(w, "- 消息数: %s\n- 会话数: %s\n- Token: %s\n- 工具失败率: %.1f%%\n- Top 项目: %s\n- Top 模型: %s\n",
 			formatInt(v.Messages), formatInt(v.Sessions), formatCompactInt(v.Tokens), v.ToolFailureRate, v.TopProject, v.TopModel)
 		writeMarkdownInsights(w, v.Insights)
 	case cliFailureReport:
-		fmt.Fprintf(w, "# Claude Code Failures\n\n范围: %s\n\n", formatRange(v.TimeRange))
+		fmt.Fprintf(w, "# %s Failures\n\n范围: %s\n\n", providerTitle(v.Provider), formatRange(v.TimeRange))
 		fmt.Fprintf(w, "- 工具调用: %s\n- 失败: %s\n- Missing: %s\n- 失败率: %.1f%%\n\n", formatInt(v.TotalCalls), formatInt(v.TotalFailures), formatInt(v.MissingResults), v.FailureRate)
 		fmt.Fprintln(w, "## Top 失败原因")
 		fmt.Fprintln(w)
@@ -192,7 +192,7 @@ func writeMarkdown(value any, w io.Writer) error {
 		}
 		writeMarkdownInsights(w, v.Insights)
 	case cliCostReport:
-		fmt.Fprintf(w, "# Claude Code Cost\n\n范围: %s\n\n", formatRange(v.TimeRange))
+		fmt.Fprintf(w, "# %s Cost\n\n范围: %s\n\n", providerTitle(v.Provider), formatRange(v.TimeRange))
 		fmt.Fprintf(w, "- 请求: %s\n- Token: %s\n- 输出: %s\n- 成本: %s\n- 缓存读取: %s\n\n", formatInt(v.Totals.RequestCount), formatCompactInt(v.Totals.TotalTokens), formatCompactInt(v.Totals.OutputTokens), formatCNY(v.Totals.CostCNY), formatCompactInt(v.Totals.CacheReadInputTokens))
 		fmt.Fprintln(w, "## Top 模型")
 		fmt.Fprintln(w)
@@ -201,7 +201,7 @@ func writeMarkdown(value any, w io.Writer) error {
 		}
 		writeMarkdownInsights(w, v.Insights)
 	case cliCommandReport:
-		fmt.Fprintf(w, "# Claude Code Commands\n\n范围: %s\n\n", formatRange(v.TimeRange))
+		fmt.Fprintf(w, "# %s Commands\n\n范围: %s\n\n", providerTitle(v.Provider), formatRange(v.TimeRange))
 		fmt.Fprintf(w, "- 命令族: %s\n- 具体命令: %s\n- 调用: %s\n\n", formatInt(len(v.ByFamily)), formatInt(v.TotalCommands), formatInt(v.TotalCalls))
 		fmt.Fprintln(w, "## Top 命令族")
 		fmt.Fprintln(w)
@@ -220,7 +220,7 @@ func writeMarkdown(value any, w io.Writer) error {
 		}
 		writeMarkdownInsights(w, v.Insights)
 	case cliRecommendationReport:
-		fmt.Fprintf(w, "# Claude Code Diagnostics\n\n范围: %s\n\n", formatRange(v.TimeRange))
+		fmt.Fprintf(w, "# %s Diagnostics\n\n范围: %s\n\n", providerTitle(v.Provider), formatRange(v.TimeRange))
 		fmt.Fprintf(w, "- 诊断项: %s\n\n", formatInt(v.TotalFindings))
 		if v.Runtime != nil {
 			fmt.Fprintf(w, "- 准备耗时: %s\n- 数据耗时: %s\n- 诊断耗时: %s\n- 总耗时: %s\n- 数据源: `%s`\n\n",
@@ -289,7 +289,7 @@ func writeMarkdown(value any, w io.Writer) error {
 		}
 		writeMarkdownInsights(w, v.Insights)
 	case cliSessionReport:
-		fmt.Fprintf(w, "# Claude Code Sessions\n\n范围: %s\n\n", formatRange(v.TimeRange))
+		fmt.Fprintf(w, "# %s Sessions\n\n范围: %s\n\n", providerTitle(v.Provider), formatRange(v.TimeRange))
 		fmt.Fprintf(w, "- Session: %s\n- Plan: %s in / %s out\n- Task reminders: %s\n- Todo reminders: %s\n\n",
 			formatInt(v.TotalSessions),
 			formatInt(v.PlanLifecycle.EntryCount),
@@ -778,6 +778,15 @@ func writeInsights(w io.Writer, insights []string) {
 	fmt.Fprintln(w, "\n主要发现:")
 	for _, insight := range insights {
 		fmt.Fprintf(w, "- %s\n", insight)
+	}
+}
+
+func providerTitle(provider string) string {
+	switch Provider(provider) {
+	case ProviderCodex:
+		return "Codex"
+	default:
+		return "Claude Code"
 	}
 }
 

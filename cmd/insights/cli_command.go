@@ -5,7 +5,7 @@ import (
 )
 
 func buildCLICommandReport(data *DashboardData, limit int) cliCommandReport {
-	report := cliCommandReport{TimeRange: data.TimeRange}
+	report := cliCommandReport{Provider: data.Provider, TimeRange: data.TimeRange}
 	if data.CommandAnalysis == nil {
 		return report
 	}

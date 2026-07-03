@@ -258,6 +258,7 @@ func refreshGlobalCache(force bool) error {
 
 	globalCache = cache
 	Info("缓存已加载",
+		"provider", globalCache.Provider,
 		"messages", globalCache.TotalMessages,
 		"sessions", globalCache.TotalSessions,
 	)

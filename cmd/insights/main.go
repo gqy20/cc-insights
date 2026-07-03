@@ -31,6 +31,7 @@ func runWebServer() error {
 	Info("Claude Code Dashboard 启动",
 		"version", version,
 		"commit", commit,
+		"provider", cfg.Provider,
 	)
 
 	// 验证数据目录
@@ -43,6 +44,7 @@ func runWebServer() error {
 	Info("配置信息",
 		"data_dir", cfg.DataDir,
 		"cache_dir", cfg.CacheDir,
+		"provider", cfg.Provider,
 		"listen_addr", cfg.ListenAddr,
 	)
 

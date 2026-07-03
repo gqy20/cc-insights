@@ -39,6 +39,7 @@ type resolvedCommand struct {
 }
 
 type cliSummary struct {
+	Provider        string        `json:"provider"`
 	TimeRange       TimeRangeInfo `json:"time_range"`
 	Messages        int           `json:"messages"`
 	Sessions        int           `json:"sessions"`
@@ -52,6 +53,7 @@ type cliSummary struct {
 }
 
 type cliFailureReport struct {
+	Provider       string                  `json:"provider"`
 	TimeRange      TimeRangeInfo           `json:"time_range"`
 	TotalCalls     int                     `json:"total_calls"`
 	TotalFailures  int                     `json:"total_failures"`
@@ -64,6 +66,7 @@ type cliFailureReport struct {
 }
 
 type cliCostReport struct {
+	Provider  string              `json:"provider"`
 	TimeRange TimeRangeInfo       `json:"time_range"`
 	Totals    TokenUsageBreakdown `json:"totals"`
 	ByModel   []CostModelStat     `json:"by_model"`
@@ -73,6 +76,7 @@ type cliCostReport struct {
 }
 
 type cliCommandReport struct {
+	Provider      string                  `json:"provider"`
 	TimeRange     TimeRangeInfo           `json:"time_range"`
 	TotalCommands int                     `json:"total_commands"`
 	TotalCalls    int                     `json:"total_calls"`
@@ -83,6 +87,7 @@ type cliCommandReport struct {
 }
 
 type cliRecommendationReport struct {
+	Provider        string              `json:"provider"`
 	TimeRange       TimeRangeInfo       `json:"time_range"`
 	TotalFindings   int                 `json:"total_findings"`
 	ByCategory      []nameCount         `json:"by_category"`
@@ -94,6 +99,7 @@ type cliRecommendationReport struct {
 }
 
 type cliSessionReport struct {
+	Provider           string                 `json:"provider"`
 	TimeRange          TimeRangeInfo          `json:"time_range"`
 	TotalSessions      int                    `json:"total_sessions"`
 	LongRunning        []SessionAnalysisItem  `json:"long_running"`
@@ -404,6 +410,11 @@ func buildCLISummary(data *DashboardData) cliSummary {
 	if data.CostAnalysis != nil {
 		tokens = data.CostAnalysis.Totals.TotalTokens
 	}
+	if tokens == 0 {
+		for _, model := range data.ModelUsage {
+			tokens += model.Tokens
+		}
+	}
 	topProject := "-"
 	if data.ProjectStats != nil && len(data.ProjectStats.Projects) > 0 {
 		topProject = data.ProjectStats.Projects[0].Project
@@ -417,6 +428,7 @@ func buildCLISummary(data *DashboardData) cliSummary {
 		failureRate = float64(data.ToolAnalysis.TotalFailures) / float64(data.ToolAnalysis.TotalCalls) * 100
 	}
 	summary := cliSummary{
+		Provider:        data.Provider,
 		TimeRange:       data.TimeRange,
 		Messages:        totalMessages,
 		Sessions:        totalSessions,
@@ -455,7 +467,7 @@ func buildSummaryInsights(data *DashboardData, summary cliSummary) []string {
 }
 
 func buildCLIFailureReport(data *DashboardData, limit int) cliFailureReport {
-	report := cliFailureReport{TimeRange: data.TimeRange}
+	report := cliFailureReport{Provider: data.Provider, TimeRange: data.TimeRange}
 	if data.ToolAnalysis != nil {
 		report.TotalCalls = data.ToolAnalysis.TotalCalls
 		report.TotalFailures = data.ToolAnalysis.TotalFailures
@@ -482,8 +494,20 @@ func buildCLIFailureReport(data *DashboardData, limit int) cliFailureReport {
 }
 
 func buildCLICostReport(data *DashboardData, limit int) cliCostReport {
-	report := cliCostReport{TimeRange: data.TimeRange}
-	if data.CostAnalysis == nil {
+	report := cliCostReport{Provider: data.Provider, TimeRange: data.TimeRange}
+	if data.CostAnalysis == nil || (data.CostAnalysis.Totals.TotalTokens == 0 && len(data.ModelUsage) > 0) {
+		for _, model := range limitSlice(data.ModelUsage, limit) {
+			report.ByModel = append(report.ByModel, CostModelStat{
+				Model:        model.Model,
+				RequestCount: model.Count,
+				TotalTokens:  model.Tokens,
+			})
+			report.Totals.RequestCount += model.Count
+			report.Totals.TotalTokens += model.Tokens
+		}
+		if len(report.ByModel) > 0 {
+			report.Insights = append(report.Insights, fmt.Sprintf("Token 最高模型是 %s，共 %s。", report.ByModel[0].Model, formatCompactInt(report.ByModel[0].TotalTokens)))
+		}
 		return report
 	}
 	report.Totals = data.CostAnalysis.Totals

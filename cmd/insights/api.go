@@ -25,6 +25,7 @@ var globalCache *CacheFile
 // DashboardData Dashboard 数据
 type DashboardData struct {
 	Timestamp        string                  `json:"timestamp"`
+	Provider         string                  `json:"provider"`
 	TimeRange        TimeRangeInfo           `json:"time_range"`
 	Commands         []CommandStats          `json:"commands"`
 	HourlyCounts     map[string]int          `json:"hourly_counts"`
@@ -141,6 +142,9 @@ func buildDataFromCache(tf TimeFilter, preset string) (*DashboardData, error) {
 	// 从缓存查询时间范围数据
 	queryStartedAt := time.Now()
 	cached := globalCache.QueryByTimeRange(start, end)
+	if cached.Provider == "" {
+		cached.Provider = globalCache.Provider
+	}
 	queryDuration := time.Since(queryStartedAt)
 
 	runtimeTools := runtimeToolsFromCache(cached)
@@ -162,11 +166,7 @@ func buildDataFromCache(tf TimeFilter, preset string) (*DashboardData, error) {
 		}
 	}
 
-	modelUsage := make([]ModelUsageItem, 0, len(cached.ModelUsage))
-	for _, mu := range cached.ModelUsage {
-		modelUsage = append(modelUsage, *mu)
-	}
-	sortModelUsage(modelUsage)
+	modelUsage := modelUsageItemsFromCache(cached)
 
 	toolAnalysis := buildToolAnalysisFromCache(cached)
 	skillAnalysis := cloneSkillAnalysis(cached.SkillAnalysis)
@@ -186,6 +186,7 @@ func buildDataFromCache(tf TimeFilter, preset string) (*DashboardData, error) {
 	cmdStats := (<-historyCh).commands
 	data := &DashboardData{
 		Timestamp:        time.Now().Format("2006-01-02 15:04:05"),
+		Provider:         firstNonEmpty(cached.Provider, string(resolveProvider(cfg.Provider, cfg.DataDir))),
 		TimeRange:        buildTimeRangeInfo(tf, preset),
 		Commands:         cmdStats,
 		HourlyCounts:     hourlyCountsMap,
@@ -275,6 +276,7 @@ func buildDataFromParsing(tf TimeFilter, preset string) (*DashboardData, error) 
 
 	return &DashboardData{
 		Timestamp:        time.Now().Format("2006-01-02 15:04:05"),
+		Provider:         string(resolveProvider(cfg.Provider, cfg.DataDir)),
 		TimeRange:        buildTimeRangeInfo(tf, preset),
 		Commands:         cmdStats,
 		HourlyCounts:     hourlyCountsMap,
@@ -504,6 +506,18 @@ func sortModelUsage(models []ModelUsageItem) {
 		}
 		return models[i].Model < models[j].Model
 	})
+}
+
+func modelUsageItemsFromCache(cached *CacheFile) []ModelUsageItem {
+	if cached == nil {
+		return nil
+	}
+	modelUsage := make([]ModelUsageItem, 0, len(cached.ModelUsage))
+	for _, mu := range cached.ModelUsage {
+		modelUsage = append(modelUsage, *mu)
+	}
+	sortModelUsage(modelUsage)
+	return modelUsage
 }
 
 func sortRuntimeToolSignals(tools []RuntimeToolSignal) {

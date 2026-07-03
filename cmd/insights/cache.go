@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-const CacheVersion = "4.7"
+const CacheVersion = "4.8"
 
 // CacheFile 缓存文件结构
 type CacheFile struct {
@@ -245,6 +245,7 @@ func (cf *CacheFile) IsExpired(dataLastModified time.Time) bool {
 func (cf *CacheFile) QueryByTimeRange(start, end time.Time) *CacheFile {
 	result := &CacheFile{
 		Version:    cf.Version,
+		Provider:   cf.Provider,
 		LastUpdate: cf.LastUpdate,
 		BuildID:    cf.BuildID,
 		TimeRange: TimeRange{

@@ -418,6 +418,7 @@ func recordCodexTokenCount(raw json.RawMessage, state *codexSessionState, timest
 		ensureDailySessionRuntimeAggregate(agg, dateKey, sessionID),
 	} {
 		recordModelUsageLocked(target, model, tokens)
+		recordCodexSessionTokenUsage(target, sessionID, projectName, model, timestamp, payload.Info.LastTokenUsage.InputTokens, payload.Info.LastTokenUsage.OutputTokens+payload.Info.LastTokenUsage.ReasoningOutputTokens, tokens)
 	}
 	if agg.DailyModelCounts[dateKey] == nil {
 		agg.DailyModelCounts[dateKey] = make(map[string]int)
@@ -427,16 +428,21 @@ func recordCodexTokenCount(raw json.RawMessage, state *codexSessionState, timest
 		agg.DailyModelTokens[dateKey] = make(map[string]int)
 	}
 	agg.DailyModelTokens[dateKey][model] += tokens
-	if stat := ensureSessionStat(agg, sessionID, projectName); stat != nil {
-		stat.TotalTokens += tokens
-		stat.InputTokens += payload.Info.LastTokenUsage.InputTokens
-		stat.OutputTokens += payload.Info.LastTokenUsage.OutputTokens + payload.Info.LastTokenUsage.ReasoningOutputTokens
-		if stat.ModelsUsed == nil {
-			stat.ModelsUsed = make(map[string]int)
-		}
-		stat.ModelsUsed[model]++
-		recordSessionTimestamp(stat, timestamp)
+}
+
+func recordCodexSessionTokenUsage(agg *ProjectAggregate, sessionID, projectName, model string, timestamp time.Time, inputTokens, outputTokens, totalTokens int) {
+	stat := ensureSessionStat(agg, sessionID, projectName)
+	if stat == nil {
+		return
 	}
+	stat.TotalTokens += totalTokens
+	stat.InputTokens += inputTokens
+	stat.OutputTokens += outputTokens
+	if stat.ModelsUsed == nil {
+		stat.ModelsUsed = make(map[string]int)
+	}
+	stat.ModelsUsed[model]++
+	recordSessionTimestamp(stat, timestamp)
 }
 
 func recordCodexToolResult(agg *ProjectAggregate, pending *codexPendingTool, classification toolFailureClassification, preview string, timestamp time.Time, durationMs int64) {

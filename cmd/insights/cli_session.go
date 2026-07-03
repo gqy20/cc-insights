@@ -7,6 +7,7 @@ import (
 
 func buildCLISessionReport(data *DashboardData, opts cliOptions) cliSessionReport {
 	report := cliSessionReport{
+		Provider:  data.Provider,
 		TimeRange: data.TimeRange,
 		Filter: cliSessionReportFilter{
 			Session: opts.Session,
