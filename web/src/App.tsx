@@ -1,6 +1,7 @@
 import { useFilters } from '@/hooks/useFilters'
 import { useOverview, useDashboardData, useVersion } from '@/api/hooks'
 import { PRESETS } from '@/api/types'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { KpiCard } from '@/components/dashboard/KpiCard'
@@ -37,20 +38,26 @@ function App() {
 
   const s = overview.data?.summary
   const trend = overview.data?.trend
+  const provider = dashboard.data?.provider
 
   return (
     <div className="min-h-screen bg-background">
       <div className="w-full px-6 py-6 lg:px-10">
         <header className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold font-serif tracking-tight">
-              cc-insights
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="text-2xl font-bold font-serif tracking-tight">cc-insights</h1>
+              {provider && (
+                <Badge variant={provider === 'codex' ? 'default' : 'secondary'} className="font-mono">
+                  {providerLabel(provider)}
+                </Badge>
+              )}
               {version && (
-                <span className="ml-2 align-middle font-mono text-xs font-normal text-muted-foreground">
+                <span className="font-mono text-xs font-normal text-muted-foreground">
                   {version}
                 </span>
               )}
-            </h1>
+            </div>
           </div>
           <div className="flex items-center gap-2">
             <div className="flex gap-1 rounded-lg bg-secondary p-1">
@@ -196,6 +203,12 @@ function App() {
       </div>
     </div>
   )
+}
+
+function providerLabel(provider: string): string {
+  if (provider === 'codex') return 'Codex'
+  if (provider === 'claude') return 'Claude Code'
+  return provider
 }
 
 function compact(n: number): string {

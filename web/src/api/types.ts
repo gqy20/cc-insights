@@ -309,6 +309,7 @@ export interface RuntimeToolSignal {
 
 export interface DashboardData {
   timestamp?: string
+  provider?: 'claude' | 'codex' | string
   time_range?: TimeRange
   daily_trend: DailyTrend
   commands?: CommandStat[]
