@@ -16,17 +16,17 @@ func buildCLISessionReport(data *DashboardData, opts cliOptions) cliSessionRepor
 	if data.SessionAnalysis != nil {
 		sessions := filterSessionItems(data.SessionAnalysis.Sessions, report.Filter)
 		report.TotalSessions = len(sessions)
-		report.LongRunning = limitSessionItems(filterSessionItems(data.SessionAnalysis.LongRunning, report.Filter), opts.Limit)
-		report.TopFailures = limitSessionItems(filterSessionItems(data.SessionAnalysis.TopFailures, report.Filter), opts.Limit)
+		report.LongRunning = limitSlice(filterSessionItems(data.SessionAnalysis.LongRunning, report.Filter), opts.Limit)
+		report.TopFailures = limitSlice(filterSessionItems(data.SessionAnalysis.TopFailures, report.Filter), opts.Limit)
 		report.SessionDiagnostics = buildSessionDiagnostics(data, report.LongRunning, report.TopFailures, report.Filter, opts.Limit)
 		report.Outcomes = data.SessionAnalysis.Outcomes
-		report.QueueOperations = limitQueueOperations(data.SessionAnalysis.QueueOperations, opts.Limit)
+		report.QueueOperations = limitSlice(data.SessionAnalysis.QueueOperations, opts.Limit)
 	}
 	if data.TaskPlanAnalysis != nil {
 		report.PlanLifecycle = data.TaskPlanAnalysis.PlanLifecycle
 		report.ReminderSummary = data.TaskPlanAnalysis.ReminderSummary
-		report.TopTaskSessions = limitReminderSessions(filterReminderSessions(data.TaskPlanAnalysis.ReminderSummary.TopTaskSessions, report.Filter), opts.Limit)
-		report.TopTodoSessions = limitReminderSessions(filterReminderSessions(data.TaskPlanAnalysis.ReminderSummary.TopTodoSessions, report.Filter), opts.Limit)
+		report.TopTaskSessions = limitSlice(filterReminderSessions(data.TaskPlanAnalysis.ReminderSummary.TopTaskSessions, report.Filter), opts.Limit)
+		report.TopTodoSessions = limitSlice(filterReminderSessions(data.TaskPlanAnalysis.ReminderSummary.TopTodoSessions, report.Filter), opts.Limit)
 	}
 	if data.FailureAnalysis != nil {
 		filter := cliInspectFailureFilter{Session: opts.Session, Project: opts.Project}
@@ -45,7 +45,7 @@ func buildCLISessionReport(data *DashboardData, opts cliOptions) cliSessionRepor
 	if opts.Session != "" && data.SessionAnalysis != nil {
 		report.SessionHooks = sessionHooksForID(data.SessionAnalysis.Sessions, data.SessionAnalysis.TopFailures, data.SessionAnalysis.LongRunning, opts.Session, opts.Limit)
 	} else if data.EventAnalysis != nil {
-		report.Hooks = limitHookStats(data.EventAnalysis.Hooks, opts.Limit)
+		report.Hooks = limitSlice(data.EventAnalysis.Hooks, opts.Limit)
 	}
 	report.Insights = buildSessionInsights(report)
 	return report
@@ -241,35 +241,6 @@ func filterReminderSessions(items []ReminderSessionItem, filter cliSessionReport
 	return filtered
 }
 
-func limitSessionItems(items []SessionAnalysisItem, limit int) []SessionAnalysisItem {
-	if len(items) > limit {
-		return append([]SessionAnalysisItem(nil), items[:limit]...)
-	}
-	return append([]SessionAnalysisItem(nil), items...)
-}
-
-func limitReminderSessions(items []ReminderSessionItem, limit int) []ReminderSessionItem {
-	if len(items) > limit {
-		return append([]ReminderSessionItem(nil), items[:limit]...)
-	}
-	return append([]ReminderSessionItem(nil), items...)
-}
-
-func limitQueueOperations(items []QueueOperationStat, limit int) []QueueOperationStat {
-	if len(items) > limit {
-		return append([]QueueOperationStat(nil), items[:limit]...)
-	}
-	return append([]QueueOperationStat(nil), items...)
-}
-
-// limitHookStats 截取 Top N hook 统计；finalize 已按（错误数, 总次数）排序。
-func limitHookStats(items []HookStatItem, limit int) []HookStatItem {
-	if len(items) > limit {
-		return append([]HookStatItem(nil), items[:limit]...)
-	}
-	return append([]HookStatItem(nil), items...)
-}
-
 // sortHookBreakdown 把 session 的 HookBreakdown map 转成按（错误数, 总次数）排序的切片。
 func sortHookBreakdown(breakdown map[string]*SessionHookStat) []SessionHookStat {
 	out := make([]SessionHookStat, 0, len(breakdown))
@@ -285,13 +256,6 @@ func sortHookBreakdown(breakdown map[string]*SessionHookStat) []SessionHookStat 
 	return out
 }
 
-func limitSessionHooks(items []SessionHookStat, limit int) []SessionHookStat {
-	if len(items) > limit {
-		return append([]SessionHookStat(nil), items[:limit]...)
-	}
-	return append([]SessionHookStat(nil), items...)
-}
-
 // sessionHooksForID 找到指定 session 的 hook 明细（session→hook），已排序并截断。
 // 在 Sessions/TopFailures/LongRunning 三处合并查找，规避 limitSessionAnalysis 截断导致目标 session
 // 不在单一列表（如某 session 在 TopFailures 却被 Sessions 的 100 上限截掉）的情况。
@@ -299,7 +263,7 @@ func sessionHooksForID(sessions, topFailures, longRunning []SessionAnalysisItem,
 	for _, pool := range [][]SessionAnalysisItem{sessions, topFailures, longRunning} {
 		for _, s := range pool {
 			if matchEqual(sessionID, s.SessionID) {
-				return limitSessionHooks(sortHookBreakdown(s.HookBreakdown), limit)
+				return limitSlice(sortHookBreakdown(s.HookBreakdown), limit)
 			}
 		}
 	}

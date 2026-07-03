@@ -10,9 +10,9 @@ func buildCLICommandReport(data *DashboardData, limit int) cliCommandReport {
 		return report
 	}
 
-	report.ByFamily = limitBashFamilies(data.CommandAnalysis.BashFamilies, limit)
-	report.ByCommand = limitBashCommands(data.CommandAnalysis.BashCommands, limit)
-	report.RiskyCommands = limitBashCommands(data.CommandAnalysis.RiskyCommands, limit)
+	report.ByFamily = limitSlice(data.CommandAnalysis.BashFamilies, limit)
+	report.ByCommand = limitSlice(data.CommandAnalysis.BashCommands, limit)
+	report.RiskyCommands = limitSlice(data.CommandAnalysis.RiskyCommands, limit)
 	report.TotalCommands = len(data.CommandAnalysis.BashCommands)
 	for _, cmd := range data.CommandAnalysis.BashCommands {
 		report.TotalCalls += cmd.CallCount
@@ -37,18 +37,4 @@ func buildCommandInsights(report cliCommandReport) []string {
 		insights = append(insights, fmt.Sprintf("最高风险命令是 %s，风险等级 %s。", top.CommandName, top.RiskLevel))
 	}
 	return insights
-}
-
-func limitBashFamilies(items []BashCommandFamilyStat, limit int) []BashCommandFamilyStat {
-	if len(items) <= limit {
-		return append([]BashCommandFamilyStat(nil), items...)
-	}
-	return append([]BashCommandFamilyStat(nil), items[:limit]...)
-}
-
-func limitBashCommands(items []BashCommandStat, limit int) []BashCommandStat {
-	if len(items) <= limit {
-		return append([]BashCommandStat(nil), items...)
-	}
-	return append([]BashCommandStat(nil), items[:limit]...)
 }

@@ -441,12 +441,12 @@ func buildCLIFailureReport(data *DashboardData, limit int) cliFailureReport {
 		if report.TotalCalls > 0 {
 			report.FailureRate = float64(report.TotalFailures) / float64(report.TotalCalls) * 100
 		}
-		report.ByModelTool = limitToolModelStats(data.ToolAnalysis.ByModel, limit)
+		report.ByModelTool = limitSlice(data.ToolAnalysis.ByModel, limit)
 	}
 	if data.FailureAnalysis != nil {
 		report.TotalFailures = data.FailureAnalysis.TotalFailures
-		report.ByReason = limitFailureReasons(data.FailureAnalysis.ByReason, limit)
-		report.ByToolReason = limitToolReasons(data.FailureAnalysis.ByToolReason, limit)
+		report.ByReason = limitSlice(data.FailureAnalysis.ByReason, limit)
+		report.ByToolReason = limitSlice(data.FailureAnalysis.ByToolReason, limit)
 	}
 	if len(report.ByReason) > 0 {
 		top := report.ByReason[0]
@@ -465,9 +465,9 @@ func buildCLICostReport(data *DashboardData, limit int) cliCostReport {
 		return report
 	}
 	report.Totals = data.CostAnalysis.Totals
-	report.ByModel = limitCostModels(data.CostAnalysis.ByModel, limit)
-	report.ByProject = limitCostProjects(data.CostAnalysis.ByProject, limit)
-	report.BySession = limitCostSessions(data.CostAnalysis.BySession, limit)
+	report.ByModel = limitSlice(data.CostAnalysis.ByModel, limit)
+	report.ByProject = limitSlice(data.CostAnalysis.ByProject, limit)
+	report.BySession = limitSlice(data.CostAnalysis.BySession, limit)
 	if len(report.ByModel) > 0 {
 		report.Insights = append(report.Insights, fmt.Sprintf("Token 最高模型是 %s，共 %s。", report.ByModel[0].Model, formatCompactInt(report.ByModel[0].TotalTokens)))
 	}

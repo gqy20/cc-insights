@@ -378,17 +378,17 @@ func buildOverviewData(data *DashboardData, diagnostics cliRecommendationReport,
 
 	top := overviewTop{}
 	if data.ProjectStats != nil {
-		top.Projects = limitProjectStats(data.ProjectStats.Projects, filter.Limit)
+		top.Projects = limitSlice(data.ProjectStats.Projects, filter.Limit)
 	}
-	top.Models = limitModelUsage(data.ModelUsage, filter.Limit)
+	top.Models = limitSlice(data.ModelUsage, filter.Limit)
 	if data.ToolAnalysis != nil {
-		top.Tools = limitToolStatItems(data.ToolAnalysis.Tools, filter.Limit)
+		top.Tools = limitSlice(data.ToolAnalysis.Tools, filter.Limit)
 	}
 	if data.FailureAnalysis != nil {
-		top.FailureReasons = limitFailureReasons(data.FailureAnalysis.ByReason, filter.Limit)
+		top.FailureReasons = limitSlice(data.FailureAnalysis.ByReason, filter.Limit)
 	}
 	if data.SessionAnalysis != nil {
-		top.Sessions = limitSessionItems(data.SessionAnalysis.LongRunning, filter.Limit)
+		top.Sessions = limitSlice(data.SessionAnalysis.LongRunning, filter.Limit)
 	}
 	return overviewData{
 		Summary: summary,
@@ -561,20 +561,6 @@ func dailyTrendCount(trend DailyTrendData, date string) int {
 	return 0
 }
 
-func limitProjectStats(items []ProjectStatItem, limit int) []ProjectStatItem {
-	if len(items) > limit {
-		return append([]ProjectStatItem(nil), items[:limit]...)
-	}
-	return append([]ProjectStatItem(nil), items...)
-}
-
-func limitModelUsage(items []ModelUsageItem, limit int) []ModelUsageItem {
-	if len(items) > limit {
-		return append([]ModelUsageItem(nil), items[:limit]...)
-	}
-	return append([]ModelUsageItem(nil), items...)
-}
-
 func filterCostProjects(items []CostProjectStat, project string) []CostProjectStat {
 	if project == "" {
 		return items
@@ -601,13 +587,6 @@ func filterCostModels(items []CostModelStat, model string) []CostModelStat {
 
 func filterCommandFamilies(items []BashCommandFamilyStat, family string) []BashCommandFamilyStat {
 	return filterSlice(items, func(item BashCommandFamilyStat) bool { return strings.EqualFold(item.Family, family) })
-}
-
-func limitToolStatItems(items []ToolStatItem, limit int) []ToolStatItem {
-	if len(items) > limit {
-		return append([]ToolStatItem(nil), items[:limit]...)
-	}
-	return append([]ToolStatItem(nil), items...)
 }
 
 func filterSlice[T any](items []T, keep func(T) bool) []T {
