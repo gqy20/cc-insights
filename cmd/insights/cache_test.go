@@ -109,6 +109,57 @@ func TestCacheFileLoad(t *testing.T) {
 	}
 }
 
+func TestCacheFileSaveUsesAtomicTempFile(t *testing.T) {
+	tmpDir := t.TempDir()
+	cachePath := filepath.Join(tmpDir, "cache.db")
+	cache := &CacheFile{
+		Version:       CacheVersion,
+		LastUpdate:    time.Now(),
+		BashRulesHash: "rules",
+		BuildID:       "build-1",
+		DailyStats:    map[string]*DayAggregate{},
+		ProjectStats:  map[string]*ProjectStatItem{},
+		ModelUsage:    map[string]*ModelUsageItem{},
+		ToolStats:     map[string]*ToolStatItem{},
+	}
+
+	if err := cache.Save(cachePath); err != nil {
+		t.Fatalf("Save() failed: %v", err)
+	}
+	if _, err := os.Stat(cachePath + ".tmp"); !os.IsNotExist(err) {
+		t.Fatalf("temp cache file exists or stat failed: %v", err)
+	}
+	loaded, err := LoadCacheFile(cachePath)
+	if err != nil {
+		t.Fatalf("LoadCacheFile() failed: %v", err)
+	}
+	if loaded.BuildID != "build-1" {
+		t.Fatalf("BuildID=%q, want build-1", loaded.BuildID)
+	}
+}
+
+func TestCacheQueryByTimeRangeUsesUniqueSessionCount(t *testing.T) {
+	cache := &CacheFile{
+		Version: CacheVersion,
+		DailyStats: map[string]*DayAggregate{
+			"2026-06-01": {Date: "2026-06-01", MessageCount: 1, SessionCount: 1},
+			"2026-06-02": {Date: "2026-06-02", MessageCount: 1, SessionCount: 1},
+		},
+		DailySessionRuntime: map[string]map[string]ProjectFileAggregate{
+			"2026-06-01": {"session-a": {}},
+			"2026-06-02": {"session-a": {}},
+		},
+		ProjectStats: map[string]*ProjectStatItem{},
+		ModelUsage:   map[string]*ModelUsageItem{},
+		ToolStats:    map[string]*ToolStatItem{},
+	}
+
+	got := cache.QueryByTimeRange(time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC), time.Date(2026, 6, 2, 0, 0, 0, 0, time.UTC))
+	if got.TotalSessions != 1 {
+		t.Fatalf("TotalSessions=%d, want unique count 1", got.TotalSessions)
+	}
+}
+
 // TestCacheFileNotExists 测试加载不存在的缓存文件
 func TestCacheFileNotExists(t *testing.T) {
 	// Arrange

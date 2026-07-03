@@ -279,6 +279,9 @@ func buildDataFromCache(tf TimeFilter, preset string) (*DashboardData, error) {
 	costAnalysis := cloneCostAnalysis(cached.CostAnalysis)
 	failureAnalysis := cloneFailureAnalysis(cached.FailureAnalysis)
 	sessionAnalysis := cloneSessionAnalysis(cached.SessionAnalysis)
+	if sessionAnalysis != nil {
+		sessionStats.TotalSessions = len(sessionAnalysis.Sessions)
+	}
 	fileAnalysis := cloneFileAnalysis(cached.FileAnalysis)
 	taskPlanAnalysis := cloneTaskPlanAnalysis(cached.TaskPlanAnalysis)
 	toolPerformance := cloneToolPerformance(cached.ToolPerformance)
@@ -304,7 +307,7 @@ func buildDataFromCache(tf TimeFilter, preset string) (*DashboardData, error) {
 		ProjectStats: &ProjectStatsData{
 			Projects:      projects,
 			TotalMessages: cached.TotalMessages,
-			TotalSessions: cached.TotalSessions,
+			TotalSessions: sessionStats.TotalSessions,
 		},
 		WeekdayStats:     weekdayStats,
 		ModelUsage:       modelUsage,
@@ -415,6 +418,12 @@ func buildDataFromParsing(tf TimeFilter, preset string) (*DashboardData, error) 
 	for _, proj := range aggregate.Projects {
 		projectStatsData.TotalMessages += proj.MessageCount
 		projectStatsData.TotalSessions += proj.SessionCount
+	}
+	if aggregate.SessionAnalysis != nil {
+		projectStatsData.TotalSessions = len(aggregate.SessionAnalysis.Sessions)
+		if sessionStats != nil {
+			sessionStats.TotalSessions = projectStatsData.TotalSessions
+		}
 	}
 
 	return &DashboardData{

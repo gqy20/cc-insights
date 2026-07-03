@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -199,6 +200,38 @@ func TestClassifyBashRisk_IgnoresNonExecutableText(t *testing.T) {
 				t.Fatalf("classifyBashRisk(%q)=(%q,%q), want (%q,%q)", tc.command, level, reason, tc.wantLevel, tc.wantReason)
 			}
 		})
+	}
+}
+
+func TestBashChainSlowCallUsesChainCategory(t *testing.T) {
+	tmpDir := t.TempDir()
+	dataDir := filepath.Join(tmpDir, "data")
+	projectDir := filepath.Join(dataDir, "projects", "chain-project")
+	if err := os.MkdirAll(projectDir, 0755); err != nil {
+		t.Fatalf("创建测试项目目录失败: %v", err)
+	}
+
+	base := time.Date(2026, 6, 10, 9, 0, 0, 0, time.UTC)
+	content := toolUseRecordWithInput("/tmp/chain-project", "session-chain", base, "bash-chain", "Bash", "claude-sonnet-4.5", false, "", `{"command":"echo start && grep -n TODO README.md"}`) + "\n" +
+		toolResultRecord("/tmp/chain-project", "session-chain", base.Add(12*time.Second), "bash-chain", "ok") + "\n"
+
+	if err := os.WriteFile(filepath.Join(projectDir, "session.jsonl"), []byte(content), 0644); err != nil {
+		t.Fatalf("写入测试 jsonl 失败: %v", err)
+	}
+
+	agg, err := ParseProjectsConcurrentOnceFromDir(TimeFilter{}, dataDir)
+	if err != nil {
+		t.Fatalf("ParseProjectsConcurrentOnceFromDir failed: %v", err)
+	}
+	if agg.ToolPerformance == nil || len(agg.ToolPerformance.SlowestCalls) == 0 {
+		t.Fatal("ToolPerformance.SlowestCalls should not be empty")
+	}
+	top := agg.ToolPerformance.SlowestCalls[0]
+	if top.Category != "Bash:chain" {
+		t.Fatalf("slow category=%q, want Bash:chain; call=%+v", top.Category, top)
+	}
+	if !strings.Contains(top.SampleInput, "grep -n TODO") {
+		t.Fatalf("SampleInput=%q, want full chain command", top.SampleInput)
 	}
 }
 

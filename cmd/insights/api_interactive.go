@@ -331,6 +331,11 @@ func buildOverviewData(data *DashboardData, diagnostics cliRecommendationReport,
 		summary.Sessions = data.ProjectStats.TotalSessions
 		summary.Projects = len(data.ProjectStats.Projects)
 	}
+	if data.SessionAnalysis != nil {
+		summary.Sessions = len(data.SessionAnalysis.Sessions)
+	} else if data.Sessions != nil {
+		summary.Sessions = data.Sessions.TotalSessions
+	}
 	if data.CostAnalysis != nil {
 		summary.Tokens = data.CostAnalysis.Totals.TotalTokens
 	}

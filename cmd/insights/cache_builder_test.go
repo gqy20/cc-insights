@@ -503,3 +503,53 @@ func TestCacheBuilderGetLastDataModified(t *testing.T) {
 		t.Errorf("GetLastDataModified() = %v, want %v", lastMod, expected)
 	}
 }
+
+func TestCacheBuildLockWaitsForRelease(t *testing.T) {
+	tmpDir := t.TempDir()
+	cachePath := filepath.Join(tmpDir, "cache.db")
+	lock, err := acquireCacheBuildLock(cachePath)
+	if err != nil {
+		t.Fatalf("acquireCacheBuildLock() failed: %v", err)
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		done <- waitCacheBuildLockReleased(cachePath)
+	}()
+
+	select {
+	case err := <-done:
+		t.Fatalf("wait returned before release: %v", err)
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	lock.release()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("waitCacheBuildLockReleased() failed: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("waitCacheBuildLockReleased did not return after release")
+	}
+}
+
+func TestCacheBuildLockRemovesStaleLock(t *testing.T) {
+	tmpDir := t.TempDir()
+	cachePath := filepath.Join(tmpDir, "cache.db")
+	lockPath := cachePath + ".lock"
+	if err := os.WriteFile(lockPath, []byte("stale"), 0644); err != nil {
+		t.Fatalf("write stale lock failed: %v", err)
+	}
+	old := time.Now().Add(-20 * time.Minute)
+	if err := os.Chtimes(lockPath, old, old); err != nil {
+		t.Fatalf("chtimes stale lock failed: %v", err)
+	}
+
+	if err := waitCacheBuildLockReleased(cachePath); err != nil {
+		t.Fatalf("waitCacheBuildLockReleased() failed: %v", err)
+	}
+	if _, err := os.Stat(lockPath); !os.IsNotExist(err) {
+		t.Fatalf("stale lock still exists or stat failed: %v", err)
+	}
+}

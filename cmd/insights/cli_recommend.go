@@ -86,13 +86,31 @@ func buildCLIRecommendationReport(data *DashboardData, opts cliOptions) cliRecom
 }
 
 func filterDiagnosticFindingsByID(findings []diagnosticFinding, id string) []diagnosticFinding {
-	filtered := make([]diagnosticFinding, 0, 1)
+	filtered := make([]diagnosticFinding, 0, len(findings))
 	for _, finding := range findings {
-		if finding.ID == id {
+		if diagnosticIDMatches(finding.ID, id) {
 			filtered = append(filtered, finding)
 		}
 	}
 	return filtered
+}
+
+func diagnosticIDMatches(findingID, filterID string) bool {
+	findingID = strings.TrimSpace(findingID)
+	filterID = strings.TrimSpace(filterID)
+	if findingID == "" || filterID == "" {
+		return false
+	}
+	findingLower := strings.ToLower(findingID)
+	filterLower := strings.ToLower(filterID)
+	if findingLower == filterLower || strings.HasPrefix(findingLower, filterLower) || strings.Contains(findingLower, filterLower) {
+		return true
+	}
+	findingSanitized := sanitizeID(findingID)
+	filterSanitized := sanitizeID(filterID)
+	return findingSanitized == filterSanitized ||
+		strings.HasPrefix(findingSanitized, filterSanitized) ||
+		strings.Contains(findingSanitized, filterSanitized)
 }
 
 func enrichDiagnosticFindings(data *DashboardData, findings []diagnosticFinding) {
@@ -216,6 +234,9 @@ func matchesDiagnosticSample(finding diagnosticFinding, sample ToolFailureSample
 	case "command":
 		return strings.EqualFold(sample.Tool, "Bash")
 	case "performance", "workflow", "context":
+		if tool != "" && !strings.EqualFold(tool, sample.Tool) {
+			return false
+		}
 		if session != "" && session != "unknown" {
 			return strings.EqualFold(session, sample.SessionID)
 		}

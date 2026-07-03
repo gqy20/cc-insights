@@ -12,6 +12,7 @@ import (
 )
 
 var toolFailureExpr = regexp.MustCompile(`(?i)(error|failed|exception|traceback|timed out|timeout|permission denied|no such file|command failed|exit code|is_error|\"success\"\s*:\s*false|失败|错误|异常|超时|权限|不存在)`)
+var strongBashFailureExpr = regexp.MustCompile(`(?im)(^|\b)(syntaxerror|typeerror|referenceerror|traceback|panic:|fatal:|npm err!|error:|failed:|command not found|no such file or directory)\b`)
 var exitCodeExpr = regexp.MustCompile(`(?i)(exit code|exited with code|exit status)\s+(-?\d+)`)
 var httpStatusExpr = regexp.MustCompile(`\b(4\d\d|5\d\d)\b`)
 
@@ -815,11 +816,15 @@ func classifyToolResult(tool string, content AssistantContent) toolFailureClassi
 		return newFailureClassification("not_found", "file", "not_found")
 	case strings.Contains(lower, "exit code") || strings.Contains(lower, "command failed"):
 		return newFailureClassification("command_failed", "bash", "command_failed")
-	case toolFailureExpr.MatchString(text):
+	case toolFailureExpr.MatchString(text) && allowGenericFailureText(tool):
 		return newFailureClassification("error_text", failureCategoryForTool(tool), "error_text")
 	default:
 		return toolFailureClassification{}
 	}
+}
+
+func allowGenericFailureText(tool string) bool {
+	return tool != "Bash"
 }
 
 func toolResultTextIsEvidenceOnly(tool string) bool {
@@ -900,6 +905,8 @@ func classifyBashFailure(lower string) (string, string, bool) {
 		return "bash", "killed", true
 	case strings.Contains(lower, "command failed"):
 		return "bash", "command_failed", true
+	case strongBashFailureExpr.MatchString(lower):
+		return "bash", "error_text", true
 	default:
 		return "", "", false
 	}
@@ -1021,7 +1028,7 @@ const maxSlowCalls = 20 // Top-N slowest calls to retain globally
 func buildToolPerfCategoryKey(call pendingToolCall) (string, string, string, string) {
 	switch call.Tool {
 	case "Bash":
-		subKey := call.CommandName
+		subKey := bashPerformanceSubKey(call)
 		if subKey == "" {
 			subKey = "unknown"
 		}
@@ -1057,6 +1064,13 @@ func truncatePath(path string) string {
 		return path
 	}
 	return "..." + path[len(path)-77:]
+}
+
+func bashPerformanceSubKey(call pendingToolCall) string {
+	if len(call.ChainCommands) > 1 {
+		return "chain"
+	}
+	return call.CommandName
 }
 
 func ensureToolPerfAgg(agg *ProjectAggregate, categoryKey string) *ToolPerfAgg {

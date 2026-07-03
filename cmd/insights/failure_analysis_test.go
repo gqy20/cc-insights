@@ -110,6 +110,60 @@ func TestReadToolResultTextDoesNotCreateFailure(t *testing.T) {
 	}
 }
 
+func TestBashReportTextDoesNotCreateFailure(t *testing.T) {
+	tmpDir := t.TempDir()
+	dataDir := filepath.Join(tmpDir, "data")
+	projectDir := filepath.Join(dataDir, "projects", "bash-report-project")
+	if err := os.MkdirAll(projectDir, 0755); err != nil {
+		t.Fatalf("创建测试项目目录失败: %v", err)
+	}
+
+	base := time.Date(2026, 6, 10, 9, 0, 0, 0, time.UTC)
+	content := toolUseRecordWithInput("/tmp/bash-report-project", "session-report", base, "bash-report", "Bash", "claude-sonnet-4.5", false, "", `{"command":"python report.py"}`) + "\n" +
+		toolResultRecord("/tmp/bash-report-project", "session-report", base.Add(time.Second), "bash-report", "整体: 10篇 成功7 失败3 成本$14.12 error_text coverage report") + "\n"
+
+	if err := os.WriteFile(filepath.Join(projectDir, "session.jsonl"), []byte(content), 0644); err != nil {
+		t.Fatalf("写入测试 jsonl 失败: %v", err)
+	}
+
+	agg, err := ParseProjectsConcurrentOnceFromDir(TimeFilter{}, dataDir)
+	if err != nil {
+		t.Fatalf("ParseProjectsConcurrentOnceFromDir failed: %v", err)
+	}
+	if agg.FailureAnalysis.TotalFailures != 0 {
+		t.Fatalf("TotalFailures=%d, want 0; failures=%+v", agg.FailureAnalysis.TotalFailures, agg.FailureAnalysis.ByReason)
+	}
+}
+
+func TestBashStrongErrorTextStillCreatesFailure(t *testing.T) {
+	tmpDir := t.TempDir()
+	dataDir := filepath.Join(tmpDir, "data")
+	projectDir := filepath.Join(dataDir, "projects", "bash-error-project")
+	if err := os.MkdirAll(projectDir, 0755); err != nil {
+		t.Fatalf("创建测试项目目录失败: %v", err)
+	}
+
+	base := time.Date(2026, 6, 10, 9, 0, 0, 0, time.UTC)
+	content := toolUseRecordWithInput("/tmp/bash-error-project", "session-error", base, "bash-error", "Bash", "claude-sonnet-4.5", false, "", `{"command":"node broken.js"}`) + "\n" +
+		toolResultRecord("/tmp/bash-error-project", "session-error", base.Add(time.Second), "bash-error", "SyntaxError: Unexpected token ';'") + "\n"
+
+	if err := os.WriteFile(filepath.Join(projectDir, "session.jsonl"), []byte(content), 0644); err != nil {
+		t.Fatalf("写入测试 jsonl 失败: %v", err)
+	}
+
+	agg, err := ParseProjectsConcurrentOnceFromDir(TimeFilter{}, dataDir)
+	if err != nil {
+		t.Fatalf("ParseProjectsConcurrentOnceFromDir failed: %v", err)
+	}
+	if agg.FailureAnalysis.TotalFailures != 1 {
+		t.Fatalf("TotalFailures=%d, want 1", agg.FailureAnalysis.TotalFailures)
+	}
+	reason := agg.FailureAnalysis.ByReason[0]
+	if reason.Category != "bash" || reason.Reason != "error_text" {
+		t.Fatalf("reason=%+v, want bash/error_text", reason)
+	}
+}
+
 func TestFailureSamplesKeepBeyondFirstThirty(t *testing.T) {
 	tmpDir := t.TempDir()
 	dataDir := filepath.Join(tmpDir, "data")

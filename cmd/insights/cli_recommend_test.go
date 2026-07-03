@@ -103,6 +103,25 @@ func TestBuildCLIRecommendationReportFiltersByID(t *testing.T) {
 	}
 }
 
+func TestFilterDiagnosticFindingsByIDFuzzy(t *testing.T) {
+	findings := []diagnosticFinding{
+		{ID: "workflow.hook.high_cancel_or_error.posttoolbatch_posttoolbatch"},
+		{ID: "performance.slowest_call"},
+	}
+	filtered := filterDiagnosticFindingsByID(findings, "workflow.hook.high_cancel_or_error.PostToolBatch.PostToolBatch")
+	if len(filtered) != 1 {
+		t.Fatalf("filtered=%+v, want one fuzzy hook match", filtered)
+	}
+	if filtered[0].ID != findings[0].ID {
+		t.Fatalf("filtered ID=%q, want %q", filtered[0].ID, findings[0].ID)
+	}
+
+	filtered = filterDiagnosticFindingsByID(findings, "slowest")
+	if len(filtered) != 1 || filtered[0].ID != "performance.slowest_call" {
+		t.Fatalf("filtered=%+v, want slowest call match", filtered)
+	}
+}
+
 func TestDiagnosticRulesLoad(t *testing.T) {
 	rule, ok := diagnosticRuleForID("performance.slowest_call")
 	if !ok {
@@ -140,6 +159,31 @@ func TestResolveCLICommandRecognizesRec(t *testing.T) {
 	}
 	if len(resolved.Args) != 2 || resolved.Args[0] != "-p" || resolved.Args[1] != "7d" {
 		t.Fatalf("Args = %#v, want [-p 7d]", resolved.Args)
+	}
+}
+
+func TestPerformanceDiagnosticExamplesMatchTool(t *testing.T) {
+	data := &DashboardData{
+		FailureAnalysis: &FailureAnalysisData{
+			Samples: []ToolFailureSample{
+				{Tool: "Agent", Category: "tool", Reason: "error_text", Project: "/tmp/project", SessionID: "session-1", ContentPreview: "agent failed"},
+				{Tool: "Bash", Category: "bash", Reason: "error_text", Project: "/tmp/project", SessionID: "session-1", ContentPreview: "bash failed"},
+			},
+		},
+	}
+	finding := diagnosticFinding{
+		Category: "performance",
+		Evidence: []diagnosticEvidence{
+			{Label: "工具", Value: "Bash"},
+			{Label: "Session", Value: "session-1"},
+		},
+	}
+	examples := buildDiagnosticExamples(data, finding, 3)
+	if len(examples) != 1 {
+		t.Fatalf("examples=%+v, want only Bash example", examples)
+	}
+	if examples[0].Tool != "Bash" {
+		t.Fatalf("example tool=%q, want Bash", examples[0].Tool)
 	}
 }
 
