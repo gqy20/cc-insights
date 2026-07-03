@@ -13,6 +13,7 @@ const CacheVersion = "4.7"
 // CacheFile 缓存文件结构
 type CacheFile struct {
 	Version       string           // 缓存格式版本
+	Provider      string           `json:"provider,omitempty"`
 	LastUpdate    time.Time        // 最后缓存时间戳
 	TimeRange     TimeRange        // 缓存覆盖的时间范围
 	BuildID       string           `json:"build_id,omitempty"`

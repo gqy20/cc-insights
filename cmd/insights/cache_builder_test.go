@@ -46,6 +46,9 @@ func TestCacheBuilderBuildFullCache(t *testing.T) {
 	if cache.Version != CacheVersion {
 		t.Errorf("Cache version = %s, want %s", cache.Version, CacheVersion)
 	}
+	if cache.Provider != string(ProviderClaude) {
+		t.Errorf("Cache provider = %s, want %s", cache.Provider, ProviderClaude)
+	}
 
 	if cache.TotalMessages == 0 {
 		t.Error("TotalMessages should be > 0")
@@ -407,6 +410,7 @@ func TestCacheBuilderNeedsRebuild(t *testing.T) {
 			}
 			cache := &CacheFile{
 				Version:       CacheVersion,
+				Provider:      string(ProviderClaude),
 				LastUpdate:    tt.cacheLastUpdate,
 				BashRulesHash: rulesHash,
 			}
@@ -450,6 +454,19 @@ func TestCacheBuilderNeedsRebuild(t *testing.T) {
 				t.Errorf("NeedsRebuild() = %v, want %v", needsRebuild, tt.wantNeedsRebuild)
 			}
 		})
+	}
+}
+
+func TestCachePathForConfigIncludesProvider(t *testing.T) {
+	config := defaultConfig()
+	config.CacheDir = t.TempDir()
+	config.Provider = ProviderCodex
+	config.DataDir = defaultDataDirForProvider(ProviderCodex)
+
+	got := cachePathForConfig(config)
+	want := filepath.Join(config.CacheDir, "codex", "cache.db")
+	if got != want {
+		t.Fatalf("cachePathForConfig() = %q, want %q", got, want)
 	}
 }
 

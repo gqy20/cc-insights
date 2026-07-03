@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"flag"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -98,6 +100,33 @@ func TestParseCLIOptionsPromptProfile(t *testing.T) {
 	}
 	if opts.Project != "cc-insights" {
 		t.Fatalf("Project = %q, want cc-insights", opts.Project)
+	}
+}
+
+func TestParseCLIOptionsProviderCodexUsesDefaultCodexDataDir(t *testing.T) {
+	opts, err := parseCLIOptions(cmdRec, []string{"--provider", "codex"})
+	if err != nil {
+		t.Fatalf("parseCLIOptions returned error: %v", err)
+	}
+	if opts.Provider != ProviderCodex {
+		t.Fatalf("Provider = %q, want %q", opts.Provider, ProviderCodex)
+	}
+	if opts.DataDir != defaultDataDirForProvider(ProviderCodex) {
+		t.Fatalf("DataDir = %q, want %q", opts.DataDir, defaultDataDirForProvider(ProviderCodex))
+	}
+}
+
+func TestParseCLIOptionsProviderAutoDetectsCodexDataDir(t *testing.T) {
+	dataDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dataDir, "sessions", "2026", "07", "03"), 0755); err != nil {
+		t.Fatalf("Create sessions dir failed: %v", err)
+	}
+	opts, err := parseCLIOptions(cmdRec, []string{"--provider", "auto", "--data", dataDir})
+	if err != nil {
+		t.Fatalf("parseCLIOptions returned error: %v", err)
+	}
+	if opts.Provider != ProviderCodex {
+		t.Fatalf("Provider = %q, want %q", opts.Provider, ProviderCodex)
 	}
 }
 

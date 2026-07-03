@@ -61,12 +61,15 @@ func TestAPIUsesCachedData(t *testing.T) {
 	// 设置配置
 	originalDataDir := cfg.DataDir
 	originalCacheDir := cfg.CacheDir
+	originalProvider := cfg.Provider
 	originalGlobalCache := globalCache
 	cfg.DataDir = dataDir
 	cfg.CacheDir = cacheDir
+	cfg.Provider = ProviderClaude
 	defer func() {
 		cfg.DataDir = originalDataDir
 		cfg.CacheDir = originalCacheDir
+		cfg.Provider = originalProvider
 		globalCache = originalGlobalCache
 	}()
 
@@ -120,11 +123,14 @@ func TestAPIFallbackWhenNoCache(t *testing.T) {
 	// 设置配置
 	originalDataDir := cfg.DataDir
 	originalCacheDir := cfg.CacheDir
+	originalProvider := cfg.Provider
 	originalGlobalCache := globalCache
 	cfg.DataDir = dataDir
+	cfg.Provider = ProviderClaude
 	defer func() {
 		cfg.DataDir = originalDataDir
 		cfg.CacheDir = originalCacheDir
+		cfg.Provider = originalProvider
 		globalCache = originalGlobalCache
 	}()
 
@@ -169,14 +175,17 @@ func TestReloadHandlerForcesCacheRefresh(t *testing.T) {
 	originalDataDir := cfg.DataDir
 	originalCacheDir := cfg.CacheDir
 	originalRulesPath := cfg.RulesPath
+	originalProvider := cfg.Provider
 	originalGlobalCache := globalCache
 	cfg.DataDir = dataDir
 	cfg.CacheDir = cacheDir
 	cfg.RulesPath = ""
+	cfg.Provider = ProviderClaude
 	defer func() {
 		cfg.DataDir = originalDataDir
 		cfg.CacheDir = originalCacheDir
 		cfg.RulesPath = originalRulesPath
+		cfg.Provider = originalProvider
 		globalCache = originalGlobalCache
 	}()
 

@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"os"
 	"path/filepath"
 )
@@ -14,9 +15,18 @@ type Config struct {
 	BaseURL     string
 	RulesPath   string
 	PricingPath string
+	Provider    Provider
 }
 
 var cfg Config
+
+type Provider string
+
+const (
+	ProviderClaude Provider = "claude"
+	ProviderCodex  Provider = "codex"
+	ProviderAuto   Provider = "auto"
+)
 
 func defaultConfig() Config {
 	// 家目录：~/.cc-insights/（缓存、配置、日志统一管理）
@@ -35,6 +45,7 @@ func defaultConfig() Config {
 		BaseURL:     "",
 		RulesPath:   "",
 		PricingPath: "",
+		Provider:    ProviderClaude,
 	}
 }
 
@@ -48,6 +59,7 @@ func registerConfigFlags(fs *flag.FlagSet, target *Config) {
 	fs.StringVar(&target.CacheDir, "cache", target.CacheDir, "缓存目录路径 (默认: ~/.cc-insights/cache/)")
 	fs.StringVar(&target.RulesPath, "rules", target.RulesPath, "Bash 命令分类规则 YAML 路径")
 	fs.StringVar(&target.PricingPath, "pricing", target.PricingPath, "模型定价规则 YAML 路径（默认内置 rules/pricing.yml，可用 ~/.cc-insights/pricing.yml 覆盖）")
+	fs.Var(&target.Provider, "provider", "数据源 provider: claude|codex|auto")
 }
 
 // registerServerFlags 注册仅 web 命令使用的服务 flag（监听地址/反向代理）。
@@ -60,4 +72,74 @@ func registerServerFlags(fs *flag.FlagSet, target *Config) {
 func GetDataPath(relPath ...string) string {
 	paths := append([]string{cfg.DataDir}, relPath...)
 	return filepath.Join(paths...)
+}
+
+func (p *Provider) String() string {
+	if p == nil || *p == "" {
+		return string(ProviderClaude)
+	}
+	return string(*p)
+}
+
+func (p *Provider) Set(value string) error {
+	provider := Provider(value)
+	switch provider {
+	case ProviderClaude, ProviderCodex, ProviderAuto:
+		*p = provider
+		return nil
+	default:
+		return fmt.Errorf("未知 provider %q，可选: claude|codex|auto", value)
+	}
+}
+
+func resolveProvider(provider Provider, dataDir string) Provider {
+	if provider != ProviderAuto && provider != "" {
+		return provider
+	}
+	if looksLikeCodexDataDir(dataDir) && !looksLikeClaudeDataDir(dataDir) {
+		return ProviderCodex
+	}
+	return ProviderClaude
+}
+
+func looksLikeClaudeDataDir(dataDir string) bool {
+	if dataDir == "" {
+		return false
+	}
+	if info, err := os.Stat(filepath.Join(dataDir, "projects")); err == nil && info.IsDir() {
+		return true
+	}
+	return false
+}
+
+func looksLikeCodexDataDir(dataDir string) bool {
+	if dataDir == "" {
+		return false
+	}
+	if info, err := os.Stat(filepath.Join(dataDir, "sessions")); err == nil && info.IsDir() {
+		return true
+	}
+	return false
+}
+
+func defaultDataDirForProvider(provider Provider) string {
+	homeDir, _ := os.UserHomeDir()
+	switch provider {
+	case ProviderCodex:
+		return filepath.Join(homeDir, ".codex")
+	default:
+		return filepath.Join(homeDir, ".claude")
+	}
+}
+
+func providerCacheDir(baseCacheDir string, provider Provider) string {
+	if provider == "" {
+		provider = ProviderClaude
+	}
+	return filepath.Join(baseCacheDir, string(provider))
+}
+
+func cachePathForConfig(config Config) string {
+	provider := resolveProvider(config.Provider, config.DataDir)
+	return filepath.Join(providerCacheDir(config.CacheDir, provider), "cache.db")
 }

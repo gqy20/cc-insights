@@ -258,6 +258,7 @@ func parseCLIOptions(cmd *Command, args []string) (cliOptions, error) {
 		}
 		return opts, err
 	}
+	normalizeParsedConfig(&opts.Config, fs)
 
 	if opts.jsonOut {
 		opts.Format = "json"
@@ -276,6 +277,24 @@ func parseCLIOptions(cmd *Command, args []string) (cliOptions, error) {
 		opts.Samples = opts.Limit
 	}
 	return opts, nil
+}
+
+func normalizeParsedConfig(config *Config, fs *flag.FlagSet) {
+	if config == nil {
+		return
+	}
+	dataProvided := false
+	if fs != nil {
+		fs.Visit(func(f *flag.Flag) {
+			if f.Name == "data" {
+				dataProvided = true
+			}
+		})
+	}
+	if !dataProvided && config.Provider == ProviderCodex {
+		config.DataDir = defaultDataDirForProvider(ProviderCodex)
+	}
+	config.Provider = resolveProvider(config.Provider, config.DataDir)
 }
 
 func prepareCLIData() error {
@@ -310,7 +329,7 @@ func prepareCLIDataWithCacheRefresh(refreshStale bool) error {
 }
 
 func loadReusableCacheSnapshot() (*CacheFile, error) {
-	cachePath := filepath.Join(cfg.CacheDir, "cache.db")
+	cachePath := cachePathForConfig(cfg)
 	if err := waitCacheBuildLockReleased(cachePath); err != nil {
 		return nil, err
 	}
@@ -323,6 +342,9 @@ func loadReusableCacheSnapshot() (*CacheFile, error) {
 	}
 	if cache.Version != CacheVersion {
 		return nil, fmt.Errorf("缓存版本 %s != %s", cache.Version, CacheVersion)
+	}
+	if cache.Provider != string(resolveProvider(cfg.Provider, cfg.DataDir)) {
+		return nil, fmt.Errorf("缓存 provider %s != %s", cache.Provider, cfg.Provider)
 	}
 	rulesHash, err := currentBashRulesHash()
 	if err != nil {

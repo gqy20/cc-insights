@@ -578,6 +578,10 @@ func refreshGlobalCacheIfRulesChanged() error {
 	if globalCache == nil {
 		return nil
 	}
+	if globalCache.Provider != string(resolveProvider(cfg.Provider, cfg.DataDir)) {
+		Info("缓存 provider 已变更，刷新缓存")
+		return refreshGlobalCache(false)
+	}
 	rulesHash, err := currentBashRulesHash()
 	if err != nil {
 		return err

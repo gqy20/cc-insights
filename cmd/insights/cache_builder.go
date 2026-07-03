@@ -19,6 +19,7 @@ import (
 type CacheBuilder struct {
 	CachePath string // 缓存文件路径
 	DataDir   string // 数据目录路径
+	Provider  Provider
 }
 
 var cacheRefreshMu sync.Mutex
@@ -46,13 +47,14 @@ func (cb *CacheBuilder) BuildFullCache() error {
 	if dataDir == "" {
 		dataDir = cfg.DataDir
 	}
+	provider := resolveProvider(cb.Provider, dataDir)
 	rulesHash, err := currentBashRulesHash()
 	if err != nil {
 		return fmt.Errorf("加载 Bash 规则失败: %w", err)
 	}
 
 	previous, _ := LoadCacheFile(cb.CachePath)
-	if previous != nil && (previous.Version != CacheVersion || previous.BashRulesHash != rulesHash) {
+	if previous != nil && (previous.Version != CacheVersion || previous.BashRulesHash != rulesHash || previous.Provider != string(provider)) {
 		previous = nil
 	}
 
@@ -76,6 +78,7 @@ func (cb *CacheBuilder) BuildFullCache() error {
 	// 创建缓存结构
 	cache := &CacheFile{
 		Version:       CacheVersion,
+		Provider:      string(provider),
 		LastUpdate:    time.Now(),
 		TimeRange:     TimeRange{},
 		BuildID:       buildID,
@@ -218,7 +221,10 @@ func refreshGlobalCache(force bool) error {
 		return fmt.Errorf("创建缓存目录失败: %w", err)
 	}
 
-	cachePath := filepath.Join(cfg.CacheDir, "cache.db")
+	cachePath := cachePathForConfig(cfg)
+	if err := os.MkdirAll(filepath.Dir(cachePath), 0755); err != nil {
+		return fmt.Errorf("创建 provider 缓存目录失败: %w", err)
+	}
 	lock, err := acquireCacheBuildLock(cachePath)
 	if err != nil {
 		return err
@@ -228,6 +234,7 @@ func refreshGlobalCache(force bool) error {
 	builder := &CacheBuilder{
 		CachePath: cachePath,
 		DataDir:   cfg.DataDir,
+		Provider:  cfg.Provider,
 	}
 
 	if force || builder.NeedsRebuild() {
@@ -475,6 +482,10 @@ func (cb *CacheBuilder) RebuildIfChanged() error {
 	}
 
 	Info("检查缓存是否需要重建", "cache_time", cache.LastUpdate.Format("2006-01-02 15:04:05"))
+	if cache.Provider != string(resolveProvider(cb.Provider, cb.DataDir)) {
+		Info("缓存 provider 已变更，重新构建缓存", "cache_provider", cache.Provider, "provider", cb.Provider)
+		return cb.BuildFullCache()
+	}
 
 	lastDataMod, err := cb.GetLastDataModified()
 	if err != nil {
@@ -503,6 +514,9 @@ func (cb *CacheBuilder) NeedsRebuild() bool {
 		return true // 缓存损坏，需要重建
 	}
 	if cache.Version != CacheVersion {
+		return true
+	}
+	if cache.Provider != string(resolveProvider(cb.Provider, cb.DataDir)) {
 		return true
 	}
 	rulesHash, err := currentBashRulesHash()
