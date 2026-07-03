@@ -131,7 +131,7 @@ func topFailureReasonsForSession(samples []ToolFailureSample, limit int) []nameC
 		key := nonEmpty(sample.Category, "unknown") + "/" + nonEmpty(sample.Reason, sample.Kind)
 		counts[key]++
 	}
-	return topSessionNameCounts(counts, limit)
+	return topNameCounts(counts, limit)
 }
 
 func topFailureToolsForSession(samples []ToolFailureSample, limit int) []nameCount {
@@ -139,24 +139,7 @@ func topFailureToolsForSession(samples []ToolFailureSample, limit int) []nameCou
 	for _, sample := range samples {
 		counts[nonEmpty(sample.Tool, "unknown")]++
 	}
-	return topSessionNameCounts(counts, limit)
-}
-
-func topSessionNameCounts(counts map[string]int, limit int) []nameCount {
-	items := make([]nameCount, 0, len(counts))
-	for name, count := range counts {
-		items = append(items, nameCount{Name: name, Count: count})
-	}
-	sort.SliceStable(items, func(i, j int) bool {
-		if items[i].Count != items[j].Count {
-			return items[i].Count > items[j].Count
-		}
-		return items[i].Name < items[j].Name
-	})
-	if len(items) > limit {
-		return append([]nameCount(nil), items[:limit]...)
-	}
-	return items
+	return topNameCounts(counts, limit)
 }
 
 func sessionDiagnosticSignals(item SessionAnalysisItem) []string {

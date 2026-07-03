@@ -1210,17 +1210,7 @@ func countFindingsByCategory(findings []diagnosticFinding) []nameCount {
 	for _, finding := range findings {
 		counts[finding.Category]++
 	}
-	items := make([]nameCount, 0, len(counts))
-	for name, count := range counts {
-		items = append(items, nameCount{Name: name, Count: count})
-	}
-	sort.Slice(items, func(i, j int) bool {
-		if items[i].Count == items[j].Count {
-			return items[i].Name < items[j].Name
-		}
-		return items[i].Count > items[j].Count
-	})
-	return items
+	return topNameCounts(counts, 0)
 }
 
 func buildRecommendationInsights(report cliRecommendationReport) []string {

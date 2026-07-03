@@ -2,14 +2,8 @@ package main
 
 import (
 	"fmt"
-	"sort"
 	"strings"
 )
-
-type nameCount struct {
-	Name  string `json:"name"`
-	Count int    `json:"count"`
-}
 
 type cliInspectFailureFilter struct {
 	Reason   string `json:"reason,omitempty"`
@@ -116,20 +110,7 @@ func topSampleCounts(samples []ToolFailureSample, limit int, keyFn func(ToolFail
 		}
 		counts[key]++
 	}
-	items := make([]nameCount, 0, len(counts))
-	for name, count := range counts {
-		items = append(items, nameCount{Name: name, Count: count})
-	}
-	sort.Slice(items, func(i, j int) bool {
-		if items[i].Count == items[j].Count {
-			return items[i].Name < items[j].Name
-		}
-		return items[i].Count > items[j].Count
-	})
-	if len(items) > limit {
-		items = items[:limit]
-	}
-	return items
+	return topNameCounts(counts, limit)
 }
 
 func buildInspectFailureInsights(report cliInspectFailuresReport) []string {
