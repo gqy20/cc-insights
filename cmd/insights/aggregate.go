@@ -207,7 +207,7 @@ func mergeProjectAggregate(dst, src *ProjectAggregate) {
 		dstStat := ensureFailureModelReasonStat(dst, stat.Model, stat.Category, stat.Reason)
 		dstStat.Count += stat.Count
 	}
-	remainingFailures := 30 - len(dst.FailureSamples)
+	remainingFailures := maxFailureSamples - len(dst.FailureSamples)
 	if remainingFailures > 0 {
 		samples := src.FailureSamples
 		if len(samples) > remainingFailures {

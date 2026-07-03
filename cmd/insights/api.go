@@ -694,14 +694,16 @@ func extractSessionStatsFromAggregate(agg *ProjectAggregate) (*SessionStats, err
 	}
 
 	dailyMap := make(map[string]int)
-	totalSessions := 0
+	uniqueSessions := make(map[string]bool)
 	peakDate, peakCount := "", 0
 	valleyDate, valleyCount := "", 0
 
 	for date, sessions := range agg.DailySessions {
 		count := len(sessions)
 		dailyMap[date] = count
-		totalSessions += count
+		for sessionID := range sessions {
+			uniqueSessions[sessionID] = true
+		}
 		if count > peakCount {
 			peakCount = count
 			peakDate = date
@@ -713,7 +715,7 @@ func extractSessionStatsFromAggregate(agg *ProjectAggregate) (*SessionStats, err
 	}
 
 	return &SessionStats{
-		TotalSessions:   totalSessions,
+		TotalSessions:   len(uniqueSessions),
 		PeakDate:        peakDate,
 		PeakCount:       peakCount,
 		ValleyDate:      valleyDate,

@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -78,5 +79,74 @@ func TestParseProjectsConcurrentOnce_FailureAnalysis(t *testing.T) {
 	}
 	if agg.FailureAnalysis.Samples[0].Category == "" || agg.FailureAnalysis.Samples[0].Reason == "" {
 		t.Fatalf("sample missing category/reason: %+v", agg.FailureAnalysis.Samples[0])
+	}
+}
+
+func TestReadToolResultTextDoesNotCreateFailure(t *testing.T) {
+	tmpDir := t.TempDir()
+	dataDir := filepath.Join(tmpDir, "data")
+	projectDir := filepath.Join(dataDir, "projects", "read-project")
+	if err := os.MkdirAll(projectDir, 0755); err != nil {
+		t.Fatalf("创建测试项目目录失败: %v", err)
+	}
+
+	base := time.Date(2026, 6, 10, 9, 0, 0, 0, time.UTC)
+	content := toolUseRecordWithInput("/tmp/read-project", "session-read", base, "read-ok", "Read", "claude-sonnet-4.5", false, "", `{"file_path":"README.md"}`) + "\n" +
+		toolResultRecord("/tmp/read-project", "session-read", base.Add(time.Second), "read-ok", "This document mentions error handling, failed retries, and permission denied examples.") + "\n"
+
+	if err := os.WriteFile(filepath.Join(projectDir, "session.jsonl"), []byte(content), 0644); err != nil {
+		t.Fatalf("写入测试 jsonl 失败: %v", err)
+	}
+
+	agg, err := ParseProjectsConcurrentOnceFromDir(TimeFilter{}, dataDir)
+	if err != nil {
+		t.Fatalf("ParseProjectsConcurrentOnceFromDir failed: %v", err)
+	}
+	if agg.FailureAnalysis == nil {
+		t.Fatal("FailureAnalysis should not be nil")
+	}
+	if agg.FailureAnalysis.TotalFailures != 0 {
+		t.Fatalf("TotalFailures=%d, want 0; failures=%+v", agg.FailureAnalysis.TotalFailures, agg.FailureAnalysis.ByReason)
+	}
+}
+
+func TestFailureSamplesKeepBeyondFirstThirty(t *testing.T) {
+	tmpDir := t.TempDir()
+	dataDir := filepath.Join(tmpDir, "data")
+	projectDir := filepath.Join(dataDir, "projects", "many-failures")
+	if err := os.MkdirAll(projectDir, 0755); err != nil {
+		t.Fatalf("创建测试项目目录失败: %v", err)
+	}
+
+	base := time.Date(2026, 6, 10, 9, 0, 0, 0, time.UTC)
+	lines := make([]string, 0, 80)
+	for i := 0; i < 40; i++ {
+		callID := "bash-fail-" + formatInt(i)
+		lines = append(lines,
+			toolUseRecordWithInput("/tmp/many-failures", "session-many", base.Add(time.Duration(i*2)*time.Second), callID, "Bash", "claude-sonnet-4.5", false, "", `{"command":"npm test"}`),
+			toolResultRecord("/tmp/many-failures", "session-many", base.Add(time.Duration(i*2+1)*time.Second), callID, "Command failed with exit code 1: npm test"),
+		)
+	}
+
+	if err := os.WriteFile(filepath.Join(projectDir, "session.jsonl"), []byte(strings.Join(lines, "\n")+"\n"), 0644); err != nil {
+		t.Fatalf("写入测试 jsonl 失败: %v", err)
+	}
+
+	agg, err := ParseProjectsConcurrentOnceFromDir(TimeFilter{}, dataDir)
+	if err != nil {
+		t.Fatalf("ParseProjectsConcurrentOnceFromDir failed: %v", err)
+	}
+	if got := len(agg.FailureAnalysis.Samples); got != 40 {
+		t.Fatalf("samples=%d, want 40", got)
+	}
+	report := buildCLIInspectFailuresReport(&DashboardData{
+		TimeRange:       TimeRangeInfo{Preset: "all"},
+		FailureAnalysis: agg.FailureAnalysis,
+	}, cliOptions{Category: "bash", Reason: "exit_code_1", Tool: "Bash", Limit: 5, Samples: 5})
+	if report.Summary.MatchedSamples != 40 {
+		t.Fatalf("MatchedSamples=%d, want 40", report.Summary.MatchedSamples)
+	}
+	if len(report.Samples) != 5 {
+		t.Fatalf("Samples=%d, want 5", len(report.Samples))
 	}
 }

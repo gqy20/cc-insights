@@ -162,6 +162,8 @@ func diagnosticTriggerValue(finding diagnosticFinding) string {
 		return evidenceValue(finding, "耗时")
 	case finding.ID == "workflow.interactive_tool.long_wait":
 		return evidenceValue(finding, "耗时")
+	case strings.HasPrefix(finding.ID, "workflow.hook.high_cancel_or_error."):
+		return evidenceValue(finding, "失败率")
 	case finding.ID == "workflow.plan.no_exit":
 		return evidenceValue(finding, "Plan 退出")
 	default:
@@ -385,6 +387,15 @@ func workflowRootCauses(finding diagnosticFinding, examples []diagnosticExample)
 			RecommendationTarget: "workflow",
 		}}
 	}
+	if strings.HasPrefix(finding.ID, "workflow.hook.high_cancel_or_error.") {
+		return []diagnosticRootCause{{
+			Type:                 "hook_unstable_or_cancelled",
+			Confidence:           finding.Confidence,
+			Summary:              "Hook 取消或错误集中，通常来自外部脚本依赖、网络、环境变量或超时边界不稳定。",
+			Evidence:             compactStrings(evidenceStatement(finding, "Hook"), evidenceStatement(finding, "事件"), evidenceStatement(finding, "失败率"), evidenceStatement(finding, "最后命令")),
+			RecommendationTarget: "hook",
+		}}
+	}
 	return []diagnosticRootCause{{
 		Type:                 "task_boundary_or_recovery_strategy",
 		Confidence:           finding.Confidence,
@@ -583,6 +594,8 @@ func actionForRootCause(cause diagnosticRootCause) diagnosticAction {
 		action = "补充项目结构、任务拆分和文件读取边界，减少重复探索。"
 	case "human_or_plan_wait", "task_boundary_or_recovery_strategy":
 		action = "明确计划确认、任务拆分、暂停恢复和验收点。"
+	case "hook_unstable_or_cancelled":
+		action = "让 hook 脚本先做环境检查，设置短超时，并在取消/错误时输出可诊断原因。"
 	}
 	return diagnosticAction{
 		Target: cause.RecommendationTarget,
@@ -867,19 +880,23 @@ func buildPerformanceDiagnostics(data *DashboardData) []diagnosticFinding {
 	if len(data.ToolPerformance.SlowestCalls) > 0 {
 		top, ok := topNonInteractiveSlowCall(data.ToolPerformance.SlowestCalls)
 		if ok && top.DurationMs >= 10_000 {
+			evidence := []diagnosticEvidence{
+				{Label: "工具", Value: top.Tool},
+				{Label: "类别", Value: top.Category},
+				{Label: "耗时", Value: formatDurationMs(top.DurationMs)},
+				{Label: "项目", Value: nonEmpty(top.Project, "unknown")},
+				{Label: "Session", Value: nonEmpty(top.SessionID, "unknown")},
+			}
+			if top.SampleInput != "" {
+				evidence = append(evidence, diagnosticEvidence{Label: "输入摘要", Value: top.SampleInput})
+			}
 			findings = append(findings, diagnosticFinding{
-				ID:       "performance.slowest_call",
-				Category: "performance",
-				Severity: severityFromDuration(float64(top.DurationMs)),
-				Title:    "存在明显慢调用样例",
-				Summary:  fmt.Sprintf("%s 单次调用耗时 %s。", top.Category, formatDurationMs(top.DurationMs)),
-				Evidence: []diagnosticEvidence{
-					{Label: "工具", Value: top.Tool},
-					{Label: "类别", Value: top.Category},
-					{Label: "耗时", Value: formatDurationMs(top.DurationMs)},
-					{Label: "项目", Value: nonEmpty(top.Project, "unknown")},
-					{Label: "Session", Value: nonEmpty(top.SessionID, "unknown")},
-				},
+				ID:             "performance.slowest_call",
+				Category:       "performance",
+				Severity:       severityFromDuration(float64(top.DurationMs)),
+				Title:          "存在明显慢调用样例",
+				Summary:        fmt.Sprintf("%s 单次调用耗时 %s。", top.Category, formatDurationMs(top.DurationMs)),
+				Evidence:       evidence,
 				Interpretation: "慢调用样例可以作为优化入口，尤其适合判断是否需要明确服务启动、测试范围或命令超时策略。",
 				NextSteps: []string{
 					"定位该 session 的上下文，确认慢调用前 AI 是否缺少前置判断。",
@@ -1103,7 +1120,65 @@ func buildWorkflowDiagnostics(data *DashboardData) []diagnosticFinding {
 			})
 		}
 	}
+	if data.EventAnalysis != nil {
+		if hook, ok := topProblemHook(data.EventAnalysis.Hooks); ok {
+			failRate := 0.0
+			if hook.TotalCount > 0 {
+				failRate = float64(hook.CancelledCount+hook.ErrorCount) / float64(hook.TotalCount) * 100
+			}
+			evidence := []diagnosticEvidence{
+				{Label: "Hook", Value: hook.HookName},
+				{Label: "事件", Value: hook.HookEvent},
+				{Label: "总次数", Value: formatInt(hook.TotalCount)},
+				{Label: "取消", Value: formatInt(hook.CancelledCount)},
+				{Label: "错误", Value: formatInt(hook.ErrorCount)},
+				{Label: "失败率", Value: formatFailureRate(failRate) + "%"},
+				{Label: "涉及 Session", Value: formatInt(hook.SessionCount)},
+			}
+			if hook.LastCommand != "" {
+				evidence = append(evidence, diagnosticEvidence{Label: "最后命令", Value: previewString(hook.LastCommand, 120)})
+			}
+			findings = append(findings, diagnosticFinding{
+				ID:             "workflow.hook.high_cancel_or_error." + sanitizeID(hook.HookName+"."+hook.HookEvent),
+				Category:       "workflow",
+				Severity:       severityFromRate(failRate, 80, 40),
+				Title:          "Hook 取消或错误率偏高",
+				Summary:        fmt.Sprintf("%s/%s 执行 %s 次，取消 %s 次，错误 %s 次。", hook.HookName, hook.HookEvent, formatInt(hook.TotalCount), formatInt(hook.CancelledCount), formatInt(hook.ErrorCount)),
+				Evidence:       evidence,
+				Interpretation: "Hook 高取消或错误率会让外部通知、审计、自动化衔接不可靠，也可能拖慢或打断会话流程。",
+				NextSteps: []string{
+					"检查 hook 命令是否依赖不可用环境变量、网络、后台服务或交互输入。",
+					"确认取消是否来自用户主动中断；若不是，应让 hook 快速失败并输出可诊断错误。",
+				},
+				Confidence: "medium",
+			})
+		}
+	}
 	return findings
+}
+
+func topProblemHook(hooks []HookStatItem) (HookStatItem, bool) {
+	var best HookStatItem
+	bestScore := -1.0
+	for _, hook := range hooks {
+		if hook.TotalCount < 2 {
+			continue
+		}
+		failCount := hook.CancelledCount + hook.ErrorCount
+		if failCount == 0 {
+			continue
+		}
+		failRate := float64(failCount) / float64(hook.TotalCount) * 100
+		if failRate < 50 && failCount < 3 {
+			continue
+		}
+		score := failRate*10 + float64(failCount)
+		if score > bestScore {
+			best = hook
+			bestScore = score
+		}
+	}
+	return best, bestScore >= 0
 }
 
 func countFindingsByCategory(findings []diagnosticFinding) []nameCount {

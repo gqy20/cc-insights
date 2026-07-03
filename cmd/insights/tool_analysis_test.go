@@ -29,7 +29,7 @@ func TestParseProjectsConcurrentOnce_ToolAnalysis(t *testing.T) {
 		toolUseRecordWithInput("/tmp/tool-project", "session-tools", base, "call-ok", "Bash", "claude-sonnet-4.5", false, "", `{"command":"sudo rm -rf /tmp/demo","description":"cleanup"}`) + "\n" +
 		toolResultRecord("/tmp/tool-project", "session-tools", base.Add(time.Second), "call-ok", "command completed") + "\n" +
 		toolUseRecordWithInput("/tmp/tool-project", "session-tools", base.Add(2*time.Second), "call-fail", "Read", "glm-5v-turbo", true, "agent-reader", `{"file_path":"/tmp/tool-project/missing.go"}`) + "\n" +
-		toolResultRecord("/tmp/tool-project", "session-tools", base.Add(3*time.Second), "call-fail", "Error: no such file or directory") + "\n" +
+		toolErrorResultRecord("/tmp/tool-project", "session-tools", base.Add(3*time.Second), "call-fail", "Error: no such file or directory") + "\n" +
 		toolUseRecordWithModel("/tmp/tool-project", "session-tools", base.Add(4*time.Second), "call-missing", "Edit", "claude-sonnet-4.5") + "\n"
 
 	if err := os.WriteFile(filepath.Join(projectDir, "session.jsonl"), []byte(content), 0644); err != nil {
@@ -224,6 +224,10 @@ func toolUseRecordWithInput(cwd, sessionID string, ts time.Time, callID, tool, m
 
 func toolResultRecord(cwd, sessionID string, ts time.Time, callID, content string) string {
 	return `{"type":"user","cwd":"` + cwd + `","sessionId":"` + sessionID + `","timestamp":"` + ts.Format(time.RFC3339Nano) + `","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"` + callID + `","content":"` + content + `"}]}}`
+}
+
+func toolErrorResultRecord(cwd, sessionID string, ts time.Time, callID, content string) string {
+	return `{"type":"user","cwd":"` + cwd + `","sessionId":"` + sessionID + `","timestamp":"` + ts.Format(time.RFC3339Nano) + `","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"` + callID + `","is_error":true,"content":"` + content + `"}]}}`
 }
 
 func attachmentRecord(cwd, sessionID string, ts time.Time, attachment string) string {

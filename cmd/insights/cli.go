@@ -294,6 +294,9 @@ func prepareCLIDataWithCacheRefresh(refreshStale bool) error {
 
 func loadReusableCacheSnapshot() (*CacheFile, error) {
 	cachePath := filepath.Join(cfg.CacheDir, "cache.db")
+	if err := waitCacheBuildLockReleased(cachePath); err != nil {
+		return nil, err
+	}
 	cache, err := LoadCacheFile(diagnosticsCachePath(cachePath))
 	if err != nil {
 		cache, err = LoadCacheFile(cachePath)
@@ -350,10 +353,13 @@ func buildCLISummary(data *DashboardData) cliSummary {
 	totalSessions := 0
 	if data.ProjectStats != nil {
 		totalMessages = data.ProjectStats.TotalMessages
-		totalSessions = data.ProjectStats.TotalSessions
 	}
-	if totalSessions == 0 && data.Sessions != nil {
+	if data.SessionAnalysis != nil {
+		totalSessions = len(data.SessionAnalysis.Sessions)
+	} else if data.Sessions != nil {
 		totalSessions = data.Sessions.TotalSessions
+	} else if data.ProjectStats != nil {
+		totalSessions = data.ProjectStats.TotalSessions
 	}
 	tokens := 0
 	if data.CostAnalysis != nil {

@@ -65,6 +65,11 @@ rules:
     threshold: 交互型工具等待 >= 10min
     source: tool_performance.slowest_calls
     rationale: 交互等待更像流程停顿，而不是工具执行性能问题。
+  - id_prefix: workflow.hook.high_cancel_or_error.
+    metric: hook_cancel_or_error_rate
+    threshold: Hook 执行次数 >= 2 且取消/错误率 >= 50%
+    source: event_analysis.hooks
+    rationale: Hook 高取消或错误率会影响外部自动化和会话流程可靠性。
   - id: workflow.plan.no_exit
     metric: plan_exit_count
     threshold: Plan 进入 >= 10 且退出 = 0

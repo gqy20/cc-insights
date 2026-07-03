@@ -8,13 +8,14 @@ import (
 	"time"
 )
 
-const CacheVersion = "3.7"
+const CacheVersion = "3.9"
 
 // CacheFile 缓存文件结构
 type CacheFile struct {
 	Version       string           // 缓存格式版本
 	LastUpdate    time.Time        // 最后缓存时间戳
 	TimeRange     TimeRange        // 缓存覆盖的时间范围
+	BuildID       string           `json:"build_id,omitempty"`
 	BashRulesHash string           `json:"bash_rules_hash,omitempty"`
 	BuildStats    *CacheBuildStats `json:"build_stats,omitempty"`
 
@@ -49,6 +50,7 @@ type CacheFile struct {
 
 // CacheBuildStats 记录最近一次缓存构建的结构化元数据
 type CacheBuildStats struct {
+	BuildID         string `json:"build_id,omitempty"`
 	BuiltAt         string `json:"built_at"`
 	BuildDurationMs int64  `json:"build_duration_ms"`
 	TotalFiles      int    `json:"total_files"`
@@ -191,9 +193,13 @@ func (cf *CacheFile) Save(path string) error {
 		return fmt.Errorf("序列化缓存失败: %w", err)
 	}
 
-	// 写入文件
-	if err := os.WriteFile(path, data, 0644); err != nil {
-		return fmt.Errorf("写入缓存文件失败: %w", err)
+	tmpPath := path + ".tmp"
+	if err := os.WriteFile(tmpPath, data, 0644); err != nil {
+		return fmt.Errorf("写入缓存临时文件失败: %w", err)
+	}
+	if err := os.Rename(tmpPath, path); err != nil {
+		_ = os.Remove(tmpPath)
+		return fmt.Errorf("替换缓存文件失败: %w", err)
 	}
 
 	return nil
@@ -239,6 +245,7 @@ func (cf *CacheFile) QueryByTimeRange(start, end time.Time) *CacheFile {
 	result := &CacheFile{
 		Version:    cf.Version,
 		LastUpdate: cf.LastUpdate,
+		BuildID:    cf.BuildID,
 		TimeRange: TimeRange{
 			Start: start,
 			End:   end,
@@ -259,6 +266,8 @@ func (cf *CacheFile) QueryByTimeRange(start, end time.Time) *CacheFile {
 	queryRange := TimeRange{Start: start, End: end}
 	runtimeAggregate := newProjectAggregate()
 	hasRuntimeAggregate := false
+	uniqueSessionIDs := make(map[string]bool)
+	fallbackDailySessionTotal := 0
 
 	// 遍历每日统计，过滤时间范围
 	for date, dayStats := range cf.DailyStats {
@@ -275,7 +284,7 @@ func (cf *CacheFile) QueryByTimeRange(start, end time.Time) *CacheFile {
 			result.DailyStats[date] = &dayCopy
 
 			result.TotalMessages += dayStats.MessageCount
-			result.TotalSessions += dayStats.SessionCount
+			fallbackDailySessionTotal += dayStats.SessionCount
 
 			for hour, count := range dayStats.HourlyCounts {
 				if count == 0 {
@@ -331,10 +340,16 @@ func (cf *CacheFile) QueryByTimeRange(start, end time.Time) *CacheFile {
 					result.DailySessionRuntime[date] = make(map[string]ProjectFileAggregate)
 				}
 				for sessionID, runtimeSnapshot := range sessions {
+					uniqueSessionIDs[sessionID] = true
 					result.DailySessionRuntime[date][sessionID] = runtimeSnapshot
 				}
 			}
 		}
+	}
+	if len(uniqueSessionIDs) > 0 {
+		result.TotalSessions = len(uniqueSessionIDs)
+	} else {
+		result.TotalSessions = fallbackDailySessionTotal
 	}
 
 	if hasRuntimeAggregate {

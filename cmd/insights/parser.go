@@ -15,6 +15,8 @@ var toolFailureExpr = regexp.MustCompile(`(?i)(error|failed|exception|traceback|
 var exitCodeExpr = regexp.MustCompile(`(?i)(exit code|exited with code|exit status)\s+(-?\d+)`)
 var httpStatusExpr = regexp.MustCompile(`\b(4\d\d|5\d\d)\b`)
 
+const maxFailureSamples = 5000
+
 type toolFailureClassification struct {
 	Kind     string
 	Category string
@@ -123,7 +125,7 @@ func addToolResultLocked(agg *ProjectAggregate, call pendingToolCall, classifica
 				recordFileEditFailureLocked(agg, parts[1], classification.Category, classification.Reason)
 			}
 		}
-		if len(agg.FailureSamples) < 30 {
+		if len(agg.FailureSamples) < maxFailureSamples {
 			agg.FailureSamples = append(agg.FailureSamples, ToolFailureSample{
 				Tool:           call.Tool,
 				Model:          call.Model,
@@ -785,15 +787,20 @@ func normalizeFailureCategoryReason(category, reason string) (string, string) {
 }
 
 func classifyToolResult(tool string, content AssistantContent) toolFailureClassification {
+	text := toolResultText(content.Content)
+	lower := strings.ToLower(text)
 	if content.IsError {
+		if category, reason, ok := classifyDetailedFailure(tool, lower); ok {
+			return newFailureClassification("", category, reason)
+		}
 		return newFailureClassification("explicit_error", failureCategoryForTool(tool), "explicit_error")
 	}
-
-	text := toolResultText(content.Content)
 	if text == "" {
 		return toolFailureClassification{}
 	}
-	lower := strings.ToLower(text)
+	if toolResultTextIsEvidenceOnly(tool) {
+		return toolFailureClassification{}
+	}
 	if category, reason, ok := classifyDetailedFailure(tool, lower); ok {
 		return newFailureClassification("", category, reason)
 	}
@@ -812,6 +819,15 @@ func classifyToolResult(tool string, content AssistantContent) toolFailureClassi
 		return newFailureClassification("error_text", failureCategoryForTool(tool), "error_text")
 	default:
 		return toolFailureClassification{}
+	}
+}
+
+func toolResultTextIsEvidenceOnly(tool string) bool {
+	switch tool {
+	case "Read", "Glob", "Grep", "LS", "NotebookRead":
+		return true
+	default:
+		return false
 	}
 }
 

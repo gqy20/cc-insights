@@ -39,6 +39,7 @@ type projectFileResult struct {
 // BuildFullCache 构建完整缓存
 func (cb *CacheBuilder) BuildFullCache() error {
 	buildStartedAt := time.Now()
+	buildID := buildStartedAt.UTC().Format("20060102T150405.000000000Z")
 	Info("开始构建完整缓存")
 
 	dataDir := cb.DataDir
@@ -77,8 +78,10 @@ func (cb *CacheBuilder) BuildFullCache() error {
 		Version:       CacheVersion,
 		LastUpdate:    time.Now(),
 		TimeRange:     TimeRange{},
+		BuildID:       buildID,
 		BashRulesHash: rulesHash,
 		BuildStats: &CacheBuildStats{
+			BuildID:       buildID,
 			BuiltAt:       buildStartedAt.Format(time.RFC3339),
 			TotalFiles:    reused + parsed,
 			ReusedFiles:   reused,
@@ -216,6 +219,12 @@ func refreshGlobalCache(force bool) error {
 	}
 
 	cachePath := filepath.Join(cfg.CacheDir, "cache.db")
+	lock, err := acquireCacheBuildLock(cachePath)
+	if err != nil {
+		return err
+	}
+	defer lock.release()
+
 	builder := &CacheBuilder{
 		CachePath: cachePath,
 		DataDir:   cfg.DataDir,
@@ -246,6 +255,69 @@ func refreshGlobalCache(force bool) error {
 		"sessions", globalCache.TotalSessions,
 	)
 	return nil
+}
+
+type cacheBuildLock struct {
+	path string
+	file *os.File
+}
+
+func acquireCacheBuildLock(cachePath string) (*cacheBuildLock, error) {
+	lockPath := cachePath + ".lock"
+	deadline := time.Now().Add(2 * time.Minute)
+	for {
+		file, err := os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL|os.O_RDWR, 0644)
+		if err == nil {
+			_, _ = fmt.Fprintf(file, "pid=%d\nstarted=%s\n", os.Getpid(), time.Now().Format(time.RFC3339))
+			return &cacheBuildLock{path: lockPath, file: file}, nil
+		}
+		if !os.IsExist(err) {
+			return nil, fmt.Errorf("创建缓存锁失败: %w", err)
+		}
+		if staleCacheLock(lockPath, 10*time.Minute) {
+			_ = os.Remove(lockPath)
+			continue
+		}
+		if time.Now().After(deadline) {
+			return nil, fmt.Errorf("等待缓存构建锁超时: %s", lockPath)
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+}
+
+func waitCacheBuildLockReleased(cachePath string) error {
+	lockPath := cachePath + ".lock"
+	deadline := time.Now().Add(2 * time.Minute)
+	for {
+		if _, err := os.Stat(lockPath); os.IsNotExist(err) {
+			return nil
+		} else if err != nil {
+			return fmt.Errorf("检查缓存锁失败: %w", err)
+		}
+		if staleCacheLock(lockPath, 10*time.Minute) {
+			_ = os.Remove(lockPath)
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("等待缓存构建锁超时: %s", lockPath)
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+}
+
+func staleCacheLock(lockPath string, maxAge time.Duration) bool {
+	info, err := os.Stat(lockPath)
+	return err == nil && time.Since(info.ModTime()) > maxAge
+}
+
+func (l *cacheBuildLock) release() {
+	if l == nil {
+		return
+	}
+	if l.file != nil {
+		_ = l.file.Close()
+	}
+	_ = os.Remove(l.path)
 }
 
 func splitRuntimeMCPToolName(tool string) (string, string, bool) {
