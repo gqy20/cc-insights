@@ -4,7 +4,14 @@
 
 本文档基于当前机器的 `~/.codex` 实际目录与 `cc-insights` 现有 Claude Code 解析架构整理，目标是为后续实现 Codex 数据源支持提供可执行的设计依据。
 
-结论：Codex 可以分析，且能复用当前大部分 dashboard、API、缓存、聚合与图表逻辑。主要工作不在前端，而在新增一个 Codex provider/parser，把 `~/.codex/sessions/**/*.jsonl` 映射到现有 `ProjectAggregate`。
+结论：Codex 可以分析，且能复用当前大部分 dashboard、API、聚合与图表逻辑。主要工作不在前端，而在新增一个 Codex provider/parser，把 `~/.codex/sessions/**/*.jsonl` 解析为现有 `ProjectAggregate` 的统计写入。
+
+复核后的关键判断：
+
+- 复用目标应是 `ProjectAggregate` 和现有聚合写入函数，而不是把 Codex JSONL 硬转换成 Claude 的 `ProjectRecord`。Codex 的 token、turn、工具结果事件比 Claude schema 更结构化，硬转会损失语义。
+- 第一版必须做 provider 与 cache 隔离，否则 Claude/Codex 共享缓存会产生错误复用。
+- 第一版应保持统计聚合导向，不展示完整对话、完整工具输出或完整 instructions；Codex `session_meta` 和 message 事件里可能包含大量敏感上下文。
+- Claude 专属概念如 hooks、skills、sidechain agent、tasks 目录不应在 Codex 中强行模拟。Codex 的 `approval_policy`、`sandbox_policy` 可以作为独立运行上下文维度后续扩展。
 
 ## 当前 cc-insights 架构要点
 
@@ -12,7 +19,7 @@
 
 主要入口与解析链路：
 
-- `cmd/insights/config.go`: `-data`、`-cache`、`-addr` 等配置，目前默认数据目录为可执行文件旁的 `data`。
+- `cmd/insights/config.go`: `-data`、`-cache`、`-addr` 等配置，目前默认数据目录为 `~/.claude`。
 - `cmd/insights/history_parser.go`: 解析 Claude 的 `history.jsonl`，用于 slash command 和小时分布。
 - `cmd/insights/project_parser.go`: 解析 Claude 的 `projects/**/*.jsonl`，生成核心 `ProjectAggregate`。
 - `cmd/insights/debug_parser.go`: 扫描 Claude 的 `debug/*.txt`，用正则统计 MCP 工具。
@@ -532,6 +539,24 @@ reason,type
 | agent/subagent | `isSidechain`、`agentId` | 暂未见稳定 agent id，只有 agent_message/reasoning | 第一版弱化 |
 | slash commands | Claude history display `/...` | Codex history text 可能包含 `/...`，但不保证 | 可选 |
 
+## 与当前 Claude 实现方式的取舍
+
+当前 Claude parser 的优势是已经把所有分析能力收敛到 `ProjectAggregate`：工具统计、失败分析、命令分类、文件操作、session 生命周期、成本/token、daily runtime 都围绕同一套聚合结构展开。Codex 支持应该沿用这一层，而不是复制 dashboard 或新增一套平行 API。
+
+需要直接复用的部分：
+
+- `ProjectAggregate` 及其 `finalize()` 后处理。
+- `addToolCallLocked`、`addToolResultLocked`、`addMissingToolResultLocked` 这类工具调用/结果聚合。
+- `recordStructuredToolInputLocked` 的命令解析与 Bash 分类能力。Codex `exec_command.arguments.cmd` 可以映射为现有 Bash 命令分析输入。
+- daily/project/session runtime aggregate，用于 `rec`、`why`、`cmd`、`tok`、`ses` 的证据下钻。
+
+需要避免照搬的部分：
+
+- 不把 Codex 的 `response_item` 包装成 Claude `assistant.message.content[].tool_use` 后再解析。这样会丢掉 `event_msg` 中更可靠的结构化结果。
+- 不把 `approval_policy`、`sandbox_policy` 强行塞进 Claude `permission-mode` 或 hook 统计。它们应作为 Codex 运行上下文或后续 provider-neutral runtime dimension。
+- 不默认启用 Claude `tasks/`、hooks、skill attachment、sidechain agent 相关分析。Codex 第一版没有稳定等价物时应隐藏、置空或标注不可用。
+- 不展示 Codex 的完整 instructions、用户输入、assistant 回复、命令输出。诊断产品的主线是证据聚合和改进方向，不是日志全文检索。
+
 ## 实现设计
 
 ### 1. 增加 Provider 概念
@@ -564,14 +589,22 @@ CLI 参数建议：
   - 存在 `sessions/` 且有 `sessions/**/*.jsonl`: Codex
   - 都存在时优先用户参数，否则报错提示明确指定
 
-注意 cache 路径应包含 provider，避免 Claude/Codex 缓存混用：
+注意 cache 路径必须包含 provider，避免 Claude/Codex 缓存混用：
 
 ```text
 cache/claude/cache.db
 cache/codex/cache.db
 ```
 
-当前缓存文件名虽然叫 `cache.db`，实际是 JSON cache。实现时不必改格式，但应避免 provider 之间共享同一个 cache。
+当前缓存文件名虽然叫 `cache.db`，实际是 JSON cache。实现时不必改格式，但 provider 必须进入 cache key 或 cache 路径。否则 `ProjectFiles` 的相对路径、文件级 aggregate、diagnostics cache 都可能在 Claude/Codex 之间错误复用。
+
+建议同时在 `CacheBuildStats` 或 `CacheFile` 中记录 provider：
+
+```go
+Provider string `json:"provider,omitempty"`
+```
+
+加载旧缓存时，如果 provider 不一致，应直接丢弃旧缓存并重建。`CacheVersion` 升级也可以作为兼容兜底。
 
 ### 2. 抽象文件发现与解析
 
@@ -611,6 +644,8 @@ if err == nil {
 }
 ```
 
+这一步不只是重命名。当前 `cache_builder.go` 的 `buildProjectAggregateIncremental`、`parseProjectFilesForCache` 和 `ProjectFileCache` 都默认“项目文件”等于 Claude `projects/**/*.jsonl`。实现时可以先保留结构名以减少改动，但逻辑上要把它们视为 provider log file cache。
+
 ### 3. 新增 Codex Parser
 
 建议新增文件：
@@ -636,9 +671,16 @@ type codexSessionState struct {
     Project      string
     CurrentModel string
     StartedAt    time.Time
-    PendingTools map[string]pendingToolCall
+    PendingTools map[string]*codexPendingTool
 }
 ```
+
+不建议先构造 Claude `ProjectRecord` 再走 `parseProjectFileAggregate`。更好的方式是让 Codex parser 直接调用现有聚合函数，例如：
+
+- assistant message：写入 `ProjectStats`、`DailyActivity`、`DailySessions`、`HourlyCounts`、`SessionStatsMap`。
+- tool call：构造 `pendingToolCall`，调用 `addToolCallLocked`、`addAgentToolCallLocked`、`addSessionToolCallLocked`、`recordStructuredToolInputLocked`。
+- tool result：调用 `addToolResultLocked` 或 `addMissingToolResultLocked`，并同步写入 daily/project/session runtime aggregate。
+- token：调用 `recordModelUsageLocked` 和 cost/session token 相关聚合函数；第一版如不接成本估算，至少保证 `ModelUsage` 与 session token 不重复累计。
 
 处理顺序：
 
@@ -649,7 +691,7 @@ type codexSessionState struct {
 5. `turn_context`: 更新 model/project，记录 model turn count 或仅作为状态。
 6. `response_item.message(role=assistant)`: 计入 daily/project/hourly/weekday message。
 7. `response_item.function_call/custom_tool_call/web_search_call/tool_search_call`: 创建 pending tool，增加 call count。
-8. `response_item.function_call_output/custom_tool_call_output`: 如果没有结构化结果，兜底判断 success/failure。
+8. `response_item.function_call_output/custom_tool_call_output`: 暂存弱结果，不立即最终计数，除非文件结束仍没有结构化 end event。
 9. `event_msg.token_count`: 使用 `last_token_usage.total_tokens` 累加到当前 model。
 10. `event_msg.exec_command_end/patch_apply_end/mcp_tool_call_end`: 结构化更新工具成功/失败。
 11. 文件结束后仍在 pending 的工具记为 missing result。
@@ -681,10 +723,13 @@ type codexPendingTool struct {
     pendingToolCall
     ResultRecorded bool
     WeakResultSeen bool
+    WeakFailed     bool
+    WeakPreview    string
+    WeakTimestamp  time.Time
 }
 ```
 
-如果先看到弱结果 `function_call_output`，可以暂存 preview，但不立刻最终计 success；等结构化 end event 出现后再最终计数。若文件结束仍没有结构化 end event，再用弱结果兜底。
+如果先看到弱结果 `function_call_output`，可以暂存 preview，但不立刻最终计 success；等结构化 end event 出现后再最终计数。若文件结束仍没有结构化 end event，再用弱结果兜底。最终结果写入后必须从 pending map 删除或标记 `ResultRecorded`，避免文件结束时又被记为 missing。
 
 ### 5. 命令和文件操作分析
 
@@ -722,8 +767,9 @@ type ModelUsageItem struct {
 
 Codex 第一版建议：
 
-- `Count`: `turn_context` 中该 model 出现次数，或有 `last_token_usage` 的 token_count 次数。
+- `Count`: 优先使用有 `last_token_usage` 的 `token_count` 次数；如果没有 token event，再退回 `turn_context` 次数。
 - `Tokens`: 累加 `last_token_usage.total_tokens`。
+- 不要累加 `total_token_usage.total_tokens`，它是 session 累计值，会导致重复计数。
 
 更准确的后续增强：
 
