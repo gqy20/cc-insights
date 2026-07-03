@@ -12,9 +12,10 @@ import (
 )
 
 var toolFailureExpr = regexp.MustCompile(`(?i)(error|failed|exception|traceback|timed out|timeout|permission denied|no such file|command failed|exit code|is_error|\"success\"\s*:\s*false|失败|错误|异常|超时|权限|不存在)`)
-var strongBashFailureExpr = regexp.MustCompile(`(?im)(^|\b)(syntaxerror|typeerror|referenceerror|traceback|panic:|fatal:|npm err!|error:|failed:|command not found|no such file or directory)\b`)
+var strongBashFailureExpr = regexp.MustCompile(`(?im)(^|\b)(panic:|fatal:|npm err!|command not found|no such file or directory)\b|^### error\b|^error:\s`)
 var exitCodeExpr = regexp.MustCompile(`(?i)(exit code|exited with code|exit status)\s+(-?\d+)`)
 var httpStatusExpr = regexp.MustCompile(`\b(4\d\d|5\d\d)\b`)
+var portInUseExpr = regexp.MustCompile(`(?m)port \d+ is already in use`)
 
 const maxFailureSamples = 5000
 
@@ -897,16 +898,34 @@ func classifyBashFailure(lower string) (string, string, bool) {
 	switch {
 	case strings.Contains(lower, "error collecting") || strings.Contains(lower, "importerror") || strings.Contains(lower, "modulenotfounderror"):
 		return "bash", "python_import_error", true
+	case strings.Contains(lower, "traceback (most recent call last)") || strings.Contains(lower, "jsondecodeerror:") || strings.Contains(lower, "attributeerror:"):
+		return "python", "runtime_error", true
+	case strings.Contains(lower, "missingdependencyexception") || strings.Contains(lower, "missing dependency"):
+		return "dependency", "missing_dependency", true
+	case strings.Contains(lower, "paramfile") && (strings.Contains(lower, "unable to open") || strings.Contains(lower, "not been read correctly") || strings.Contains(lower, "not set to a valid")):
+		return "config", "invalid_config", true
+	case strings.Contains(lower, "typeerror:") && (strings.Contains(lower, "page.") || strings.Contains(lower, "playwright") || strings.Contains(lower, " is not a function") || strings.Contains(lower, "undefined")):
+		return "javascript", "type_error", true
+	case strings.Contains(lower, "referenceerror:"):
+		return "javascript", "reference_error", true
+	case strings.Contains(lower, "page._evaluatefunction") || strings.Contains(lower, "current page snapshot") || strings.Contains(lower, "not well-serializable"):
+		return "browser", "playwright_error", true
 	case strings.Contains(lower, "syntaxerror") || strings.Contains(lower, "unexpected token"):
 		return "bash", "syntax_error", true
 	case strings.Contains(lower, "tls connect error") || strings.Contains(lower, "could not resolve host") || strings.Contains(lower, "failed to get runs"):
 		return "network", "network_error", true
+	case portInUseExpr.MatchString(lower):
+		return "network", "port_in_use", true
+	case strings.Contains(lower, "npm err!"):
+		return "javascript", "npm_error", true
 	case strings.Contains(lower, "command not found"):
 		return "bash", "command_not_found", true
-	case strings.Contains(lower, "no such file or directory"):
+	case strings.Contains(lower, "no such file or directory") || strings.Contains(lower, "could not find") || strings.Contains(lower, "未找到"):
 		return "bash", "not_found", true
-	case strings.Contains(lower, "test failed") || strings.Contains(lower, "tests failed") || strings.Contains(lower, "failing tests") || strings.Contains(lower, "failed tests"):
+	case strings.Contains(lower, "test failed") || strings.Contains(lower, "tests failed") || strings.Contains(lower, "failing tests") || strings.Contains(lower, "failed tests") || strings.Contains(lower, "(fail)"):
 		return "bash", "test_failure", true
+	case strings.Contains(lower, "unknown flag") || strings.Contains(lower, "not a valid target directory or subcommand") || strings.Contains(lower, "missing_run_selector"):
+		return "bash", "usage_error", true
 	case strings.Contains(lower, "killed") || strings.Contains(lower, "signal: killed"):
 		return "bash", "killed", true
 	case strings.Contains(lower, "command failed"):

@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-const CacheVersion = "4.1"
+const CacheVersion = "4.4"
 
 // CacheFile 缓存文件结构
 type CacheFile struct {

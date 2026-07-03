@@ -186,6 +186,60 @@ func TestBashStrongErrorTextGetsSpecificReasons(t *testing.T) {
 			wantReason:   "syntax_error",
 		},
 		{
+			name:         "python runtime",
+			content:      "Traceback (most recent call last):\n  File '<string>', line 4, in <module>\njson.decoder.JSONDecodeError: Expecting value",
+			wantCategory: "python",
+			wantReason:   "runtime_error",
+		},
+		{
+			name:         "playwright type error",
+			content:      "### Error Error: page._evaluateFunction: TypeError: result is not a function",
+			wantCategory: "javascript",
+			wantReason:   "type_error",
+		},
+		{
+			name:         "playwright snapshot error",
+			content:      "### Error Error: Ref link '4' not found in the current page snapshot. Try capturing new snapshot.",
+			wantCategory: "browser",
+			wantReason:   "playwright_error",
+		},
+		{
+			name:         "javascript reference",
+			content:      "ReferenceError: window is not defined",
+			wantCategory: "javascript",
+			wantReason:   "reference_error",
+		},
+		{
+			name:         "missing dependency",
+			content:      "XlsxConverter threw MissingDependencyException with message: dependencies need to be installed",
+			wantCategory: "dependency",
+			wantReason:   "missing_dependency",
+		},
+		{
+			name:         "invalid config",
+			content:      "Error: some parameters have not been read correctly from paramfile 'paramfile'. OVERRIDE_WARNINGS was not set to a valid number.",
+			wantCategory: "config",
+			wantReason:   "invalid_config",
+		},
+		{
+			name:         "port in use",
+			content:      "error when starting dev server: Error: Port 5173 is already in use",
+			wantCategory: "network",
+			wantReason:   "port_in_use",
+		},
+		{
+			name:         "cli usage",
+			content:      "Error: unknown flag: --list",
+			wantCategory: "bash",
+			wantReason:   "usage_error",
+		},
+		{
+			name:         "bun test fail",
+			content:      "(fail) knowledge base route contracts > uploads a file [70.00ms]",
+			wantCategory: "bash",
+			wantReason:   "test_failure",
+		},
+		{
 			name:         "network",
 			content:      "TLS connect error: unexpected eof while reading",
 			wantCategory: "network",
@@ -203,6 +257,41 @@ func TestBashStrongErrorTextGetsSpecificReasons(t *testing.T) {
 			}
 			if classification.Category != tt.wantCategory || classification.Reason != tt.wantReason {
 				t.Fatalf("classification=%+v, want %s/%s", classification, tt.wantCategory, tt.wantReason)
+			}
+		})
+	}
+}
+
+func TestBashEvidenceTextDoesNotCreateFailure(t *testing.T) {
+	cases := []struct {
+		name    string
+		content string
+	}{
+		{
+			name:    "license text",
+			content: "# Licensed under the Apache License, Version 2.0 (the 'License');\n# distributed on an AS IS BASIS",
+		},
+		{
+			name:    "git log text",
+			content: "commit 4ff00dbb973f22608fdd7985ff4d7f9401323d62\nrefactor: drop dead public helpers and unused entries",
+		},
+		{
+			name:    "npm verbose cache",
+			content: "94 silly packumentCache full:https://registry.npmmirror.com/rollup-plugin-babel set size:23678 disposed:false\n95 silly fetch manifest rollup-plugin-server@^0.7.0",
+		},
+		{
+			name:    "file listing with failed in filename",
+			content: "-rw-rw-r-- 1 qy113 qy113 60650 Jun 25 gamma_vs_failed.png",
+		},
+	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			classification := classifyToolResult("Bash", AssistantContent{
+				Type:    "tool_result",
+				Content: json.RawMessage(strconv.Quote(tt.content)),
+			})
+			if classification.Failed {
+				t.Fatalf("classification=%+v, want no failure", classification)
 			}
 		})
 	}
