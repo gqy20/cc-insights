@@ -18,9 +18,10 @@ func ParseProjectsConcurrentOnce(tf TimeFilter) (*ProjectAggregate, error) {
 
 // ParseProjectsConcurrentOnceFromDir 一次遍历并发解析指定数据目录下的项目统计
 func ParseProjectsConcurrentOnceFromDir(tf TimeFilter, dataDir string) (*ProjectAggregate, error) {
-	fileInfos, err := listProjectJSONLFileInfos(dataDir)
+	provider := resolveProvider(cfg.Provider, dataDir)
+	fileInfos, err := listLogFileInfos(provider, dataDir)
 	if err != nil {
-		return nil, fmt.Errorf("读取 projects 目录失败: %w", err)
+		return nil, fmt.Errorf("读取 %s 日志目录失败: %w", provider, err)
 	}
 
 	aggregate := newProjectAggregate()
@@ -47,7 +48,7 @@ func ParseProjectsConcurrentOnceFromDir(tf TimeFilter, dataDir string) (*Project
 			defer wg.Done()
 			workerAggregate := newProjectAggregate()
 			for filePath := range jobs {
-				parseProjectFileAggregate(filePath, tf, workerAggregate)
+				parseLogFileAggregate(provider, filePath, tf, workerAggregate)
 			}
 			results <- workerAggregate
 		}()
@@ -66,7 +67,9 @@ func ParseProjectsConcurrentOnceFromDir(tf TimeFilter, dataDir string) (*Project
 		mergeProjectAggregate(aggregate, fileAggregate)
 	}
 
-	recordInstalledSkillsLocked(aggregate, dataDir)
+	if provider == ProviderClaude {
+		recordInstalledSkillsLocked(aggregate, dataDir)
+	}
 
 	// 后处理：生成输出格式数据
 	aggregate.finalize()

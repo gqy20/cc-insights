@@ -470,6 +470,58 @@ func TestCachePathForConfigIncludesProvider(t *testing.T) {
 	}
 }
 
+func TestListLogFileInfosCodexSessions(t *testing.T) {
+	dataDir := t.TempDir()
+	sessionPath := filepath.Join(dataDir, "sessions", "2026", "07", "03", "rollout-test.jsonl")
+	if err := os.MkdirAll(filepath.Dir(sessionPath), 0755); err != nil {
+		t.Fatalf("Create sessions dir failed: %v", err)
+	}
+	if err := os.WriteFile(sessionPath, []byte("{}\n"), 0644); err != nil {
+		t.Fatalf("Write session file failed: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dataDir, "history.jsonl"), []byte("{}\n"), 0644); err != nil {
+		t.Fatalf("Write history file failed: %v", err)
+	}
+
+	files, err := listLogFileInfos(ProviderCodex, dataDir)
+	if err != nil {
+		t.Fatalf("listLogFileInfos returned error: %v", err)
+	}
+	if len(files) != 1 {
+		t.Fatalf("len(files) = %d, want 1: %+v", len(files), files)
+	}
+	if files[0].RelPath != "sessions/2026/07/03/rollout-test.jsonl" {
+		t.Fatalf("RelPath = %q", files[0].RelPath)
+	}
+}
+
+func TestListLogFileInfosResolvesSymlinkDataDir(t *testing.T) {
+	parent := t.TempDir()
+	realDir := filepath.Join(parent, "real")
+	sessionPath := filepath.Join(realDir, "sessions", "2026", "07", "03", "rollout-test.jsonl")
+	if err := os.MkdirAll(filepath.Dir(sessionPath), 0755); err != nil {
+		t.Fatalf("Create sessions dir failed: %v", err)
+	}
+	if err := os.WriteFile(sessionPath, []byte("{}\n"), 0644); err != nil {
+		t.Fatalf("Write session file failed: %v", err)
+	}
+	linkDir := filepath.Join(parent, "link")
+	if err := os.Symlink(realDir, linkDir); err != nil {
+		t.Skipf("Symlink unsupported: %v", err)
+	}
+
+	files, err := listLogFileInfos(ProviderCodex, linkDir)
+	if err != nil {
+		t.Fatalf("listLogFileInfos returned error: %v", err)
+	}
+	if len(files) != 1 {
+		t.Fatalf("len(files) = %d, want 1", len(files))
+	}
+	if files[0].RelPath != "sessions/2026/07/03/rollout-test.jsonl" {
+		t.Fatalf("RelPath = %q", files[0].RelPath)
+	}
+}
+
 // TestCacheBuilderGetLastDataModified 测试获取数据最后修改时间
 func TestCacheBuilderGetLastDataModified(t *testing.T) {
 	// Arrange
@@ -517,6 +569,30 @@ func TestCacheBuilderGetLastDataModified(t *testing.T) {
 	// 应该返回最新的修改时间
 	expected := baseTime.Add(3 * time.Hour)
 	if !lastMod.Equal(expected) && !lastMod.Round(time.Second).Equal(expected.Round(time.Second)) {
+		t.Errorf("GetLastDataModified() = %v, want %v", lastMod, expected)
+	}
+}
+
+func TestCacheBuilderGetLastDataModifiedCodex(t *testing.T) {
+	dataDir := t.TempDir()
+	sessionPath := filepath.Join(dataDir, "sessions", "2026", "07", "03", "rollout-test.jsonl")
+	if err := os.MkdirAll(filepath.Dir(sessionPath), 0755); err != nil {
+		t.Fatalf("Create sessions dir failed: %v", err)
+	}
+	if err := os.WriteFile(sessionPath, []byte("{}\n"), 0644); err != nil {
+		t.Fatalf("Write session file failed: %v", err)
+	}
+	expected := time.Now().Add(-30 * time.Minute).Truncate(time.Second)
+	if err := os.Chtimes(sessionPath, expected, expected); err != nil {
+		t.Fatalf("Set file time failed: %v", err)
+	}
+
+	builder := &CacheBuilder{DataDir: dataDir, Provider: ProviderCodex}
+	lastMod, err := builder.GetLastDataModified()
+	if err != nil {
+		t.Fatalf("GetLastDataModified() failed: %v", err)
+	}
+	if !lastMod.Equal(expected) {
 		t.Errorf("GetLastDataModified() = %v, want %v", lastMod, expected)
 	}
 }

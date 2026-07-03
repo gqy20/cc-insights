@@ -339,7 +339,8 @@ func splitRuntimeMCPToolName(tool string) (string, string, bool) {
 }
 
 func (cb *CacheBuilder) buildProjectAggregateIncremental(dataDir string, previous *CacheFile) (*ProjectAggregate, map[string]*ProjectFileCache, int, int, error) {
-	files, err := listProjectJSONLFileInfos(dataDir)
+	provider := resolveProvider(cb.Provider, dataDir)
+	files, err := listLogFileInfos(provider, dataDir)
 	if err != nil {
 		return nil, nil, 0, 0, err
 	}
@@ -362,7 +363,7 @@ func (cb *CacheBuilder) buildProjectAggregateIncremental(dataDir string, previou
 		toParse = append(toParse, info)
 	}
 
-	parsedCaches, err := parseProjectFilesForCache(toParse)
+	parsedCaches, err := parseProjectFilesForCache(provider, toParse)
 	if err != nil {
 		return nil, nil, 0, 0, err
 	}
@@ -370,29 +371,41 @@ func (cb *CacheBuilder) buildProjectAggregateIncremental(dataDir string, previou
 		mergeProjectAggregate(aggregate, item.Aggregate)
 		projectFiles[item.Info.RelPath] = item.Cache
 	}
-	recordInstalledSkillsLocked(aggregate, dataDir)
+	if provider == ProviderClaude {
+		recordInstalledSkillsLocked(aggregate, dataDir)
+	}
 
 	aggregate.finalize()
 
 	// task_plan_analysis (M4): 扫描 tasks/ 目录
-	taskAnalysis, taskErr := ParseTasksConcurrentFromDir(TimeFilter{}, dataDir)
-	if taskErr != nil {
-		Warn("tasks/ 目录扫描失败", "error", taskErr.Error())
-	}
-	if taskAnalysis != nil && aggregate.TaskPlanAnalysis == nil {
-		aggregate.TaskPlanAnalysis = &TaskPlanAnalysisData{}
-	}
-	if taskAnalysis != nil {
-		aggregate.TaskPlanAnalysis.Tasks = *taskAnalysis
+	if provider == ProviderClaude {
+		taskAnalysis, taskErr := ParseTasksConcurrentFromDir(TimeFilter{}, dataDir)
+		if taskErr != nil {
+			Warn("tasks/ 目录扫描失败", "error", taskErr.Error())
+		}
+		if taskAnalysis != nil && aggregate.TaskPlanAnalysis == nil {
+			aggregate.TaskPlanAnalysis = &TaskPlanAnalysisData{}
+		}
+		if taskAnalysis != nil {
+			aggregate.TaskPlanAnalysis.Tasks = *taskAnalysis
+		}
 	}
 
 	return aggregate, projectFiles, reused, len(parsedCaches), nil
 }
 
 func listProjectJSONLFileInfos(dataDir string) ([]projectFileInfo, error) {
-	projectsDir := filepath.Join(dataDir, "projects")
+	return listLogFileInfos(ProviderClaude, dataDir)
+}
+
+func listLogFileInfos(provider Provider, dataDir string) ([]projectFileInfo, error) {
+	resolvedDataDir := dataDir
+	if resolved, err := filepath.EvalSymlinks(dataDir); err == nil {
+		resolvedDataDir = resolved
+	}
+	rootDir := logRootDir(provider, resolvedDataDir)
 	var files []projectFileInfo
-	err := filepath.WalkDir(projectsDir, func(path string, entry os.DirEntry, err error) error {
+	err := filepath.WalkDir(rootDir, func(path string, entry os.DirEntry, err error) error {
 		if err != nil {
 			return nil
 		}
@@ -403,7 +416,7 @@ func listProjectJSONLFileInfos(dataDir string) ([]projectFileInfo, error) {
 		if err != nil {
 			return nil
 		}
-		rel, err := filepath.Rel(dataDir, path)
+		rel, err := filepath.Rel(resolvedDataDir, path)
 		if err != nil {
 			rel = path
 		}
@@ -424,7 +437,16 @@ func listProjectJSONLFileInfos(dataDir string) ([]projectFileInfo, error) {
 	return files, nil
 }
 
-func parseProjectFilesForCache(files []projectFileInfo) ([]projectFileResult, error) {
+func logRootDir(provider Provider, dataDir string) string {
+	switch resolveProvider(provider, dataDir) {
+	case ProviderCodex:
+		return filepath.Join(dataDir, "sessions")
+	default:
+		return filepath.Join(dataDir, "projects")
+	}
+}
+
+func parseProjectFilesForCache(provider Provider, files []projectFileInfo) ([]projectFileResult, error) {
 	if len(files) == 0 {
 		return nil, nil
 	}
@@ -442,7 +464,7 @@ func parseProjectFilesForCache(files []projectFileInfo) ([]projectFileResult, er
 			defer wg.Done()
 			for info := range jobs {
 				fileAggregate := newProjectAggregate()
-				parseProjectFileAggregate(info.AbsPath, TimeFilter{}, fileAggregate)
+				parseLogFileAggregate(provider, info.AbsPath, TimeFilter{}, fileAggregate)
 				results <- projectFileResult{
 					Info:      info,
 					Aggregate: fileAggregate,
@@ -471,6 +493,17 @@ func parseProjectFilesForCache(files []projectFileInfo) ([]projectFileResult, er
 		return items[i].Info.RelPath < items[j].Info.RelPath
 	})
 	return items, nil
+}
+
+func parseLogFileAggregate(provider Provider, filePath string, tf TimeFilter, fileAggregate *ProjectAggregate) {
+	switch provider {
+	case ProviderCodex:
+		// Codex parser is added in the next phase. Keeping this dispatcher here
+		// lets file discovery/cache plumbing land without changing Claude behavior.
+		return
+	default:
+		parseProjectFileAggregate(filePath, tf, fileAggregate)
+	}
 }
 
 // RebuildIfChanged 在数据变化时重建缓存。
@@ -541,8 +574,9 @@ func (cb *CacheBuilder) NeedsRebuild() bool {
 func (cb *CacheBuilder) GetLastDataModified() (time.Time, error) {
 	var lastMod time.Time
 
-	projectsDir := filepath.Join(cb.DataDir, "projects")
-	if err := cb.scanDirectory(projectsDir, &lastMod); err != nil {
+	provider := resolveProvider(cb.Provider, cb.DataDir)
+	logDir := logRootDir(provider, cb.DataDir)
+	if err := cb.scanDirectory(logDir, &lastMod); err != nil {
 		// 目录不存在不是错误
 		if !os.IsNotExist(err) {
 			return time.Time{}, err
