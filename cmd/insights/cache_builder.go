@@ -498,9 +498,7 @@ func parseProjectFilesForCache(provider Provider, files []projectFileInfo) ([]pr
 func parseLogFileAggregate(provider Provider, filePath string, tf TimeFilter, fileAggregate *ProjectAggregate) {
 	switch provider {
 	case ProviderCodex:
-		// Codex parser is added in the next phase. Keeping this dispatcher here
-		// lets file discovery/cache plumbing land without changing Claude behavior.
-		return
+		parseCodexSessionFileAggregate(filePath, tf, fileAggregate)
 	default:
 		parseProjectFileAggregate(filePath, tf, fileAggregate)
 	}

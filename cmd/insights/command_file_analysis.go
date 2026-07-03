@@ -73,14 +73,19 @@ func extractShellSegments(command string) []string {
 
 func recordStructuredToolInputLocked(agg *ProjectAggregate, call *pendingToolCall) {
 	switch call.Tool {
-	case "Bash":
+	case "Bash", "exec_command":
 		var input struct {
 			Command string `json:"command"`
+			Cmd     string `json:"cmd"`
 		}
-		if err := json.Unmarshal(call.Input, &input); err != nil || strings.TrimSpace(input.Command) == "" {
+		if err := json.Unmarshal(call.Input, &input); err != nil {
 			return
 		}
-		segments := extractShellSegments(input.Command)
+		command := firstNonEmpty(input.Command, input.Cmd)
+		if strings.TrimSpace(command) == "" {
+			return
+		}
+		segments := extractShellSegments(command)
 		if len(segments) == 0 {
 			return
 		}
@@ -101,7 +106,7 @@ func recordStructuredToolInputLocked(agg *ProjectAggregate, call *pendingToolCal
 			stat.CallCount++
 			ensureBashCommandModelStat(agg, cmdName, call.Model).CallCount++
 			if stat.SampleCommand == "" {
-				stat.SampleCommand = previewString(input.Command, 180)
+				stat.SampleCommand = previewString(command, 180)
 			}
 
 			// 逐段风险检测
