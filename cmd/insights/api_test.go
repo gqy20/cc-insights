@@ -239,6 +239,15 @@ func TestSafeParseProjectsOnce(t *testing.T) {
 	if agg.HourlyData == nil || len(agg.HourlyData) != 24 {
 		t.Errorf("HourlyData 应为 24 个元素的切片, got %d", len(agg.HourlyData))
 	}
+	if agg.DailyProjectCounts == nil || agg.DailyRuntime == nil || agg.DailyProjectRuntime == nil || agg.DailySessionRuntime == nil {
+		t.Error("runtime 日级索引 map 不应为 nil")
+	}
+	if agg.AgentModelStats == nil || agg.BashCommandModelStats == nil || agg.FileOperationModelStats == nil {
+		t.Error("模型交叉索引 map 不应为 nil")
+	}
+	if agg.CostModelStats == nil || agg.CostProjectStats == nil || agg.CostSessionStats == nil {
+		t.Error("成本索引 map 不应为 nil")
+	}
 
 	t.Logf("✅ 安全返回空 aggregate")
 }

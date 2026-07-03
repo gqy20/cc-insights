@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"runtime"
 	"sort"
 	"strings"
@@ -128,28 +127,17 @@ func newPromptAggregate() *promptAggregate {
 }
 
 func scanPromptRecords(dataDir string, tf TimeFilter, opts cliOptions, agg *promptAggregate) error {
-	projectsDir := filepath.Join(dataDir, "projects")
-	entries, err := os.ReadDir(projectsDir)
+	fileInfos, err := listProjectJSONLFileInfos(dataDir)
 	if err != nil {
 		return fmt.Errorf("读取 projects 目录失败: %w", err)
 	}
-	files := []string{}
-	for _, entry := range entries {
-		if !entry.IsDir() {
+	files := make([]string, 0, len(fileInfos))
+	for _, info := range fileInfos {
+		if shouldSkipPromptFile(info.AbsPath, tf) {
 			continue
 		}
-		projectFiles, err := projectJSONLFiles(filepath.Join(projectsDir, entry.Name()))
-		if err != nil {
-			continue
-		}
-		for _, path := range projectFiles {
-			if shouldSkipPromptFile(path, tf) {
-				continue
-			}
-			files = append(files, path)
-		}
+		files = append(files, info.AbsPath)
 	}
-	sort.Strings(files)
 	if len(files) == 0 {
 		return nil
 	}

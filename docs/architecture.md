@@ -34,10 +34,18 @@ cc-insights 是面向 Claude Code 的本地使用诊断工具。它读取 `~/.cl
 - `cmd/insights/project_parser.go`、`parser.go`：项目 JSONL 解析和事件识别。
 - `cmd/insights/aggregate.go`、`aggregate_finalize.go`：聚合与最终分析结果生成。
 - `cmd/insights/cache.go`、`cache_builder.go`：缓存结构、文件级复用和诊断缓存。
-- `cmd/insights/static/`：Web Dashboard 静态资源，ECharts 本地化。
+- `web/`：React + Vite 前端源码；构建产物进入 `cmd/insights/static/dist/` 并由 Go embed 进单二进制。
 - `cmd/insights/rules/bash.yml`：Bash 命令族分类规则。
 - `cmd/insights/rules/diagnostics.yml`：诊断规则的指标、阈值、来源和触发解释。
 - `cmd/insights/command_file_analysis.go`：Bash 命令解析核心，支持多段 `&&`/`;` 链式命令独立统计（引号感知分割、同链去重、结果分发、逐段风险检测）。
+
+## 聚合与数据构建边界
+
+`ProjectAggregate` 是解析后的唯一核心聚合模型。正常解析、空降级结果、文件级缓存还原和日级 runtime 索引都应通过 `newProjectAggregate()` 初始化，避免不同路径维护多份 map 字段清单。
+
+项目 JSONL 文件发现统一由 `listProjectJSONLFileInfos` 负责。实时解析、prompt 画像和缓存构建共享同一套文件列表，cache builder 在此基础上额外使用 size / mtime 做文件级复用。
+
+`DashboardData` 是 CLI 和 Web API 的对外数据面。缓存路径和实时解析路径可以有不同的数据来源，但时间范围、每日趋势、小时统计、项目总计等公共组装逻辑应放在 `api.go` 的共享 helper 中，避免新增分析模块时只更新其中一条路径。
 
 ## CLI 职责
 
@@ -80,6 +88,8 @@ Web Dashboard 负责可视化趋势、运行时统计和分析结果。当前主
 - `/api/timeline`：全局时间轴数据，服务 slider / brush。
 
 这些接口和 `/api/data` 复用同一套 filter。后端会为响应附带 `coverage`，标记每个图表在当前筛选下是 `exact`、`sample` 还是 `unavailable`。前端只展示可解释的数据：无法精确重算的图表显示空态原因，不展示全局数据冒充联动结果。
+
+`/api/data` 仍是主图表的全量兼容数据面；`/api/overview`、`/api/diagnostics`、`/api/detail/*` 是面向交互和下钻的分层数据面。两者共享 `AnalysisFilter` 和 `loadDashboardDataWithFilter`，不要为新图表再增加平行过滤入口。
 
 日级趋势目前有三层索引：
 

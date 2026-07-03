@@ -73,7 +73,7 @@ GET /api/data?preset=7d&project=cc-insights&model=claude-sonnet-4-6&reason=timeo
 
 ## 交互式分析接口
 
-用于 Dashboard 的下钻面板和大屏联动，复用同一组过滤参数：
+用于 Dashboard 的下钻面板和大屏联动，复用同一组过滤参数。后端先按时间范围加载 `DashboardData`，再通过统一 filter 入口裁剪主数据、诊断和详情报告：
 
 ```
 GET /api/overview?preset=7d
@@ -90,6 +90,13 @@ GET /api/timeline?preset=all
 ## 元数据与可信度
 
 所有交互式接口返回统一 `meta`，包含数据源、缓存版本、时间范围、过滤条件和运行耗时。`/api/data` 接受同一组过滤参数，前端会用同一个 filter 同步刷新主图表和下钻面板。
+
+当前 Web 同时保留两层数据面：
+
+- `/api/data`：主图表使用的完整 `DashboardData`，也是兼容接口。
+- `/api/overview`、`/api/diagnostics`、`/api/detail/*`、`/api/timeline`：按页面区域拆分的交互式接口，适合下钻和轻量刷新。
+
+新增接口时优先复用现有 filter 和 report builder，不要绕过 `coverage` 语义新增一套独立筛选规则。
 
 Dashboard 响应会附带 `coverage` 元数据，说明每个图在当前筛选下的可信度：
 

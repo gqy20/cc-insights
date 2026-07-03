@@ -7,12 +7,7 @@ import (
 )
 
 func buildDashboardDataWithFilter(filter AnalysisFilter) (*DashboardData, string, error) {
-	data, source, err := buildDashboardData(filter.TimeFilter, filter.Preset)
-	if err != nil {
-		return nil, source, err
-	}
-	applyDashboardFilter(data, filter)
-	return data, source, nil
+	return loadDashboardDataWithFilter(filter, buildDashboardData)
 }
 
 func applyDashboardFilter(data *DashboardData, filter AnalysisFilter) {

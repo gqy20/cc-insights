@@ -143,112 +143,9 @@ func buildDataFromCache(tf TimeFilter, preset string) (*DashboardData, error) {
 	cached := globalCache.QueryByTimeRange(start, end)
 	queryDuration := time.Since(queryStartedAt)
 
-	// 构建 RuntimeTools（从缓存中的 RuntimeToolSignals 转换）
-	runtimeTools := make([]RuntimeToolSignal, 0, len(cached.RuntimeToolSignals))
-	for key, count := range cached.RuntimeToolSignals {
-		// key 格式: "server::tool"
-		// 需要拆分
-		server := "unknown"
-		tool := key
-		if idx := strings.Index(key, "::"); idx > 0 {
-			server = key[:idx]
-			tool = key[idx+2:]
-		}
-		runtimeTools = append(runtimeTools, RuntimeToolSignal{
-			Tool:   tool,
-			Server: server,
-			Count:  count,
-		})
-	}
-	sortRuntimeToolSignals(runtimeTools)
-
-	// 单次遍历 DailyStats：构建每日趋势和 session 峰谷。
-	dates := make([]string, 0, len(cached.DailyStats))
-	counts := make([]int, 0, len(cached.DailyStats))
-	dailySessionMap := make(map[string]int, len(cached.DailyStats))
-	peakDate, peakCount := "", 0
-	valleyDate, valleyCount := "", 0
-	for date, dayStats := range cached.DailyStats {
-		dates = append(dates, date)
-		counts = append(counts, dayStats.MessageCount)
-
-		sessionCount := dayStats.SessionCount
-		dailySessionMap[date] = sessionCount
-		if sessionCount > peakCount {
-			peakCount = sessionCount
-			peakDate = date
-		}
-		if valleyCount == 0 || sessionCount < valleyCount {
-			valleyCount = sessionCount
-			valleyDate = date
-		}
-	}
-	sortDatesAndCounts(dates, counts)
-
-	sessionStats := &SessionStats{
-		TotalSessions:   cached.TotalSessions,
-		PeakDate:        peakDate,
-		PeakCount:       peakCount,
-		ValleyDate:      valleyDate,
-		ValleyCount:     valleyCount,
-		DailySessionMap: dailySessionMap,
-	}
-
-	// 单次遍历 HourlyStats：同时构建 hourly_counts 和工作时段统计。
-	hourlyCountsMap := make(map[string]int, 24)
-	hourlyData := make([]HourlyItem, 0, 24)
-	workHoursCount := 0
-	offHoursCount := 0
-	peakHour := -1
-	peakHourCount := 0
-
-	for hour := 0; hour < 24; hour++ {
-		count := 0
-		hasHourlyAggregate := cached.HourlyStats[hour] != nil
-		if hasHourlyAggregate {
-			count = cached.HourlyStats[hour].MessageCount
-		}
-
-		isWorkHour := (hour >= 9 && hour <= 18)
-		hourLabel := fmt.Sprintf("%02d:00", hour)
-
-		hourlyData = append(hourlyData, HourlyItem{
-			Hour:       hour,
-			HourLabel:  hourLabel,
-			Count:      count,
-			IsWorkHour: isWorkHour,
-		})
-
-		if isWorkHour {
-			workHoursCount += count
-		} else {
-			offHoursCount += count
-		}
-
-		if hasHourlyAggregate {
-			hourlyCountsMap[fmt.Sprintf("%02d", hour)] = count
-		}
-
-		if count > peakHourCount {
-			peakHourCount = count
-			peakHour = hour
-		}
-	}
-
-	totalCount := workHoursCount + offHoursCount
-	workRatio := 0.0
-	if totalCount > 0 {
-		workRatio = float64(workHoursCount) / float64(totalCount) * 100
-	}
-
-	workHoursStats := &WorkHoursStats{
-		HourlyData:     hourlyData,
-		WorkHoursCount: workHoursCount,
-		OffHoursCount:  offHoursCount,
-		WorkHoursRatio: workRatio,
-		PeakHour:       peakHour,
-		PeakHourCount:  peakHourCount,
-	}
+	runtimeTools := runtimeToolsFromCache(cached)
+	dailyTrend, sessionStats := dailyTrendAndSessionsFromCache(cached)
+	hourlyCountsMap, workHoursStats := hourlyAndWorkHoursFromCache(cached)
 
 	projects := make([]ProjectStatItem, 0, len(cached.ProjectStats))
 	for _, stats := range cached.ProjectStats {
@@ -286,29 +183,16 @@ func buildDataFromCache(tf TimeFilter, preset string) (*DashboardData, error) {
 	taskPlanAnalysis := cloneTaskPlanAnalysis(cached.TaskPlanAnalysis)
 	toolPerformance := cloneToolPerformance(cached.ToolPerformance)
 
-	// 构建时间范围信息
-	rangeInfo := TimeRangeInfo{Preset: preset}
-	if tf.Start != nil {
-		rangeInfo.Start = tf.Start.Format("2006-01-02")
-	}
-	if tf.End != nil {
-		rangeInfo.End = tf.End.Format("2006-01-02")
-	}
-
 	cmdStats := (<-historyCh).commands
 	data := &DashboardData{
-		Timestamp:    time.Now().Format("2006-01-02 15:04:05"),
-		TimeRange:    rangeInfo,
-		Commands:     cmdStats,
-		HourlyCounts: hourlyCountsMap,
-		DailyTrend:   DailyTrendData{Dates: dates, Counts: counts},
-		RuntimeTools: runtimeTools,
-		Sessions:     sessionStats,
-		ProjectStats: &ProjectStatsData{
-			Projects:      projects,
-			TotalMessages: cached.TotalMessages,
-			TotalSessions: sessionStats.TotalSessions,
-		},
+		Timestamp:        time.Now().Format("2006-01-02 15:04:05"),
+		TimeRange:        buildTimeRangeInfo(tf, preset),
+		Commands:         cmdStats,
+		HourlyCounts:     hourlyCountsMap,
+		DailyTrend:       dailyTrend,
+		RuntimeTools:     runtimeTools,
+		Sessions:         sessionStats,
+		ProjectStats:     buildProjectStatsData(projects, cached.TotalMessages, sessionStats, sessionAnalysis),
 		WeekdayStats:     weekdayStats,
 		ModelUsage:       modelUsage,
 		WorkHoursStats:   workHoursStats,
@@ -385,53 +269,16 @@ func buildDataFromParsing(tf TimeFilter, preset string) (*DashboardData, error) 
 	// SessionStats 从已解析的 aggregate 中提取（P0，依赖 projects结果）
 	sessionStats, _ := extractSessionStatsFromAggregate(aggregate)
 
-	// 从聚合数据中提取每日活动趋势（确保非 nil）
-	dates := make([]string, 0)
-	counts := make([]int, 0)
-	for _, day := range aggregate.DailyActivityList {
-		dates = append(dates, day.Date)
-		counts = append(counts, day.MessageCount)
-	}
-
-	// 将小时数据转换为map格式
-	hourlyCountsMap = make(map[string]int)
-	for _, item := range aggregate.HourlyData {
-		hourKey := fmt.Sprintf("%02d", item.Hour)
-		hourlyCountsMap[hourKey] = item.Count
-	}
-
-	// 构建时间范围信息
-	rangeInfo := TimeRangeInfo{Preset: preset}
-	if tf.Start != nil {
-		rangeInfo.Start = tf.Start.Format("2006-01-02")
-	}
-	if tf.End != nil {
-		rangeInfo.End = tf.End.Format("2006-01-02")
-	}
-
-	// 构建响应数据
-	projectStatsData := &ProjectStatsData{
-		Projects:      aggregate.Projects,
-		TotalMessages: 0,
-		TotalSessions: 0,
-	}
-	for _, proj := range aggregate.Projects {
-		projectStatsData.TotalMessages += proj.MessageCount
-		projectStatsData.TotalSessions += proj.SessionCount
-	}
-	if aggregate.SessionAnalysis != nil {
-		projectStatsData.TotalSessions = len(aggregate.SessionAnalysis.Sessions)
-		if sessionStats != nil {
-			sessionStats.TotalSessions = projectStatsData.TotalSessions
-		}
-	}
+	dailyTrend := dailyTrendFromActivity(aggregate.DailyActivityList)
+	hourlyCountsMap = hourlyCountsFromItems(aggregate.HourlyData)
+	projectStatsData := buildProjectStatsData(aggregate.Projects, 0, sessionStats, aggregate.SessionAnalysis)
 
 	return &DashboardData{
 		Timestamp:        time.Now().Format("2006-01-02 15:04:05"),
-		TimeRange:        rangeInfo,
+		TimeRange:        buildTimeRangeInfo(tf, preset),
 		Commands:         cmdStats,
 		HourlyCounts:     hourlyCountsMap,
-		DailyTrend:       DailyTrendData{Dates: dates, Counts: counts},
+		DailyTrend:       dailyTrend,
 		RuntimeTools:     toolStats,
 		Sessions:         sessionStats,
 		ProjectStats:     projectStatsData,
@@ -450,6 +297,159 @@ func buildDataFromParsing(tf TimeFilter, preset string) (*DashboardData, error) 
 		TaskPlanAnalysis: aggregate.TaskPlanAnalysis,
 		ToolPerformance:  aggregate.ToolPerformance,
 	}, nil
+}
+
+func buildTimeRangeInfo(tf TimeFilter, preset string) TimeRangeInfo {
+	rangeInfo := TimeRangeInfo{Preset: preset}
+	if tf.Start != nil {
+		rangeInfo.Start = tf.Start.Format("2006-01-02")
+	}
+	if tf.End != nil {
+		rangeInfo.End = tf.End.Format("2006-01-02")
+	}
+	return rangeInfo
+}
+
+func runtimeToolsFromCache(cache *CacheFile) []RuntimeToolSignal {
+	runtimeTools := make([]RuntimeToolSignal, 0, len(cache.RuntimeToolSignals))
+	for key, count := range cache.RuntimeToolSignals {
+		server := "unknown"
+		tool := key
+		if idx := strings.Index(key, "::"); idx > 0 {
+			server = key[:idx]
+			tool = key[idx+2:]
+		}
+		runtimeTools = append(runtimeTools, RuntimeToolSignal{
+			Tool:   tool,
+			Server: server,
+			Count:  count,
+		})
+	}
+	sortRuntimeToolSignals(runtimeTools)
+	return runtimeTools
+}
+
+func dailyTrendAndSessionsFromCache(cache *CacheFile) (DailyTrendData, *SessionStats) {
+	dates := make([]string, 0, len(cache.DailyStats))
+	counts := make([]int, 0, len(cache.DailyStats))
+	dailySessionMap := make(map[string]int, len(cache.DailyStats))
+	peakDate, peakCount := "", 0
+	valleyDate, valleyCount := "", 0
+	for date, dayStats := range cache.DailyStats {
+		dates = append(dates, date)
+		counts = append(counts, dayStats.MessageCount)
+
+		sessionCount := dayStats.SessionCount
+		dailySessionMap[date] = sessionCount
+		if sessionCount > peakCount {
+			peakCount = sessionCount
+			peakDate = date
+		}
+		if valleyCount == 0 || sessionCount < valleyCount {
+			valleyCount = sessionCount
+			valleyDate = date
+		}
+	}
+	sortDatesAndCounts(dates, counts)
+	return DailyTrendData{Dates: dates, Counts: counts}, &SessionStats{
+		TotalSessions:   cache.TotalSessions,
+		PeakDate:        peakDate,
+		PeakCount:       peakCount,
+		ValleyDate:      valleyDate,
+		ValleyCount:     valleyCount,
+		DailySessionMap: dailySessionMap,
+	}
+}
+
+func hourlyAndWorkHoursFromCache(cache *CacheFile) (map[string]int, *WorkHoursStats) {
+	hourlyCountsMap := make(map[string]int, 24)
+	hourlyData := make([]HourlyItem, 0, 24)
+	workHoursCount := 0
+	offHoursCount := 0
+	peakHour := -1
+	peakHourCount := 0
+	for hour := 0; hour < 24; hour++ {
+		count := 0
+		hasHourlyAggregate := cache.HourlyStats[hour] != nil
+		if hasHourlyAggregate {
+			count = cache.HourlyStats[hour].MessageCount
+		}
+
+		isWorkHour := hour >= 9 && hour <= 18
+		hourlyData = append(hourlyData, HourlyItem{
+			Hour:       hour,
+			HourLabel:  fmt.Sprintf("%02d:00", hour),
+			Count:      count,
+			IsWorkHour: isWorkHour,
+		})
+		if isWorkHour {
+			workHoursCount += count
+		} else {
+			offHoursCount += count
+		}
+		if hasHourlyAggregate {
+			hourlyCountsMap[fmt.Sprintf("%02d", hour)] = count
+		}
+		if count > peakHourCount {
+			peakHourCount = count
+			peakHour = hour
+		}
+	}
+
+	totalCount := workHoursCount + offHoursCount
+	workRatio := 0.0
+	if totalCount > 0 {
+		workRatio = float64(workHoursCount) / float64(totalCount) * 100
+	}
+	return hourlyCountsMap, &WorkHoursStats{
+		HourlyData:     hourlyData,
+		WorkHoursCount: workHoursCount,
+		OffHoursCount:  offHoursCount,
+		WorkHoursRatio: workRatio,
+		PeakHour:       peakHour,
+		PeakHourCount:  peakHourCount,
+	}
+}
+
+func dailyTrendFromActivity(activity []DailyActivity) DailyTrendData {
+	dates := make([]string, 0, len(activity))
+	counts := make([]int, 0, len(activity))
+	for _, day := range activity {
+		dates = append(dates, day.Date)
+		counts = append(counts, day.MessageCount)
+	}
+	return DailyTrendData{Dates: dates, Counts: counts}
+}
+
+func hourlyCountsFromItems(items []HourlyItem) map[string]int {
+	hourlyCounts := make(map[string]int, len(items))
+	for _, item := range items {
+		hourlyCounts[fmt.Sprintf("%02d", item.Hour)] = item.Count
+	}
+	return hourlyCounts
+}
+
+func buildProjectStatsData(projects []ProjectStatItem, totalMessages int, sessionStats *SessionStats, sessionAnalysis *SessionAnalysisData) *ProjectStatsData {
+	projectStatsData := &ProjectStatsData{
+		Projects:      projects,
+		TotalMessages: totalMessages,
+	}
+	for _, proj := range projects {
+		if totalMessages == 0 {
+			projectStatsData.TotalMessages += proj.MessageCount
+		}
+		projectStatsData.TotalSessions += proj.SessionCount
+	}
+	if sessionStats != nil {
+		projectStatsData.TotalSessions = sessionStats.TotalSessions
+	}
+	if sessionAnalysis != nil {
+		projectStatsData.TotalSessions = len(sessionAnalysis.Sessions)
+		if sessionStats != nil {
+			sessionStats.TotalSessions = projectStatsData.TotalSessions
+		}
+	}
+	return projectStatsData
 }
 
 func buildToolAnalysisFromCache(cache *CacheFile) *ToolAnalysisData {
@@ -563,6 +563,17 @@ func buildDashboardData(tf TimeFilter, preset string) (*DashboardData, string, e
 	return data, "parsing", nil
 }
 
+type dashboardDataLoader func(TimeFilter, string) (*DashboardData, string, error)
+
+func loadDashboardDataWithFilter(filter AnalysisFilter, load dashboardDataLoader) (*DashboardData, string, error) {
+	data, source, err := load(filter.TimeFilter, filter.Preset)
+	if err != nil {
+		return nil, source, err
+	}
+	applyDashboardFilter(data, filter)
+	return data, source, nil
+}
+
 func refreshGlobalCacheIfRulesChanged() error {
 	if globalCache == nil {
 		return nil
@@ -596,45 +607,7 @@ func sendError(w http.ResponseWriter, message string) {
 
 // emptyProjectAggregate 返回安全的空 ProjectAggregate
 func emptyProjectAggregate() *ProjectAggregate {
-	agg := &ProjectAggregate{
-		ProjectStats:          make(map[string]*ProjectStatItem),
-		DailyActivity:         make(map[string]int),
-		DailySessions:         make(map[string]map[string]bool),
-		ModelUsage:            make(map[string]*ModelUsageItem),
-		ToolStats:             make(map[string]*ToolStatItem),
-		ToolModelStats:        make(map[string]*ToolModelStatItem),
-		FailureReasons:        make(map[string]*FailureReasonStat),
-		FailureToolReasons:    make(map[string]*FailureToolReasonStat),
-		FailureModelReasons:   make(map[string]*FailureModelReasonStat),
-		SessionStatsMap:       make(map[string]*SessionAnalysisItem),
-		SessionQueueOps:       make(map[string]int),
-		EventTypes:            make(map[string]int),
-		HookStats:             make(map[string]*HookStatItem),
-		SkillStats:            make(map[string]*SkillStatItem),
-		InstalledSkills:       make(map[string]*InstalledSkillItem),
-		SkillUsageStats:       make(map[string]*SkillUsageStat),
-		SkillListingStats:     make(map[string]int),
-		SkillProjectStats:     make(map[string]*SkillProjectStat),
-		SkillModelStats:       make(map[string]*SkillModelStat),
-		SkillAgentStats:       make(map[string]*SkillAgentStat),
-		SkillSessionToolStats: make(map[string]*SkillSessionToolStat),
-		PermissionModes:       make(map[string]int),
-		OpenedFiles:           make(map[string]*FileAccessStat),
-		AgentStats:            make(map[string]*AgentStatItem),
-		AgentSessions:         make(map[string]map[string]bool),
-		BashCommandStats:      make(map[string]*BashCommandStat),
-		FileOperationStats:    make(map[string]*FileOperationStat),
-		FileHotStats:          make(map[string]*FileHotStat),
-		FileEditFailures:      make(map[string]*FileEditFailureAgg),
-		FileSnapshotStats:     make(map[string]*FileSnapshotAgg),
-		FileEditedStats:       make(map[string]*FileEditedAgg),
-		ToolPerfStats:         make(map[string]*ToolPerfAgg),
-		HourlyCounts:          [24]int{},
-	}
-	weekdayNames := []string{"周一", "周二", "周三", "周四", "周五", "周六", "周日"}
-	for i := 0; i < 7; i++ {
-		agg.WeekdayData[i] = WeekdayItem{Weekday: i, WeekdayName: weekdayNames[i]}
-	}
+	agg := newProjectAggregate()
 	agg.finalize()
 	return agg
 }

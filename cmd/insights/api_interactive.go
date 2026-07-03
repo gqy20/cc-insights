@@ -195,7 +195,9 @@ func handleDetailTokensAPI(w http.ResponseWriter, r *http.Request) {
 	}
 	report := buildCLICostReport(data, filter.Limit)
 	report.ByProject = filterCostProjects(report.ByProject, filter.Project)
-	report.BySession = filterCostSessions(report.BySession, filter.Session, filter.Project)
+	report.BySession = filterSlice(report.BySession, func(item CostSessionStat) bool {
+		return matchContains(filter.Session, item.SessionID) && matchContains(filter.Project, item.Project)
+	})
 	report.ByModel = filterCostModels(report.ByModel, filter.Model)
 	sendInteractiveJSON(w, report, source, data.TimeRange, filter, startedAt)
 }
@@ -249,12 +251,7 @@ func handleTimelineAPI(w http.ResponseWriter, r *http.Request) {
 }
 
 func buildRecommendationDataWithFilter(filter AnalysisFilter) (*DashboardData, string, error) {
-	data, source, err := buildRecommendationDashboardData(filter.TimeFilter, filter.Preset)
-	if err != nil {
-		return nil, source, err
-	}
-	applyDashboardFilter(data, filter)
-	return data, source, nil
+	return loadDashboardDataWithFilter(filter, buildRecommendationDashboardData)
 }
 
 func parseAnalysisFilter(r *http.Request) (AnalysisFilter, error) {
@@ -566,13 +563,7 @@ func filterCostProjects(items []CostProjectStat, project string) []CostProjectSt
 		return items
 	}
 	return filterSlice(items, func(item CostProjectStat) bool {
-		return strings.Contains(strings.ToLower(item.Project), strings.ToLower(project))
-	})
-}
-
-func filterCostSessions(items []CostSessionStat, session, project string) []CostSessionStat {
-	return filterSlice(items, func(item CostSessionStat) bool {
-		return matchContains(session, item.SessionID) && matchContains(project, item.Project)
+		return matchContains(project, item.Project)
 	})
 }
 
@@ -581,12 +572,14 @@ func filterCostModels(items []CostModelStat, model string) []CostModelStat {
 		return items
 	}
 	return filterSlice(items, func(item CostModelStat) bool {
-		return strings.Contains(strings.ToLower(item.Model), strings.ToLower(model))
+		return matchContains(model, item.Model)
 	})
 }
 
 func filterCommandFamilies(items []BashCommandFamilyStat, family string) []BashCommandFamilyStat {
-	return filterSlice(items, func(item BashCommandFamilyStat) bool { return strings.EqualFold(item.Family, family) })
+	return filterSlice(items, func(item BashCommandFamilyStat) bool {
+		return strings.EqualFold(item.Family, family)
+	})
 }
 
 func filterSlice[T any](items []T, keep func(T) bool) []T {

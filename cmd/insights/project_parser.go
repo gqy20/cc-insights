@@ -5,10 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"runtime"
-	"sort"
-	"strings"
 	"sync"
 	"time"
 )
@@ -21,28 +18,16 @@ func ParseProjectsConcurrentOnce(tf TimeFilter) (*ProjectAggregate, error) {
 
 // ParseProjectsConcurrentOnceFromDir 一次遍历并发解析指定数据目录下的项目统计
 func ParseProjectsConcurrentOnceFromDir(tf TimeFilter, dataDir string) (*ProjectAggregate, error) {
-	projectsDir := filepath.Join(dataDir, "projects")
-	entries, err := os.ReadDir(projectsDir)
+	fileInfos, err := listProjectJSONLFileInfos(dataDir)
 	if err != nil {
 		return nil, fmt.Errorf("读取 projects 目录失败: %w", err)
 	}
 
 	aggregate := newProjectAggregate()
-
-	var files []string
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
-		}
-
-		projectDir := filepath.Join(projectsDir, entry.Name())
-		projectFiles, err := projectJSONLFiles(projectDir)
-		if err != nil {
-			continue
-		}
-		files = append(files, projectFiles...)
+	files := make([]string, 0, len(fileInfos))
+	for _, info := range fileInfos {
+		files = append(files, info.AbsPath)
 	}
-	sort.Strings(files)
 
 	maxWorkers := runtime.NumCPU()
 	if len(files) < maxWorkers {
@@ -87,27 +72,6 @@ func ParseProjectsConcurrentOnceFromDir(tf TimeFilter, dataDir string) (*Project
 	aggregate.finalize()
 
 	return aggregate, nil
-}
-
-func projectJSONLFiles(projectDir string) ([]string, error) {
-	var files []string
-	err := filepath.WalkDir(projectDir, func(path string, entry os.DirEntry, err error) error {
-		if err != nil {
-			return nil
-		}
-		if entry.IsDir() {
-			return nil
-		}
-		if strings.HasSuffix(entry.Name(), ".jsonl") {
-			files = append(files, path)
-		}
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-	sort.Strings(files)
-	return files, nil
 }
 
 // parseProjectFileAggregate 解析单个项目文件并更新聚合数据

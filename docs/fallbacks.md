@@ -59,6 +59,8 @@ cc-insights 读取的是本机 `~/.claude` 数据，不是受控数据库。目�
 
 `projects/**/*.jsonl` 是核心数据源，负责消息、模型、Token、工具调用、失败原因、Session 生命周期、文件编辑、性能、Skill 和 Agent 统计。目录缺失或解析失败时返回空 `ProjectAggregate`，对应分析模块为空。
 
+空 `ProjectAggregate` 必须通过 `newProjectAggregate()` 初始化并 finalize，不能手写一份字段 map 清单。这样新增聚合字段后，正常解析路径和降级路径会同时具备相同结构，避免 fallback 只在少数字段上可用。
+
 ### debug
 
 `debug/` 是 runtime 事件日志来源，用于补充 MCP runtime 工具信号、hook、skill、budget、opened file 等事件。缺失时这些运行时信号为空，但不影响 projects 中解析出的工具调用和成本统计。
@@ -111,3 +113,5 @@ Web Dashboard 必须对空数组、空对象和缺失字段稳定：
 - 不要把真实机器的一次性统计数字写成长期事实。
 - 新增数据源时必须明确：缺失时返回什么、坏记录如何处理、是否进入 coverage、是否影响 `rec`。
 - 如果某个函数只是变化检测后完整重建，命名中不要使用“增量”。
+- 项目 JSONL 文件发现应复用 `listProjectJSONLFileInfos`。需要路径列表时从 `AbsPath` 派生，不要新增第二套 `WalkDir`。
+- cache 和实时解析最终都应走共享的 `DashboardData` 组装 helper；新增对外字段时要同时检查 cache、parsing、filter 和 coverage。
