@@ -895,6 +895,12 @@ func classifyBashFailure(lower string) (string, string, bool) {
 		return "bash", "exit_code_" + matches[2], true
 	}
 	switch {
+	case strings.Contains(lower, "error collecting") || strings.Contains(lower, "importerror") || strings.Contains(lower, "modulenotfounderror"):
+		return "bash", "python_import_error", true
+	case strings.Contains(lower, "syntaxerror") || strings.Contains(lower, "unexpected token"):
+		return "bash", "syntax_error", true
+	case strings.Contains(lower, "tls connect error") || strings.Contains(lower, "could not resolve host") || strings.Contains(lower, "failed to get runs"):
+		return "network", "network_error", true
 	case strings.Contains(lower, "command not found"):
 		return "bash", "command_not_found", true
 	case strings.Contains(lower, "no such file or directory"):
@@ -1139,6 +1145,7 @@ func recordSlowCallLocked(agg *ProjectAggregate, call pendingToolCall, baseTool,
 		ResultSize:  resultSize,
 		Timestamp:   call.Timestamp.Format(time.RFC3339),
 		SampleInput: extractSampleInputForSlow(call),
+		Segments:    extractSegmentsForSlow(call),
 	}
 
 	if len(agg.SlowestCalls) < maxSlowCalls {
@@ -1184,4 +1191,32 @@ func extractSampleInputForSlow(call pendingToolCall) string {
 		}
 	}
 	return ""
+}
+
+func extractSegmentsForSlow(call pendingToolCall) string {
+	if call.Tool != "Bash" || len(call.Input) == 0 {
+		return ""
+	}
+	var input struct {
+		Command string `json:"command"`
+	}
+	if json.Unmarshal(call.Input, &input) != nil || strings.TrimSpace(input.Command) == "" {
+		return ""
+	}
+	segments := extractShellSegments(input.Command)
+	if len(segments) <= 1 {
+		return ""
+	}
+	names := make([]string, 0, len(segments))
+	for _, segment := range segments {
+		name := bashCommandName(segment)
+		if name == "" {
+			continue
+		}
+		names = append(names, name)
+	}
+	if len(names) == 0 {
+		return ""
+	}
+	return previewString(strings.Join(names, " -> "), 160)
 }

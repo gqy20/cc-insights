@@ -1,8 +1,10 @@
 package main
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -159,8 +161,50 @@ func TestBashStrongErrorTextStillCreatesFailure(t *testing.T) {
 		t.Fatalf("TotalFailures=%d, want 1", agg.FailureAnalysis.TotalFailures)
 	}
 	reason := agg.FailureAnalysis.ByReason[0]
-	if reason.Category != "bash" || reason.Reason != "error_text" {
-		t.Fatalf("reason=%+v, want bash/error_text", reason)
+	if reason.Category != "bash" || reason.Reason != "syntax_error" {
+		t.Fatalf("reason=%+v, want bash/syntax_error", reason)
+	}
+}
+
+func TestBashStrongErrorTextGetsSpecificReasons(t *testing.T) {
+	cases := []struct {
+		name         string
+		content      string
+		wantCategory string
+		wantReason   string
+	}{
+		{
+			name:         "pytest import",
+			content:      "ERROR collecting tests/test_cli.py\nImportError while importing test module",
+			wantCategory: "bash",
+			wantReason:   "python_import_error",
+		},
+		{
+			name:         "syntax",
+			content:      "SyntaxError: Unexpected token ';'",
+			wantCategory: "bash",
+			wantReason:   "syntax_error",
+		},
+		{
+			name:         "network",
+			content:      "TLS connect error: unexpected eof while reading",
+			wantCategory: "network",
+			wantReason:   "network_error",
+		},
+	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			classification := classifyToolResult("Bash", AssistantContent{
+				Type:    "tool_result",
+				Content: json.RawMessage(strconv.Quote(tt.content)),
+			})
+			if !classification.Failed {
+				t.Fatalf("classification failed=false, want true")
+			}
+			if classification.Category != tt.wantCategory || classification.Reason != tt.wantReason {
+				t.Fatalf("classification=%+v, want %s/%s", classification, tt.wantCategory, tt.wantReason)
+			}
+		})
 	}
 }
 

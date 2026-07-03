@@ -233,6 +233,9 @@ func TestBashChainSlowCallUsesChainCategory(t *testing.T) {
 	if !strings.Contains(top.SampleInput, "grep -n TODO") {
 		t.Fatalf("SampleInput=%q, want full chain command", top.SampleInput)
 	}
+	if top.Segments != "echo -> grep" {
+		t.Fatalf("Segments=%q, want echo -> grep", top.Segments)
+	}
 }
 
 func toolUseRecord(cwd, sessionID string, ts time.Time, callID, tool string) string {

@@ -771,3 +771,51 @@ func TestQueryByTimeRange_FilterGlobalStats(t *testing.T) {
 	t.Logf("✅ QueryByTimeRange 正确过滤了全局统计: projects=%d, models=%d",
 		len(result.ProjectStats), len(result.ModelUsage))
 }
+
+func TestBuildDataFromCacheUsesSessionAnalysisCount(t *testing.T) {
+	oldCache := globalCache
+	defer func() { globalCache = oldCache }()
+
+	globalCache = &CacheFile{
+		Version:    CacheVersion,
+		LastUpdate: time.Now(),
+		DailyStats: map[string]*DayAggregate{
+			"2026-01-01": {Date: "2026-01-01", MessageCount: 2, SessionCount: 2},
+		},
+		DailyRuntime: map[string]ProjectFileAggregate{
+			"2026-01-01": {
+				SessionStats: map[string]SessionAnalysisItem{
+					"s1": {SessionID: "s1"},
+					"s2": {SessionID: "s2"},
+				},
+			},
+		},
+		DailySessionRuntime: map[string]map[string]ProjectFileAggregate{
+			"2026-01-01": {
+				"s1": {},
+				"s2": {},
+			},
+		},
+		ProjectStats:  map[string]*ProjectStatItem{},
+		ModelUsage:    map[string]*ModelUsageItem{},
+		ToolStats:     map[string]*ToolStatItem{},
+		TotalSessions: 99,
+		SessionAnalysis: &SessionAnalysisData{
+			Sessions: []SessionAnalysisItem{
+				{SessionID: "s1"},
+				{SessionID: "s2"},
+			},
+		},
+	}
+
+	data, err := buildDataFromCache(TimeFilter{}, "all")
+	if err != nil {
+		t.Fatalf("buildDataFromCache failed: %v", err)
+	}
+	if data.Sessions == nil || data.Sessions.TotalSessions != 2 {
+		t.Fatalf("sessions=%+v, want total 2 from session_analysis", data.Sessions)
+	}
+	if data.ProjectStats == nil || data.ProjectStats.TotalSessions != 2 {
+		t.Fatalf("project_stats sessions=%+v, want total 2 from session_analysis", data.ProjectStats)
+	}
+}

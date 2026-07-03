@@ -911,6 +911,9 @@ func buildPerformanceDiagnostics(data *DashboardData) []diagnosticFinding {
 			if top.SampleInput != "" {
 				evidence = append(evidence, diagnosticEvidence{Label: "输入摘要", Value: top.SampleInput})
 			}
+			if top.Segments != "" {
+				evidence = append(evidence, diagnosticEvidence{Label: "链路片段", Value: top.Segments})
+			}
 			findings = append(findings, diagnosticFinding{
 				ID:             "performance.slowest_call",
 				Category:       "performance",

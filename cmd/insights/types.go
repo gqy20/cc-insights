@@ -953,6 +953,7 @@ type ToolSlowCallItem struct {
 	ResultSize  int    `json:"result_size"`
 	Timestamp   string `json:"timestamp"`
 	SampleInput string `json:"sample_input,omitempty"`
+	Segments    string `json:"segments,omitempty"`
 }
 
 // TurnSlowItem 最慢的单次回合(turn)记录，来自 system/turn_duration 行

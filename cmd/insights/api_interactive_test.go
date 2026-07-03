@@ -56,3 +56,25 @@ func TestBuildTimelineData(t *testing.T) {
 		t.Fatalf("timeline=%+v", timeline)
 	}
 }
+
+func TestBuildOverviewDataUsesSessionAnalysisCount(t *testing.T) {
+	data := &DashboardData{
+		ProjectStats: &ProjectStatsData{
+			TotalMessages: 100,
+			TotalSessions: 3,
+			Projects:      []ProjectStatItem{{Project: "/repo", MessageCount: 100}},
+		},
+		Sessions: &SessionStats{TotalSessions: 4},
+		SessionAnalysis: &SessionAnalysisData{
+			Sessions: []SessionAnalysisItem{
+				{SessionID: "s1"},
+				{SessionID: "s2"},
+			},
+		},
+	}
+
+	overview := buildOverviewData(data, cliRecommendationReport{}, AnalysisFilter{})
+	if overview.Summary.Sessions != 2 {
+		t.Fatalf("overview sessions=%d, want session_analysis count 2", overview.Summary.Sessions)
+	}
+}
