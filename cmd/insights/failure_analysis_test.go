@@ -297,6 +297,136 @@ func TestBashEvidenceTextDoesNotCreateFailure(t *testing.T) {
 	}
 }
 
+func TestStructuredSuccessToolTextDoesNotCreateFailure(t *testing.T) {
+	cases := []struct {
+		name    string
+		tool    string
+		content string
+	}{
+		{
+			name:    "mcp crawl success markdown mentions error",
+			tool:    "mcp__crawl-mcp__crawl_single",
+			content: `{"success":true,"markdown":"Compiling /_error page documentation"}`,
+		},
+		{
+			name:    "mcp search success snippet mentions failed",
+			tool:    "mcp__crawl-mcp__search_text",
+			content: `{'success':true,'results':[{'title':'Hydration error caused by mismatched id'}]}`,
+		},
+		{
+			name:    "task create success",
+			tool:    "TaskCreate",
+			content: "Task #12 created successfully: 重跑 9 篇失败验证修复",
+		},
+		{
+			name:    "task stop success",
+			tool:    "TaskStop",
+			content: "Successfully stopped task: abc123",
+		},
+		{
+			name:    "exit plan approved",
+			tool:    "ExitPlanMode",
+			content: "User has approved your plan. You can now start coding.",
+		},
+		{
+			name:    "agent report mentions issues",
+			tool:    "Agent",
+			content: "[{'type':'text','text':'I now have all the data needed for a comprehensive audit report with issues.'}]",
+		},
+		{
+			name:    "minimax search success mentions error",
+			tool:    "mcp__MiniMax__web_search",
+			content: "{'type':'text','text':'{\"organic\":[{\"title\":\"Hydration error caused by mismatched id\"}]}' }",
+		},
+		{
+			name:    "minimax image understanding text",
+			tool:    "mcp__MiniMax__understand_image",
+			content: "{'type':'text','text':'# 页面检查\\nLoading spinner 已消失，没有错误提示。'}",
+		},
+		{
+			name:    "task output completed",
+			tool:    "TaskOutput",
+			content: "<retrieval_status>success</retrieval_status><status>completed</status><exit_code>0</exit_code><output>ERROR log text from child process</output>",
+		},
+		{
+			name:    "task output running",
+			tool:    "TaskOutput",
+			content: "<retrieval_status>not_ready</retrieval_status><status>running</status><output>Agent start</output>",
+		},
+	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			classification := classifyToolResult(tt.tool, AssistantContent{
+				Type:    "tool_result",
+				Content: json.RawMessage(strconv.Quote(tt.content)),
+			})
+			if classification.Failed {
+				t.Fatalf("classification=%+v, want no failure", classification)
+			}
+		})
+	}
+}
+
+func TestNonBashToolsGetSpecificFailureReasons(t *testing.T) {
+	cases := []struct {
+		name         string
+		tool         string
+		content      string
+		wantCategory string
+		wantReason   string
+	}{
+		{
+			name:         "agent rate limit",
+			tool:         "Agent",
+			content:      "API Error: [1302][您的账户已达到速率限制，请您控制请求频率]",
+			wantCategory: "rate_limit",
+			wantReason:   "rate_limit_429",
+		},
+		{
+			name:         "task output failed",
+			tool:         "TaskOutput",
+			content:      "<retrieval_status>success</retrieval_status><status>failed</status><exit_code>1</exit_code>",
+			wantCategory: "task",
+			wantReason:   "task_failed",
+		},
+		{
+			name:         "mcp missing playwright browser",
+			tool:         "mcp__crawl-mcp__crawl_single",
+			content:      "BrowserType.launch: Executable doesn't exist at /home/user/.cache/ms-playwright/chromium/chrome",
+			wantCategory: "dependency",
+			wantReason:   "missing_browser",
+		},
+		{
+			name:         "mcp search failed",
+			tool:         "mcp__MiniMax__web_search",
+			content:      "{'type':'text','text':'Failed to perform search: API Error: upstream unavailable'}",
+			wantCategory: "mcp",
+			wantReason:   "search_failed",
+		},
+		{
+			name:         "mcp safety filter",
+			tool:         "mcp__MiniMax__understand_image",
+			content:      "Failed to perform VLM analysis: API Error: 1026-input new_sensitive, input image sensitive",
+			wantCategory: "policy",
+			wantReason:   "safety_filter",
+		},
+	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			classification := classifyToolResult(tt.tool, AssistantContent{
+				Type:    "tool_result",
+				Content: json.RawMessage(strconv.Quote(tt.content)),
+			})
+			if !classification.Failed {
+				t.Fatalf("classification failed=false, want true")
+			}
+			if classification.Category != tt.wantCategory || classification.Reason != tt.wantReason {
+				t.Fatalf("classification=%+v, want %s/%s", classification, tt.wantCategory, tt.wantReason)
+			}
+		})
+	}
+}
+
 func TestFailureSamplesKeepBeyondFirstThirty(t *testing.T) {
 	tmpDir := t.TempDir()
 	dataDir := filepath.Join(tmpDir, "data")

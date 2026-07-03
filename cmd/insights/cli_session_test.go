@@ -75,3 +75,62 @@ func TestBuildCLISessionReportIncludesHookStats(t *testing.T) {
 		t.Fatalf("limited Hooks len = %d, want 1", len(limitReport.Hooks))
 	}
 }
+
+func TestBuildCLISessionReportExplainsAnomalousSessions(t *testing.T) {
+	data := &DashboardData{
+		TimeRange: TimeRangeInfo{Preset: "7d"},
+		SessionAnalysis: &SessionAnalysisData{
+			Sessions: []SessionAnalysisItem{
+				{SessionID: "session-hot", Project: "/repo", DurationMs: 3_600_000, ToolCallCount: 20, ToolFailureCount: 8, TotalTokens: 1_200_000, PrimaryModel: "model-a", PlanModeCount: 1},
+			},
+			LongRunning: []SessionAnalysisItem{
+				{SessionID: "session-hot", Project: "/repo", DurationMs: 3_600_000, ToolCallCount: 20, ToolFailureCount: 8, TotalTokens: 1_200_000, PrimaryModel: "model-a", PlanModeCount: 1},
+			},
+			TopFailures: []SessionAnalysisItem{
+				{SessionID: "session-hot", Project: "/repo", DurationMs: 3_600_000, ToolCallCount: 20, ToolFailureCount: 8, TotalTokens: 1_200_000, PrimaryModel: "model-a", PlanModeCount: 1},
+			},
+		},
+		FailureAnalysis: &FailureAnalysisData{
+			Samples: []ToolFailureSample{
+				{SessionID: "session-hot", Tool: "Bash", Category: "bash", Reason: "exit_code_1"},
+				{SessionID: "session-hot", Tool: "Bash", Category: "bash", Reason: "exit_code_1"},
+				{SessionID: "session-hot", Tool: "Edit", Category: "edit", Reason: "old_string_mismatch"},
+			},
+		},
+		ToolPerformance: &ToolPerformanceData{
+			SlowestCalls: []ToolSlowCallItem{
+				{SessionID: "session-hot", Tool: "Bash", Category: "Bash:test", DurationMs: 120_000},
+			},
+		},
+	}
+
+	report := buildCLISessionReport(data, cliOptions{Limit: 10, Samples: 10})
+	if len(report.SessionDiagnostics) != 1 {
+		t.Fatalf("SessionDiagnostics len=%d, want 1", len(report.SessionDiagnostics))
+	}
+	diag := report.SessionDiagnostics[0]
+	if diag.SessionID != "session-hot" {
+		t.Fatalf("diag session=%s, want session-hot", diag.SessionID)
+	}
+	if len(diag.Reasons) == 0 || diag.Reasons[0].Name != "bash/exit_code_1" || diag.Reasons[0].Count != 2 {
+		t.Fatalf("reasons=%+v, want bash/exit_code_1 count 2", diag.Reasons)
+	}
+	if len(diag.Tools) == 0 || diag.Tools[0].Name != "Bash" || diag.Tools[0].Count != 2 {
+		t.Fatalf("tools=%+v, want Bash count 2", diag.Tools)
+	}
+	if diag.SlowestCall == nil || diag.SlowestCall.Category != "Bash:test" {
+		t.Fatalf("slowest=%+v, want Bash:test", diag.SlowestCall)
+	}
+	if !containsString(diag.Signals, "long_session") || !containsString(diag.Signals, "high_failure_rate") || !containsString(diag.Signals, "plan_lifecycle_unbalanced") {
+		t.Fatalf("signals=%+v, want long/high/plan", diag.Signals)
+	}
+}
+
+func containsString(items []string, want string) bool {
+	for _, item := range items {
+		if item == want {
+			return true
+		}
+	}
+	return false
+}

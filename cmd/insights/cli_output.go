@@ -81,7 +81,7 @@ func writeTable(value any, w io.Writer) error {
 					if ev.Value == "" {
 						continue
 					}
-					fmt.Fprintf(w, " %s=%s;", ev.Label, ev.Value)
+					fmt.Fprintf(w, " %s=%s;", ev.Label, previewString(ev.Value, 140))
 				}
 				fmt.Fprintln(w)
 			}
@@ -138,6 +138,7 @@ func writeTable(value any, w io.Writer) error {
 			formatInt(v.ReminderSummary.TodoReminderCount))
 		writeSessionItemsTable(w, "长会话", v.LongRunning)
 		writeSessionItemsTable(w, "高失败会话", v.TopFailures)
+		writeSessionDiagnosticsTable(w, v.SessionDiagnostics)
 		if len(v.FailureSamples) > 0 {
 			fmt.Fprintln(w, "失败样例:")
 			for _, sample := range v.FailureSamples {
@@ -297,6 +298,7 @@ func writeMarkdown(value any, w io.Writer) error {
 			formatInt(v.ReminderSummary.TodoReminderCount))
 		writeSessionItemsMarkdown(w, "长会话", v.LongRunning)
 		writeSessionItemsMarkdown(w, "高失败会话", v.TopFailures)
+		writeSessionDiagnosticsMarkdown(w, v.SessionDiagnostics)
 		if len(v.FailureSamples) > 0 {
 			fmt.Fprintln(w, "## 失败样例")
 			fmt.Fprintln(w)
@@ -469,6 +471,40 @@ func writeSessionItemsTable(w io.Writer, title string, items []SessionAnalysisIt
 	fmt.Fprintln(w)
 }
 
+func writeSessionDiagnosticsTable(w io.Writer, items []cliSessionDiagnostic) {
+	if len(items) == 0 {
+		return
+	}
+	fmt.Fprintln(w, "异常解释:")
+	for _, item := range items {
+		fmt.Fprintf(w, "  %-24s %8s  fail=%s/%s %s%%  tok=%s  %s\n",
+			item.SessionID,
+			formatDurationMs(item.DurationMs),
+			formatInt(item.ToolFailureCount),
+			formatInt(item.ToolCallCount),
+			formatFailureRate(item.FailureRate),
+			formatCompactInt(item.TotalTokens),
+			item.Project)
+		if len(item.Reasons) > 0 {
+			fmt.Fprintf(w, "    Top 原因: %s\n", joinNameCounts(item.Reasons))
+		}
+		if len(item.Tools) > 0 {
+			fmt.Fprintf(w, "    Top 工具: %s\n", joinNameCounts(item.Tools))
+		}
+		if item.SlowestCall != nil {
+			fmt.Fprintf(w, "    最慢调用: %s %s %s\n",
+				item.SlowestCall.Tool,
+				formatDurationMs(item.SlowestCall.DurationMs),
+				previewString(item.SlowestCall.Category, 80))
+		}
+		if len(item.Signals) > 0 {
+			fmt.Fprintf(w, "    信号: %s\n", strings.Join(item.Signals, ", "))
+		}
+		writeDrilldownsTable(w, item.NextSteps)
+	}
+	fmt.Fprintln(w)
+}
+
 func writeHookStatsTable(w io.Writer, items []HookStatItem) {
 	if len(items) == 0 {
 		return
@@ -552,6 +588,45 @@ func writeSessionItemsMarkdown(w io.Writer, title string, items []SessionAnalysi
 		}
 	}
 	fmt.Fprintln(w)
+}
+
+func writeSessionDiagnosticsMarkdown(w io.Writer, items []cliSessionDiagnostic) {
+	if len(items) == 0 {
+		return
+	}
+	fmt.Fprintln(w, "## 异常解释")
+	fmt.Fprintln(w)
+	for _, item := range items {
+		fmt.Fprintf(w, "- `%s`: %s, fail=%s/%s (%s%%), token=%s, `%s`\n",
+			item.SessionID,
+			formatDurationMs(item.DurationMs),
+			formatInt(item.ToolFailureCount),
+			formatInt(item.ToolCallCount),
+			formatFailureRate(item.FailureRate),
+			formatCompactInt(item.TotalTokens),
+			item.Project)
+		if len(item.Reasons) > 0 {
+			fmt.Fprintf(w, "  - Top 原因: %s\n", joinNameCounts(item.Reasons))
+		}
+		if len(item.Tools) > 0 {
+			fmt.Fprintf(w, "  - Top 工具: %s\n", joinNameCounts(item.Tools))
+		}
+		if item.SlowestCall != nil {
+			fmt.Fprintf(w, "  - 最慢调用: `%s` %s `%s`\n", item.SlowestCall.Tool, formatDurationMs(item.SlowestCall.DurationMs), item.SlowestCall.Category)
+		}
+		if len(item.Signals) > 0 {
+			fmt.Fprintf(w, "  - 信号: `%s`\n", strings.Join(item.Signals, "`, `"))
+		}
+	}
+	fmt.Fprintln(w)
+}
+
+func joinNameCounts(items []nameCount) string {
+	parts := make([]string, 0, len(items))
+	for _, item := range items {
+		parts = append(parts, fmt.Sprintf("%s=%s", item.Name, formatInt(item.Count)))
+	}
+	return strings.Join(parts, ", ")
 }
 
 func writeDrilldownsTable(w io.Writer, commands []diagnosticCommand) {

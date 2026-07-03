@@ -8,12 +8,13 @@ import (
 )
 
 type apiMeta struct {
-	Source       string                 `json:"source"`
-	CacheVersion string                 `json:"cache_version,omitempty"`
-	GeneratedAt  string                 `json:"generated_at"`
-	RuntimeMs    int64                  `json:"runtime_ms"`
-	TimeRange    TimeRangeInfo          `json:"time_range"`
-	Filters      map[string]interface{} `json:"filters,omitempty"`
+	Source       string                  `json:"source"`
+	CacheVersion string                  `json:"cache_version,omitempty"`
+	GeneratedAt  string                  `json:"generated_at"`
+	RuntimeMs    int64                   `json:"runtime_ms"`
+	TimeRange    TimeRangeInfo           `json:"time_range"`
+	Filters      map[string]interface{}  `json:"filters,omitempty"`
+	Coverage     map[string]CoverageInfo `json:"coverage,omitempty"`
 }
 
 type interactiveAPIResponse struct {
@@ -484,6 +485,7 @@ func sendInteractiveJSON(w http.ResponseWriter, data interface{}, source string,
 			RuntimeMs:    time.Since(startedAt).Milliseconds(),
 			TimeRange:    tr,
 			Filters:      filter.metaFilters(),
+			Coverage:     buildCoverage(filter),
 		},
 		Data: data,
 	})

@@ -806,6 +806,9 @@ func classifyToolResult(tool string, content AssistantContent) toolFailureClassi
 	if category, reason, ok := classifyDetailedFailure(tool, lower); ok {
 		return newFailureClassification("", category, reason)
 	}
+	if toolResultLooksSuccessful(tool, lower) {
+		return toolFailureClassification{}
+	}
 	switch {
 	case strings.Contains(lower, `"success":false`) || strings.Contains(lower, `"success": false`):
 		return newFailureClassification("api_failure", "api", "success_false")
@@ -825,7 +828,41 @@ func classifyToolResult(tool string, content AssistantContent) toolFailureClassi
 }
 
 func allowGenericFailureText(tool string) bool {
-	return tool != "Bash"
+	switch tool {
+	case "Bash", "Agent", "TaskCreate", "TaskStop", "ExitPlanMode":
+		return false
+	default:
+		return true
+	}
+}
+
+func toolResultLooksSuccessful(tool, lower string) bool {
+	if strings.Contains(lower, `"success":true`) || strings.Contains(lower, `"success": true`) ||
+		strings.Contains(lower, `'success':true`) || strings.Contains(lower, `'success': true`) {
+		return true
+	}
+	switch tool {
+	case "TaskOutput":
+		return strings.Contains(lower, "<status>completed</status>") ||
+			strings.Contains(lower, "<status>running</status>") ||
+			strings.Contains(lower, "<retrieval_status>not_ready</retrieval_status>") ||
+			strings.Contains(lower, `"status":"completed"`) ||
+			strings.Contains(lower, `'status':'completed'`)
+	case "TaskCreate":
+		return strings.Contains(lower, "created successfully")
+	case "TaskStop":
+		return strings.Contains(lower, "successfully stopped task")
+	case "ExitPlanMode":
+		return strings.Contains(lower, "user has approved your plan")
+	default:
+		if strings.HasPrefix(tool, "mcp__MiniMax__") &&
+			(strings.Contains(lower, `{'type':'text'`) || strings.Contains(lower, `{"type":"text"`)) &&
+			!strings.Contains(lower, "api error") &&
+			!strings.Contains(lower, "failed to perform") {
+			return true
+		}
+		return false
+	}
 }
 
 func toolResultTextIsEvidenceOnly(tool string) bool {
@@ -863,6 +900,8 @@ func classifyDetailedFailure(tool string, lower string) (string, string, bool) {
 	switch {
 	case tool == "Bash":
 		return classifyBashFailure(lower)
+	case tool == "TaskOutput":
+		return classifyTaskOutputFailure(lower)
 	case tool == "Edit" || tool == "MultiEdit" || tool == "Write" || tool == "Read":
 		return classifyFileToolFailure(lower)
 	case strings.HasPrefix(tool, "mcp__"):
@@ -876,16 +915,31 @@ func classifyDetailedFailure(tool string, lower string) (string, string, bool) {
 
 func classifyCommonFailure(lower string) (string, string, bool) {
 	switch {
+	case strings.Contains(lower, "api error") && (strings.Contains(lower, "速率限制") || strings.Contains(lower, "rate limit") || strings.Contains(lower, "token plan")):
+		return "rate_limit", "rate_limit_429", true
 	case strings.Contains(lower, "permission denied") || strings.Contains(lower, "operation not permitted") || strings.Contains(lower, "权限"):
 		return "permission", "permission_denied", true
 	case strings.Contains(lower, "timed out") || strings.Contains(lower, "timeout") || strings.Contains(lower, "deadline exceeded") || strings.Contains(lower, "超时"):
 		return "timeout", "timeout", true
-	case strings.Contains(lower, "rate limit") || strings.Contains(lower, "too many requests") || strings.Contains(lower, "429"):
+	case strings.Contains(lower, "rate limit") || strings.Contains(lower, "too many requests") || strings.Contains(lower, "429") || strings.Contains(lower, "速率限制") || strings.Contains(lower, "已达到 token plan"):
 		return "rate_limit", "rate_limit_429", true
 	case strings.Contains(lower, "unauthorized") || strings.Contains(lower, "forbidden") || strings.Contains(lower, "invalid api key") || strings.Contains(lower, "authentication"):
 		return "auth", "auth_error", true
+	case strings.Contains(lower, "new_sensitive") || strings.Contains(lower, "image sensitive") || strings.Contains(lower, "safety filter"):
+		return "policy", "safety_filter", true
+	case strings.Contains(lower, "executable doesn't exist") && strings.Contains(lower, "playwright"):
+		return "dependency", "missing_browser", true
 	case strings.Contains(lower, "model not found") || strings.Contains(lower, "unknown model"):
 		return "model", "model_not_found", true
+	default:
+		return "", "", false
+	}
+}
+
+func classifyTaskOutputFailure(lower string) (string, string, bool) {
+	switch {
+	case strings.Contains(lower, "<status>failed</status>") || strings.Contains(lower, `"status":"failed"`) || strings.Contains(lower, `'status':'failed'`):
+		return "task", "task_failed", true
 	default:
 		return "", "", false
 	}
@@ -957,6 +1011,8 @@ func classifyMCPFailure(lower string) (string, string, bool) {
 		return category, reason, true
 	}
 	switch {
+	case strings.Contains(lower, "failed to perform search"):
+		return "mcp", "search_failed", true
 	case strings.Contains(lower, "schema") || strings.Contains(lower, "invalid params") || strings.Contains(lower, "validation"):
 		return "mcp", "schema_error", true
 	case strings.Contains(lower, "connection refused") || strings.Contains(lower, "connection reset") || strings.Contains(lower, "econnreset") || strings.Contains(lower, "enotfound"):

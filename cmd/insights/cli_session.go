@@ -18,6 +18,7 @@ func buildCLISessionReport(data *DashboardData, opts cliOptions) cliSessionRepor
 		report.TotalSessions = len(sessions)
 		report.LongRunning = limitSessionItems(filterSessionItems(data.SessionAnalysis.LongRunning, report.Filter), opts.Limit)
 		report.TopFailures = limitSessionItems(filterSessionItems(data.SessionAnalysis.TopFailures, report.Filter), opts.Limit)
+		report.SessionDiagnostics = buildSessionDiagnostics(data, report.LongRunning, report.TopFailures, report.Filter, opts.Limit)
 		report.Outcomes = data.SessionAnalysis.Outcomes
 		report.QueueOperations = limitQueueOperations(data.SessionAnalysis.QueueOperations, opts.Limit)
 	}
@@ -48,6 +49,162 @@ func buildCLISessionReport(data *DashboardData, opts cliOptions) cliSessionRepor
 	}
 	report.Insights = buildSessionInsights(report)
 	return report
+}
+
+func buildSessionDiagnostics(data *DashboardData, longRunning, topFailures []SessionAnalysisItem, filter cliSessionReportFilter, limit int) []cliSessionDiagnostic {
+	if data == nil {
+		return nil
+	}
+	selected := make([]SessionAnalysisItem, 0, len(longRunning)+len(topFailures))
+	seen := map[string]bool{}
+	add := func(item SessionAnalysisItem) {
+		if item.SessionID == "" || seen[item.SessionID] {
+			return
+		}
+		if !matchEqual(filter.Session, item.SessionID) || !matchContains(filter.Project, item.Project) {
+			return
+		}
+		seen[item.SessionID] = true
+		selected = append(selected, item)
+	}
+	for _, item := range topFailures {
+		add(item)
+	}
+	for _, item := range longRunning {
+		add(item)
+	}
+	if len(selected) > limit {
+		selected = selected[:limit]
+	}
+
+	failuresBySession := map[string][]ToolFailureSample{}
+	if data.FailureAnalysis != nil {
+		for _, sample := range data.FailureAnalysis.Samples {
+			if sample.SessionID == "" || !seen[sample.SessionID] {
+				continue
+			}
+			failuresBySession[sample.SessionID] = append(failuresBySession[sample.SessionID], sample)
+		}
+	}
+	slowestBySession := map[string]ToolSlowCallItem{}
+	if data.ToolPerformance != nil {
+		for _, call := range data.ToolPerformance.SlowestCalls {
+			if call.SessionID == "" || !seen[call.SessionID] {
+				continue
+			}
+			prev, ok := slowestBySession[call.SessionID]
+			if !ok || call.DurationMs > prev.DurationMs {
+				slowestBySession[call.SessionID] = call
+			}
+		}
+	}
+
+	out := make([]cliSessionDiagnostic, 0, len(selected))
+	for _, item := range selected {
+		diag := cliSessionDiagnostic{
+			SessionID:        item.SessionID,
+			Project:          item.Project,
+			DurationMs:       item.DurationMs,
+			ToolCallCount:    item.ToolCallCount,
+			ToolFailureCount: item.ToolFailureCount,
+			TotalTokens:      item.TotalTokens,
+			PrimaryModel:     item.PrimaryModel,
+			Reasons:          topFailureReasonsForSession(failuresBySession[item.SessionID], 3),
+			Tools:            topFailureToolsForSession(failuresBySession[item.SessionID], 3),
+			Signals:          sessionDiagnosticSignals(item),
+			NextSteps:        sessionDiagnosticNextSteps(item, data.TimeRange),
+		}
+		if item.ToolCallCount > 0 {
+			diag.FailureRate = float64(item.ToolFailureCount) / float64(item.ToolCallCount) * 100
+		}
+		if slow, ok := slowestBySession[item.SessionID]; ok {
+			diag.SlowestCall = &slow
+		}
+		out = append(out, diag)
+	}
+	return out
+}
+
+func topFailureReasonsForSession(samples []ToolFailureSample, limit int) []nameCount {
+	counts := map[string]int{}
+	for _, sample := range samples {
+		key := nonEmpty(sample.Category, "unknown") + "/" + nonEmpty(sample.Reason, sample.Kind)
+		counts[key]++
+	}
+	return topSessionNameCounts(counts, limit)
+}
+
+func topFailureToolsForSession(samples []ToolFailureSample, limit int) []nameCount {
+	counts := map[string]int{}
+	for _, sample := range samples {
+		counts[nonEmpty(sample.Tool, "unknown")]++
+	}
+	return topSessionNameCounts(counts, limit)
+}
+
+func topSessionNameCounts(counts map[string]int, limit int) []nameCount {
+	items := make([]nameCount, 0, len(counts))
+	for name, count := range counts {
+		items = append(items, nameCount{Name: name, Count: count})
+	}
+	sort.SliceStable(items, func(i, j int) bool {
+		if items[i].Count != items[j].Count {
+			return items[i].Count > items[j].Count
+		}
+		return items[i].Name < items[j].Name
+	})
+	if len(items) > limit {
+		return append([]nameCount(nil), items[:limit]...)
+	}
+	return items
+}
+
+func sessionDiagnosticSignals(item SessionAnalysisItem) []string {
+	signals := []string{}
+	if item.DurationMs >= int64(60*60*1000) {
+		signals = append(signals, "long_session")
+	}
+	if item.ToolCallCount > 0 {
+		rate := float64(item.ToolFailureCount) / float64(item.ToolCallCount) * 100
+		if item.ToolFailureCount >= 10 || rate >= 20 {
+			signals = append(signals, "high_failure_rate")
+		}
+	}
+	if item.PlanModeCount != item.PlanModeExitCount {
+		signals = append(signals, "plan_lifecycle_unbalanced")
+	}
+	if item.HookErrorCount > 0 {
+		signals = append(signals, "hook_errors")
+	}
+	if item.QueueOperationCount > 0 {
+		signals = append(signals, "queue_operations")
+	}
+	if item.MissingResultCount > 0 {
+		signals = append(signals, "missing_tool_results")
+	}
+	return signals
+}
+
+func sessionDiagnosticNextSteps(item SessionAnalysisItem, tr TimeRangeInfo) []diagnosticCommand {
+	rangeArg := sessionDrilldownRangeArg(tr)
+	steps := []diagnosticCommand{
+		{Label: "Session 详情", Command: fmt.Sprintf("cc-insights ses %s --session %s -n 10", rangeArg, item.SessionID)},
+		{Label: "失败样例", Command: fmt.Sprintf("cc-insights why %s --session %s -n 10", rangeArg, item.SessionID)},
+	}
+	if item.ToolFailureCount > 0 {
+		steps = append(steps, diagnosticCommand{Label: "失败聚合", Command: fmt.Sprintf("cc-insights err %s -n 20", rangeArg)})
+	}
+	return steps
+}
+
+func sessionDrilldownRangeArg(tr TimeRangeInfo) string {
+	if tr.Preset == "custom" && tr.Start != "" && tr.End != "" {
+		return fmt.Sprintf("--start %s --end %s", tr.Start, tr.End)
+	}
+	if tr.Preset != "" {
+		return "-p " + tr.Preset
+	}
+	return "-p 7d"
 }
 
 func filterSessionItems(items []SessionAnalysisItem, filter cliSessionReportFilter) []SessionAnalysisItem {

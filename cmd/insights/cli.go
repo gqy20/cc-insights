@@ -94,21 +94,38 @@ type cliRecommendationReport struct {
 }
 
 type cliSessionReport struct {
-	TimeRange       TimeRangeInfo          `json:"time_range"`
-	TotalSessions   int                    `json:"total_sessions"`
-	LongRunning     []SessionAnalysisItem  `json:"long_running"`
-	TopFailures     []SessionAnalysisItem  `json:"top_failures"`
-	Outcomes        []SessionOutcomeStat   `json:"outcomes"`
-	QueueOperations []QueueOperationStat   `json:"queue_operations"`
-	PlanLifecycle   PlanLifecycleData      `json:"plan_lifecycle"`
-	ReminderSummary ReminderSummaryData    `json:"reminder_summary"`
-	TopTaskSessions []ReminderSessionItem  `json:"top_task_sessions"`
-	TopTodoSessions []ReminderSessionItem  `json:"top_todo_sessions"`
-	FailureSamples  []ToolFailureSample    `json:"failure_samples"`
-	Hooks           []HookStatItem         `json:"hooks"`
-	SessionHooks    []SessionHookStat      `json:"session_hooks,omitempty"`
-	Filter          cliSessionReportFilter `json:"filter"`
-	Insights        []string               `json:"insights"`
+	TimeRange          TimeRangeInfo          `json:"time_range"`
+	TotalSessions      int                    `json:"total_sessions"`
+	LongRunning        []SessionAnalysisItem  `json:"long_running"`
+	TopFailures        []SessionAnalysisItem  `json:"top_failures"`
+	SessionDiagnostics []cliSessionDiagnostic `json:"session_diagnostics,omitempty"`
+	Outcomes           []SessionOutcomeStat   `json:"outcomes"`
+	QueueOperations    []QueueOperationStat   `json:"queue_operations"`
+	PlanLifecycle      PlanLifecycleData      `json:"plan_lifecycle"`
+	ReminderSummary    ReminderSummaryData    `json:"reminder_summary"`
+	TopTaskSessions    []ReminderSessionItem  `json:"top_task_sessions"`
+	TopTodoSessions    []ReminderSessionItem  `json:"top_todo_sessions"`
+	FailureSamples     []ToolFailureSample    `json:"failure_samples"`
+	Hooks              []HookStatItem         `json:"hooks"`
+	SessionHooks       []SessionHookStat      `json:"session_hooks,omitempty"`
+	Filter             cliSessionReportFilter `json:"filter"`
+	Insights           []string               `json:"insights"`
+}
+
+type cliSessionDiagnostic struct {
+	SessionID        string              `json:"session_id"`
+	Project          string              `json:"project,omitempty"`
+	DurationMs       int64               `json:"duration_ms,omitempty"`
+	ToolCallCount    int                 `json:"tool_call_count,omitempty"`
+	ToolFailureCount int                 `json:"tool_failure_count,omitempty"`
+	FailureRate      float64             `json:"failure_rate,omitempty"`
+	TotalTokens      int                 `json:"total_tokens,omitempty"`
+	PrimaryModel     string              `json:"primary_model,omitempty"`
+	Reasons          []nameCount         `json:"top_reasons,omitempty"`
+	Tools            []nameCount         `json:"top_tools,omitempty"`
+	SlowestCall      *ToolSlowCallItem   `json:"slowest_call,omitempty"`
+	Signals          []string            `json:"signals,omitempty"`
+	NextSteps        []diagnosticCommand `json:"next_steps,omitempty"`
 }
 
 type cliSessionReportFilter struct {

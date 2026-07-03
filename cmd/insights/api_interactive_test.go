@@ -1,8 +1,10 @@
 package main
 
 import (
+	"encoding/json"
 	"net/http/httptest"
 	"testing"
+	"time"
 )
 
 func TestParseAnalysisFilter(t *testing.T) {
@@ -76,5 +78,26 @@ func TestBuildOverviewDataUsesSessionAnalysisCount(t *testing.T) {
 	overview := buildOverviewData(data, cliRecommendationReport{}, AnalysisFilter{})
 	if overview.Summary.Sessions != 2 {
 		t.Fatalf("overview sessions=%d, want session_analysis count 2", overview.Summary.Sessions)
+	}
+}
+
+func TestSendInteractiveJSONIncludesCoverageInMeta(t *testing.T) {
+	rec := httptest.NewRecorder()
+	filter := AnalysisFilter{Project: "/repo", Tool: "Bash"}
+
+	sendInteractiveJSON(rec, map[string]string{"ok": "yes"}, "cache", TimeRangeInfo{Preset: "7d"}, filter, time.Now())
+
+	var body interactiveAPIResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if !body.Success {
+		t.Fatalf("success=false, body=%s", rec.Body.String())
+	}
+	if body.Meta.Coverage["toolModelFailureChart"].Status != "unavailable" {
+		t.Fatalf("coverage=%+v, want tool model unavailable", body.Meta.Coverage["toolModelFailureChart"])
+	}
+	if body.Meta.Coverage["failureReasonChart"].Status != "sample" {
+		t.Fatalf("coverage=%+v, want failure reason sample", body.Meta.Coverage["failureReasonChart"])
 	}
 }
