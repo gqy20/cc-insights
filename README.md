@@ -7,7 +7,7 @@
 
 <h1 align="center">cc-insights</h1>
 
-<p align="center">面向 Claude Code 的使用诊断工具：把历史数据变成可解释的证据、判断和改进方向</p>
+<p align="center">面向 Claude Code / Codex 的使用诊断工具：把历史数据变成可解释的证据、判断和改进方向</p>
 
 <p align="center">
   <a href="https://github.com/gqy20/cc-insights/actions/workflows/ci.yml"><img src="https://github.com/gqy20/cc-insights/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
@@ -16,7 +16,7 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT" /></a>
 </p>
 
-cc-insights 是一个 Claude Code 使用诊断 CLI：读取历史数据、项目会话、工具调用、失败样例、Token 消耗和 Session 生命周期，整理成**可解释的证据、诊断结论和改进方向**。默认输出可读摘要，也提供本地 Web Dashboard，并支持时间范围筛选、缓存预聚合和并发解析。
+cc-insights 是一个 code agent 使用诊断 CLI：默认读取 Claude Code 本地数据，也可通过 provider 读取 Codex session 日志。它把历史数据、项目会话、工具调用、失败样例、Token 消耗和 Session 生命周期整理成**可解释的证据、诊断结论和改进方向**。默认输出可读摘要，也提供本地 Web Dashboard，并支持时间范围筛选、缓存预聚合和并发解析。
 
 ## 目录
 
@@ -32,7 +32,7 @@ cc-insights 是一个 Claude Code 使用诊断 CLI：读取历史数据、项目
 
 ## 为什么用 cc-insights
 
-cc-insights 的目标不是展示「用了多少 token、跑了多少命令」，而是回答**为什么 Claude Code 变慢、变贵或频繁失败**，以及**下一步该优化哪里**。
+cc-insights 的目标不是展示「用了多少 token、跑了多少命令」，而是回答**为什么 code agent 变慢、变贵或频繁失败**，以及**下一步该优化哪里**。
 
 | 传统方式（翻 JSONL / 看终端日志） | 用 cc-insights |
 |----------|-------------|
@@ -104,7 +104,23 @@ cc-insights rec -p 7d      # 诊断：根因 + 证据 + 下钻命令
 
 ### 3. 数据来源
 
-默认读取 `~/.claude`（Claude Code 数据目录），可用 `--data` 指定任意目录：
+默认读取 `~/.claude`（Claude Code 数据目录）。也可以通过 `--provider codex` 读取 `~/.codex`：
+
+```bash
+cc-insights sum --provider codex -p 24h
+cc-insights rec --provider codex -p 7d
+cc-insights web --provider codex
+```
+
+provider 说明：
+
+| Provider | 默认数据目录 | 主数据源 | 说明 |
+|----------|--------------|----------|------|
+| `claude` | `~/.claude` | `projects/**/*.jsonl` | 默认值，保留 Claude Code 的 hooks、tasks、skills 等完整诊断信号 |
+| `codex` | `~/.codex` | `sessions/**/*.jsonl` | 支持 session、项目、模型 token、工具调用、命令、失败和 session 生命周期；成本估算为 token-only fallback |
+| `auto` | 按 `--data` 目录检测 | `projects/` 或 `sessions/` | 适合显式传入数据目录时自动识别 |
+
+可用 `--data` 指定任意目录：
 
 ```
 ~/.claude/
@@ -113,6 +129,15 @@ cc-insights rec -p 7d      # 诊断：根因 + 证据 + 下钻命令
 ├── projects/            # Claude Code 项目会话 JSONL
 ├── tasks/               # Task 数据
 └── debug/               # runtime 事件日志目录
+```
+
+Codex 数据目录示例：
+
+```
+~/.codex/
+├── history.jsonl
+├── session_index.jsonl
+└── sessions/            # Codex session JSONL，按 YYYY/MM/DD 分层
 ```
 
 ## 命令速查
@@ -144,7 +169,8 @@ cc-insights rec -p 7d      # 诊断：根因 + 证据 + 下钻命令
 | `--prompts` | 在 `rec` 中分析用户提示词画像、协作偏好和候选规则 |
 | `--reason / --category / --tool / --model / --project / --session` | 多维过滤 |
 | `--data <path>` | 数据目录（默认 `~/.claude`） |
-| `--cache <path>` | 缓存目录（默认 `~/.cc-insights/cache`） |
+| `--provider <name>` | 数据源：`claude`、`codex`、`auto`（默认 `claude`） |
+| `--cache <path>` | 缓存目录（默认 `~/.cc-insights/cache`；内部按 provider 隔离为 `claude/cache.db`、`codex/cache.db`） |
 | `--rules <path>` | Bash 分类规则（默认内置 `rules/bash.yml`，也读 `~/.cc-insights/bash.yml`） |
 
 ## 与 AI 协作

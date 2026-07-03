@@ -1,6 +1,6 @@
 # 路线图
 
-本文档记录 cc-insights 的当前能力、近期重点和暂缓方向。项目主线是 Claude Code 使用诊断，而不是单纯 Dashboard 图表扩展。
+本文档记录 cc-insights 的当前能力、近期重点和暂缓方向。项目主线是 code agent 使用诊断，而不是单纯 Dashboard 图表扩展。Claude Code 是默认 provider，Codex 已有 MVP 支持。
 
 ## 已完成
 
@@ -9,6 +9,7 @@
 - 单二进制 Go CLI / Web Dashboard。
 - 时间范围筛选：`24h`、`7d`、`30d`、`90d`、`all` 和自定义日期。
 - 文件级缓存和轻量诊断缓存。
+- 多数据源 provider 基础设施：`claude` / `codex` / `auto`，缓存按 provider 隔离。
 - 静态资源嵌入，ECharts 本地化，支持局域网访问。
 
 ### 核心分析
@@ -20,6 +21,7 @@
 - Task / Plan 分析：Plan 生命周期、计划文件引用、Task 状态、提醒频率。
 - Tool performance：工具类别耗时、最慢调用、质量分布、错误率。
 - `rec` 结构化诊断：trigger、root cause、examples、actions、targets、drilldown commands。
+- Codex session 日志 MVP：读取 `~/.codex/sessions/**/*.jsonl`，统计 session、项目、模型 token、工具调用、命令、失败和 session 生命周期。
 
 ### CLI 命令体系
 
@@ -62,16 +64,22 @@
 - 为 `CLAUDE.md`、hook、MCP、tool 给出更具体的改进模板。
 - 逐步把恢复结果、重复失败和建议动作优先级纳入 `rec`。
 
+### P2: Codex provider 增强
+
+- 将 Codex token 拆分为 input、cached input、output、reasoning output，而不仅是 token-only fallback。
+- 更细致地区分 Codex `turn_aborted`、sandbox、approval policy 等运行上下文。
+- 根据 `patch_apply_end.changes` 提取文件修改统计。
+- 为 Web Dashboard 增加清晰的 provider 标识和 Codex 不适用信号的空态说明。
+
 ## 暂缓方向
 
 - 新增大量 Dashboard 图表：除非能服务诊断主线，否则暂缓。
 - 新增 CLI 命令：优先增强 `rec` 和现有下钻命令。
 - 自动修改 `CLAUDE.md`、hooks 或 MCP：当前只做建议，不自动改。
-- Codex 数据源支持：保留调研，当前不纳入 Claude Code 诊断主线。
 
 ## 未来方向
 
-- 多数据源 provider：Claude Code 之外的 Codex、其他 agent 日志。
+- 更多数据源 provider：Codex 之外的其他 agent 日志。
 - 项目级诊断基线：不同项目使用不同阈值。
 - 诊断报告导出：面向周报、复盘或团队共享。
 - 与 Web UI 联动：从图表直接跳到 finding 和下钻证据。

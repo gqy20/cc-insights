@@ -1,10 +1,10 @@
 # 架构说明
 
-cc-insights 是面向 Claude Code 的本地使用诊断工具。它读取 `~/.claude` 中的历史命令、项目会话、任务、工具调用和运行事件，经过解析、聚合、缓存后，为 CLI 和 Web Dashboard 提供统一数据。
+cc-insights 是面向 code agent 的本地使用诊断工具。默认 provider 是 Claude Code，读取 `~/.claude`；也支持 Codex provider，读取 `~/.codex/sessions/**/*.jsonl`。不同 provider 的日志会经过各自 parser 映射到统一 `ProjectAggregate`，再为 CLI 和 Web Dashboard 提供统一数据。
 
 ## 核心目标
 
-项目的主线不是展示更多图表，而是把 Claude Code 的行为问题解释到可行动：
+项目的主线不是展示更多图表，而是把 code agent 的行为问题解释到可行动：
 
 - 失败集中在哪里，原因更像什么；
 - 哪些命令、工具、Session 和项目消耗最多时间与 Token；
@@ -13,25 +13,34 @@ cc-insights 是面向 Claude Code 的本地使用诊断工具。它读取 `~/.cl
 ## 数据流
 
 ```text
-~/.claude 数据
-  -> parser / project parser / task parser
+~/.claude 或 ~/.codex 数据
+  -> provider file discovery
+  -> claude parser / codex parser
   -> ProjectAggregate
   -> CacheFile / diagnostics cache
   -> DashboardData
   -> CLI reports / Web API
 ```
 
-主要数据源：
+Claude provider 主要数据源：
 
 - `history.jsonl`：slash command 和历史命令概览。
 - `projects/**/*.jsonl`：核心会话、工具调用、模型、Token、运行事件；真实 MCP 工具调用也属于这里的 `ToolAnalysis` 口径。
 - `tasks/*/*.json`：Task 状态、Session 任务分布。
 - `debug/`：runtime 事件日志路径，用于 hook、skill、budget、opened file 和 `runtime_tools` 等补充信号。
 
+Codex provider 主要数据源：
+
+- `sessions/**/*.jsonl`：核心 session、cwd/project、turn context、模型、token、工具调用、结构化工具结果和运行事件。
+- `history.jsonl`、`session_index.jsonl`：暂未作为主分析来源，后续可补充 prompt/title 类信息。
+
+Codex 第一版不会读取 `auth.json`、attachments、shell snapshots 或 sqlite 文件，避免扩大隐私和实现边界。
+
 ## 主要模块
 
 - `cmd/insights/cli.go`、`cli_*.go`：CLI 命令、报告构建和输出。
-- `cmd/insights/project_parser.go`、`parser.go`：项目 JSONL 解析和事件识别。
+- `cmd/insights/project_parser.go`、`parser.go`：Claude 项目 JSONL 解析和事件识别。
+- `cmd/insights/codex_parser.go`：Codex session JSONL 解析和 provider 映射。
 - `cmd/insights/aggregate.go`、`aggregate_finalize.go`：聚合与最终分析结果生成。
 - `cmd/insights/cache.go`、`cache_builder.go`：缓存结构、文件级复用和诊断缓存。
 - `web/`：React + Vite 前端源码；构建产物进入 `cmd/insights/static/dist/` 并由 Go embed 进单二进制。
@@ -43,7 +52,7 @@ cc-insights 是面向 Claude Code 的本地使用诊断工具。它读取 `~/.cl
 
 `ProjectAggregate` 是解析后的唯一核心聚合模型。正常解析、空降级结果、文件级缓存还原和日级 runtime 索引都应通过 `newProjectAggregate()` 初始化，避免不同路径维护多份 map 字段清单。
 
-项目 JSONL 文件发现统一由 `listProjectJSONLFileInfos` 负责。实时解析、prompt 画像和缓存构建共享同一套文件列表，cache builder 在此基础上额外使用 size / mtime 做文件级复用。
+日志文件发现统一由 provider-aware `listLogFileInfos` 负责。Claude 使用 `projects/**/*.jsonl`，Codex 使用 `sessions/**/*.jsonl`。实时解析和缓存构建共享同一套文件列表，cache builder 在此基础上额外使用 size / mtime 做文件级复用。
 
 `DashboardData` 是 CLI 和 Web API 的对外数据面。缓存路径和实时解析路径可以有不同的数据来源，但时间范围、每日趋势、小时统计、项目总计等公共组装逻辑应放在 `api.go` 的共享 helper 中，避免新增分析模块时只更新其中一条路径。
 
@@ -63,12 +72,12 @@ cc-insights 是面向 Claude Code 的本地使用诊断工具。它读取 `~/.cl
 
 ## 缓存策略
 
-默认缓存位于 `~/.cc-insights/cache/`。
+默认缓存位于 `~/.cc-insights/cache/`，内部按 provider 隔离：
 
-- `cache.db`：完整预聚合缓存，服务 Web 和完整数据构建。
-- `diagnostics.db`：轻量诊断缓存，去掉项目文件级缓存，服务 `rec` 和下钻命令。
+- `claude/cache.db`、`codex/cache.db`：完整预聚合缓存，服务 Web 和完整数据构建。
+- `claude/diagnostics.db`、`codex/diagnostics.db`：轻量诊断缓存，去掉项目文件级缓存，服务 `rec` 和下钻命令。
 
-CLI 下钻命令优先复用诊断缓存，避免因为当前 Claude Code 会话正在写 JSONL 而频繁触发完整重建。
+CLI 下钻命令优先复用诊断缓存，避免因为当前 agent 会话正在写 JSONL 而频繁触发完整重建。缓存文件包含 provider 元数据，provider 不一致会触发重建，避免 Claude/Codex 混用缓存。
 
 ## Web Dashboard
 
