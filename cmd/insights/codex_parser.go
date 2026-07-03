@@ -394,6 +394,7 @@ func recordCodexTokenCount(raw json.RawMessage, state *codexSessionState, timest
 		Info struct {
 			LastTokenUsage struct {
 				InputTokens           int `json:"input_tokens"`
+				CachedInputTokens     int `json:"cached_input_tokens"`
 				OutputTokens          int `json:"output_tokens"`
 				ReasoningOutputTokens int `json:"reasoning_output_tokens"`
 				TotalTokens           int `json:"total_tokens"`
@@ -418,6 +419,7 @@ func recordCodexTokenCount(raw json.RawMessage, state *codexSessionState, timest
 		ensureDailySessionRuntimeAggregate(agg, dateKey, sessionID),
 	} {
 		recordModelUsageLocked(target, model, tokens)
+		recordModelTokenBreakdownLocked(target, model, payload.Info.LastTokenUsage.InputTokens, payload.Info.LastTokenUsage.CachedInputTokens, payload.Info.LastTokenUsage.OutputTokens, payload.Info.LastTokenUsage.ReasoningOutputTokens)
 		recordCodexSessionTokenUsage(target, sessionID, projectName, model, timestamp, payload.Info.LastTokenUsage.InputTokens, payload.Info.LastTokenUsage.OutputTokens+payload.Info.LastTokenUsage.ReasoningOutputTokens, tokens)
 	}
 	if agg.DailyModelCounts[dateKey] == nil {

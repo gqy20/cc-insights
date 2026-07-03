@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-const CacheVersion = "4.8"
+const CacheVersion = "4.9"
 
 // CacheFile 缓存文件结构
 type CacheFile struct {
@@ -356,6 +356,7 @@ func (cf *CacheFile) QueryByTimeRange(start, end time.Time) *CacheFile {
 
 	if hasRuntimeAggregate {
 		runtimeAggregate.finalize()
+		result.ModelUsage = copyModelUsageMap(runtimeAggregate.ModelUsage)
 		result.ToolAnalysis = runtimeAggregate.ToolAnalysis
 		result.SkillAnalysis = cloneSkillAnalysis(runtimeAggregate.SkillAnalysis)
 		mergeInstalledSkillAnalysis(result.SkillAnalysis, cf.SkillAnalysis)
@@ -378,6 +379,21 @@ func (cf *CacheFile) QueryByTimeRange(start, end time.Time) *CacheFile {
 	}
 
 	return result
+}
+
+func copyModelUsageMap(src map[string]*ModelUsageItem) map[string]*ModelUsageItem {
+	if len(src) == 0 {
+		return make(map[string]*ModelUsageItem)
+	}
+	dst := make(map[string]*ModelUsageItem, len(src))
+	for model, stat := range src {
+		if stat == nil {
+			continue
+		}
+		copyValue := *stat
+		dst[model] = &copyValue
+	}
+	return dst
 }
 
 func cloneCacheBuildStats(source *CacheBuildStats) *CacheBuildStats {

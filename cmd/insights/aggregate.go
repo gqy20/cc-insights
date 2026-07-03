@@ -156,6 +156,10 @@ func mergeProjectAggregate(dst, src *ProjectAggregate) {
 		}
 		dst.ModelUsage[model].Count += stat.Count
 		dst.ModelUsage[model].Tokens += stat.Tokens
+		dst.ModelUsage[model].InputTokens += stat.InputTokens
+		dst.ModelUsage[model].CachedInputTokens += stat.CachedInputTokens
+		dst.ModelUsage[model].OutputTokens += stat.OutputTokens
+		dst.ModelUsage[model].ReasoningOutputTokens += stat.ReasoningOutputTokens
 	}
 	for model, stat := range src.CostModelStats {
 		dstStat := ensureCostModelStat(dst, model)
@@ -1070,6 +1074,22 @@ func recordModelUsageLocked(agg *ProjectAggregate, model string, tokens int) {
 	}
 	agg.ModelUsage[model].Count++
 	agg.ModelUsage[model].Tokens += tokens
+}
+
+func recordModelTokenBreakdownLocked(agg *ProjectAggregate, model string, inputTokens, cachedInputTokens, outputTokens, reasoningOutputTokens int) {
+	if model == "" {
+		return
+	}
+	if agg.ModelUsage == nil {
+		agg.ModelUsage = make(map[string]*ModelUsageItem)
+	}
+	if agg.ModelUsage[model] == nil {
+		agg.ModelUsage[model] = &ModelUsageItem{Model: model}
+	}
+	agg.ModelUsage[model].InputTokens += inputTokens
+	agg.ModelUsage[model].CachedInputTokens += cachedInputTokens
+	agg.ModelUsage[model].OutputTokens += outputTokens
+	agg.ModelUsage[model].ReasoningOutputTokens += reasoningOutputTokens
 }
 
 func copyIntMap(src map[string]int) map[string]int {

@@ -498,12 +498,18 @@ func buildCLICostReport(data *DashboardData, limit int) cliCostReport {
 	if data.CostAnalysis == nil || (data.CostAnalysis.Totals.TotalTokens == 0 && len(data.ModelUsage) > 0) {
 		for _, model := range limitSlice(data.ModelUsage, limit) {
 			report.ByModel = append(report.ByModel, CostModelStat{
-				Model:        model.Model,
-				RequestCount: model.Count,
-				TotalTokens:  model.Tokens,
+				Model:           model.Model,
+				RequestCount:    model.Count,
+				TotalTokens:     model.Tokens,
+				InputTokens:     model.InputTokens,
+				OutputTokens:    model.OutputTokens + model.ReasoningOutputTokens,
+				CacheReadTokens: model.CachedInputTokens,
 			})
 			report.Totals.RequestCount += model.Count
 			report.Totals.TotalTokens += model.Tokens
+			report.Totals.InputTokens += model.InputTokens
+			report.Totals.OutputTokens += model.OutputTokens + model.ReasoningOutputTokens
+			report.Totals.CacheReadInputTokens += model.CachedInputTokens
 		}
 		if len(report.ByModel) > 0 {
 			report.Insights = append(report.Insights, fmt.Sprintf("Token 最高模型是 %s，共 %s。", report.ByModel[0].Model, formatCompactInt(report.ByModel[0].TotalTokens)))

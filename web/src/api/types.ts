@@ -90,6 +90,10 @@ export interface ModelUsageItem {
   model: string
   count: number
   tokens: number
+  input_tokens?: number
+  cached_input_tokens?: number
+  output_tokens?: number
+  reasoning_output_tokens?: number
 }
 export interface WeekdayItem {
   weekday: number

@@ -205,6 +205,9 @@ func parseProjectFileAggregate(filePath string, tf TimeFilter, agg *ProjectAggre
 			recordModelUsageLocked(dailyRuntimeAgg, msg.Model, tokens)
 			recordModelUsageLocked(dailyProjectRuntimeAgg, msg.Model, tokens)
 			recordModelUsageLocked(dailySessionRuntimeAgg, msg.Model, tokens)
+			for _, target := range []*ProjectAggregate{agg, dailyRuntimeAgg, dailyProjectRuntimeAgg, dailySessionRuntimeAgg} {
+				recordModelTokenBreakdownLocked(target, msg.Model, msg.Usage.InputTokens, msg.Usage.CacheReadInputTokens+msg.Usage.CacheCreationInputTokens, msg.Usage.OutputTokens, 0)
+			}
 			if agg.DailyModelCounts[dateKey] == nil {
 				agg.DailyModelCounts[dateKey] = make(map[string]int)
 			}

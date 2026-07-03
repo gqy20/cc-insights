@@ -24,6 +24,8 @@ func TestParseCodexSessionFileAggregate(t *testing.T) {
 	}
 	if model := agg.ModelUsage["gpt-5.5"]; model == nil || model.Count != 1 || model.Tokens != 42 {
 		t.Fatalf("ModelUsage[gpt-5.5] = %+v, want count=1 tokens=42", model)
+	} else if model.InputTokens != 20 || model.OutputTokens != 10 || model.ReasoningOutputTokens != 12 {
+		t.Fatalf("ModelUsage token breakdown = %+v, want input=20 output=10 reasoning=12", model)
 	}
 
 	execStat := agg.ToolStats["exec_command"]

@@ -83,9 +83,13 @@ type WeekdayItem struct {
 
 // ModelUsageItem 单个模型使用统计
 type ModelUsageItem struct {
-	Model  string `json:"model"`
-	Count  int    `json:"count"`
-	Tokens int    `json:"tokens"`
+	Model                 string `json:"model"`
+	Count                 int    `json:"count"`
+	Tokens                int    `json:"tokens"`
+	InputTokens           int    `json:"input_tokens,omitempty"`
+	CachedInputTokens     int    `json:"cached_input_tokens,omitempty"`
+	OutputTokens          int    `json:"output_tokens,omitempty"`
+	ReasoningOutputTokens int    `json:"reasoning_output_tokens,omitempty"`
 }
 
 // ToolAnalysisData 工具调用分析结果
