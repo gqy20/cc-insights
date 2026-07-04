@@ -111,10 +111,10 @@ jobs:
         run: pnpm --dir web install --frozen-lockfile && pnpm --dir web build
 
       - name: Install UPX
-        uses: crazy-max/ghaction-upx@v3
-        with:
-          install-only: true
-          version: latest
+        if: matrix.goos == 'windows'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y upx-ucl
 
       - name: Build release archive
         shell: bash
