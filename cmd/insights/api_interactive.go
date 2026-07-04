@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -27,6 +28,7 @@ type interactiveAPIResponse struct {
 type AnalysisFilter struct {
 	TimeFilter TimeFilter
 	Preset     string
+	Provider   Provider
 	Start      string
 	End        string
 	Limit      int
@@ -43,6 +45,8 @@ type AnalysisFilter struct {
 	Target     string
 	Family     string
 }
+
+var providerSwitchMu sync.Mutex
 
 type overviewData struct {
 	Summary     overviewSummary `json:"summary"`
@@ -257,6 +261,7 @@ func buildRecommendationDataWithFilter(filter AnalysisFilter) (*DashboardData, s
 func parseAnalysisFilter(r *http.Request) (AnalysisFilter, error) {
 	q := r.URL.Query()
 	preset := strings.TrimSpace(q.Get("preset"))
+	provider := strings.TrimSpace(q.Get("provider"))
 	start := strings.TrimSpace(q.Get("start"))
 	end := strings.TrimSpace(q.Get("end"))
 	if preset == "" && start == "" && end == "" {
@@ -278,6 +283,17 @@ func parseAnalysisFilter(r *http.Request) (AnalysisFilter, error) {
 		Category: strings.TrimSpace(q.Get("category")),
 		Reason:   strings.TrimSpace(q.Get("reason")),
 	}
+	if provider != "" {
+		if err := opts.Config.Provider.Set(provider); err != nil {
+			return AnalysisFilter{}, err
+		}
+		if opts.Config.Provider == ProviderCodex && cfg.Provider != ProviderCodex {
+			opts.Config.DataDir = defaultDataDirForProvider(ProviderCodex)
+		} else if opts.Config.Provider == ProviderClaude && cfg.Provider != ProviderClaude {
+			opts.Config.DataDir = defaultDataDirForProvider(ProviderClaude)
+		}
+		opts.Config.Provider = resolveProvider(opts.Config.Provider, opts.Config.DataDir)
+	}
 	tf, normalizedPreset, err := timeFilterFromCLIOptions(opts)
 	if err != nil {
 		return AnalysisFilter{}, err
@@ -285,6 +301,7 @@ func parseAnalysisFilter(r *http.Request) (AnalysisFilter, error) {
 	return AnalysisFilter{
 		TimeFilter: tf,
 		Preset:     normalizedPreset,
+		Provider:   opts.Config.Provider,
 		Start:      start,
 		End:        end,
 		Limit:      opts.Limit,
@@ -304,7 +321,7 @@ func parseAnalysisFilter(r *http.Request) (AnalysisFilter, error) {
 }
 
 func (filter AnalysisFilter) toCLIOptions() cliOptions {
-	return cliOptions{
+	opts := cliOptions{
 		Config:   cfg,
 		Preset:   filter.Preset,
 		Start:    filter.Start,
@@ -320,6 +337,10 @@ func (filter AnalysisFilter) toCLIOptions() cliOptions {
 		Category: filter.Category,
 		Reason:   filter.Reason,
 	}
+	if filter.Provider != "" {
+		opts.Config.Provider = filter.Provider
+	}
+	return opts
 }
 
 func buildOverviewData(data *DashboardData, diagnostics cliRecommendationReport, filter AnalysisFilter) overviewData {
@@ -510,6 +531,9 @@ func (filter AnalysisFilter) metaFilters() map[string]interface{} {
 	add("severity", filter.Severity)
 	add("target", filter.Target)
 	add("family", filter.Family)
+	if filter.Provider != "" {
+		values["provider"] = filter.Provider.String()
+	}
 	if filter.Detail {
 		values["detail"] = true
 	}

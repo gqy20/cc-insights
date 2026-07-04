@@ -580,6 +580,21 @@ func buildDashboardData(tf TimeFilter, preset string) (*DashboardData, string, e
 type dashboardDataLoader func(TimeFilter, string) (*DashboardData, string, error)
 
 func loadDashboardDataWithFilter(filter AnalysisFilter, load dashboardDataLoader) (*DashboardData, string, error) {
+	if filter.Provider != "" && filter.Provider != cfg.Provider {
+		providerSwitchMu.Lock()
+		defer providerSwitchMu.Unlock()
+		original := cfg
+		cfg.Provider = filter.Provider
+		cfg.DataDir = defaultDataDirForProvider(filter.Provider)
+		defer func() {
+			cfg = original
+		}()
+		if globalCache == nil || globalCache.Provider != string(resolveProvider(cfg.Provider, cfg.DataDir)) {
+			if err := refreshGlobalCache(false); err != nil {
+				return nil, "cache", err
+			}
+		}
+	}
 	data, source, err := load(filter.TimeFilter, filter.Preset)
 	if err != nil {
 		return nil, source, err

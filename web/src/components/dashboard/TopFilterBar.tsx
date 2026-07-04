@@ -10,7 +10,7 @@ const fieldClass =
 export function TopFilterBar() {
   const [filters, setFilters] = useFilters()
   // 候选用 preset-only 数据（不受当前 filter 影响），避免选中某项后候选缩水、无法直接切换。
-  const cq = useDashboardData({ preset: filters.preset })
+  const cq = useDashboardData({ preset: filters.preset, provider: filters.provider })
 
   const models = (cq.data?.model_usage ?? []).map((m) => m.model)
   const tools = (cq.data?.tool_analysis?.tools ?? [])
@@ -22,6 +22,17 @@ export function TopFilterBar() {
 
   return (
     <div className="flex flex-wrap items-center gap-2">
+      <select
+        value={filters.provider ?? ''}
+        onChange={(e) => setFilters({ provider: (e.target.value || undefined) as Filters['provider'] })}
+        className={fieldClass}
+      >
+        <option value="">启动默认</option>
+        <option value="claude">Claude Code</option>
+        <option value="codex">Codex</option>
+        <option value="auto">Auto</option>
+      </select>
+
       <input
         type="search"
         value={filters.project ?? ''}
