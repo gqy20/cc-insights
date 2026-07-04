@@ -48,6 +48,7 @@ func newProjectAggregate() *ProjectAggregate {
 		FileEditFailures:        make(map[string]*FileEditFailureAgg),
 		FileSnapshotStats:       make(map[string]*FileSnapshotAgg),
 		FileEditedStats:         make(map[string]*FileEditedAgg),
+		FileDiffStats:           make(map[string]*FileDiffAgg),
 		ToolPerfStats:           make(map[string]*ToolPerfAgg),
 		HourlyCounts:            [24]int{},
 		CostModelStats:          make(map[string]*CostModelStat),
@@ -180,6 +181,7 @@ func mergeProjectAggregate(dst, src *ProjectAggregate) {
 		dstStat := ensureCostAgentStat(dst, agentID, stat.IsSidechain)
 		mergeCostAgentStat(dstStat, stat)
 	}
+	mergeContextStats(dst, src.ContextStats)
 	for tool, stat := range src.ToolStats {
 		dstStat := ensureToolStat(dst, tool)
 		dstStat.CallCount += stat.CallCount
@@ -487,6 +489,9 @@ func mergeProjectAggregate(dst, src *ProjectAggregate) {
 		de.TotalLines += ed.TotalLines
 		de.TotalChars += ed.TotalChars
 	}
+	for path, diff := range src.FileDiffStats {
+		mergeFileDiffAgg(dst, path, diff)
+	}
 
 	// task_plan_analysis (M4): merge PlanModeAgg
 	if src.PlanModeAgg != nil {
@@ -534,6 +539,7 @@ func mergeProjectAggregate(dst, src *ProjectAggregate) {
 			dst.PlanModeAgg.SessionSet[sid] = true
 		}
 	}
+	mergePlanStepAgg(dst, src.PlanStepAgg)
 
 	// task_plan_analysis (M4): merge GoalStatusAgg
 	if src.GoalStatusAgg != nil {
@@ -638,6 +644,7 @@ func aggregateToProjectFileAggregateWithDaily(src *ProjectAggregate, includeDail
 		CostProjectStats:        make(map[string]CostProjectStat, len(src.CostProjectStats)),
 		CostSessionStats:        make(map[string]CostSessionStat, len(src.CostSessionStats)),
 		CostAgentStats:          make(map[string]CostAgentStat, len(src.CostAgentStats)),
+		ContextStats:            cloneContextAnalysis(src.ContextStats),
 		BudgetTimeline:          append([]BudgetTimelineItem(nil), src.BudgetTimeline...),
 		ToolStats:               make(map[string]ToolStatItem, len(src.ToolStats)),
 		ToolModelStats:          make(map[string]ToolModelStatItem, len(src.ToolModelStats)),
@@ -673,7 +680,9 @@ func aggregateToProjectFileAggregateWithDaily(src *ProjectAggregate, includeDail
 		FileEditFailures:        make(map[string]FileEditFailureAgg, len(src.FileEditFailures)),
 		FileSnapshotStats:       make(map[string]FileSnapshotAgg, len(src.FileSnapshotStats)),
 		FileEditedStats:         make(map[string]FileEditedAgg, len(src.FileEditedStats)),
+		FileDiffStats:           make(map[string]FileDiffAgg, len(src.FileDiffStats)),
 		PlanModeAgg:             serializePlanModeAgg(src.PlanModeAgg),
+		PlanStepAgg:             clonePlanStepAgg(src.PlanStepAgg),
 		GoalStatusAgg:           serializeGoalStatusAgg(src.GoalStatusAgg),
 		ReminderAgg:             serializeReminderAgg(src.ReminderAgg),
 		ToolPerfStats:           make(map[string]ToolPerfAgg, len(src.ToolPerfStats)),
@@ -791,6 +800,9 @@ func aggregateToProjectFileAggregateWithDaily(src *ProjectAggregate, includeDail
 	for key, ed := range src.FileEditedStats {
 		out.FileEditedStats[key] = *ed
 	}
+	for key, diff := range src.FileDiffStats {
+		out.FileDiffStats[key] = *diff
+	}
 	if includeDaily {
 		for date, runtimeAgg := range src.DailyRuntime {
 			if runtimeAgg != nil {
@@ -885,6 +897,7 @@ func projectFileAggregateToAggregate(src ProjectFileAggregate) *ProjectAggregate
 		statCopy := stat
 		out.CostAgentStats[key] = &statCopy
 	}
+	out.ContextStats = cloneContextAnalysis(src.ContextStats)
 	out.BudgetTimeline = append([]BudgetTimelineItem(nil), src.BudgetTimeline...)
 	for key, stat := range src.ToolStats {
 		statCopy := stat
@@ -1005,8 +1018,13 @@ func projectFileAggregateToAggregate(src ProjectFileAggregate) *ProjectAggregate
 		edCopy := ed
 		out.FileEditedStats[key] = &edCopy
 	}
+	for key, diff := range src.FileDiffStats {
+		diffCopy := diff
+		out.FileDiffStats[key] = &diffCopy
+	}
 	// task_plan_analysis (M4): restore agg structs
 	out.PlanModeAgg = deserializePlanModeAgg(src.PlanModeAgg)
+	out.PlanStepAgg = clonePlanStepAgg(src.PlanStepAgg)
 	out.GoalStatusAgg = deserializeGoalStatusAgg(src.GoalStatusAgg)
 	out.ReminderAgg = deserializeReminderAgg(src.ReminderAgg)
 	// M5: restore ToolPerfStats
@@ -1222,6 +1240,109 @@ func deserializePlanModeAgg(s *SerializedPlanModeAgg) *PlanModeAgg {
 			RefCount:    spf.RefCount,
 			RefSessions: make(map[string]bool),
 		}
+	}
+	return out
+}
+
+func mergeContextStats(dst *ProjectAggregate, src *ContextAnalysisData) {
+	if src == nil {
+		return
+	}
+	if dst.ContextStats == nil {
+		dst.ContextStats = &ContextAnalysisData{}
+	}
+	dst.ContextStats.TokenEvents += src.TokenEvents
+	dst.ContextStats.ContextCompactions += src.ContextCompactions
+	if src.MaxInputTokens > dst.ContextStats.MaxInputTokens {
+		dst.ContextStats.MaxInputTokens = src.MaxInputTokens
+	}
+	if src.MaxTotalTokens > dst.ContextStats.MaxTotalTokens {
+		dst.ContextStats.MaxTotalTokens = src.MaxTotalTokens
+	}
+	dst.ContextStats.TotalCachedInputTokens += src.TotalCachedInputTokens
+	dst.ContextStats.TotalReasoningTokens += src.TotalReasoningTokens
+}
+
+func cloneContextAnalysis(src *ContextAnalysisData) *ContextAnalysisData {
+	if src == nil {
+		return nil
+	}
+	copyValue := *src
+	return &copyValue
+}
+
+func mergeFileDiffAgg(dst *ProjectAggregate, path string, src *FileDiffAgg) {
+	if src == nil || path == "" {
+		return
+	}
+	if dst.FileDiffStats == nil {
+		dst.FileDiffStats = make(map[string]*FileDiffAgg)
+	}
+	if dst.FileDiffStats[path] == nil {
+		dst.FileDiffStats[path] = &FileDiffAgg{Path: path, Extension: src.Extension}
+	}
+	stat := dst.FileDiffStats[path]
+	if stat.Extension == "" {
+		stat.Extension = src.Extension
+	}
+	stat.PatchEvents += src.PatchEvents
+	stat.AddedLines += src.AddedLines
+	stat.DeletedLines += src.DeletedLines
+}
+
+func mergePlanStepAgg(dst *ProjectAggregate, src *PlanStepAgg) {
+	if src == nil {
+		return
+	}
+	if dst.PlanStepAgg == nil {
+		dst.PlanStepAgg = &PlanStepAgg{
+			StatusCounts: make(map[string]int),
+			StepCounts:   make(map[string]*PlanStepHotAgg),
+		}
+	}
+	dst.PlanStepAgg.UpdateEvents += src.UpdateEvents
+	dst.PlanStepAgg.TotalSteps += src.TotalSteps
+	if src.MaxStepsPerUpdate > dst.PlanStepAgg.MaxStepsPerUpdate {
+		dst.PlanStepAgg.MaxStepsPerUpdate = src.MaxStepsPerUpdate
+	}
+	for status, count := range src.StatusCounts {
+		dst.PlanStepAgg.StatusCounts[status] += count
+	}
+	for step, item := range src.StepCounts {
+		if item == nil {
+			continue
+		}
+		if dst.PlanStepAgg.StepCounts[step] == nil {
+			dst.PlanStepAgg.StepCounts[step] = &PlanStepHotAgg{Step: item.Step}
+		}
+		dstItem := dst.PlanStepAgg.StepCounts[step]
+		dstItem.Count += item.Count
+		if item.LastStatus != "" {
+			dstItem.LastStatus = item.LastStatus
+		}
+	}
+}
+
+func clonePlanStepAgg(src *PlanStepAgg) *PlanStepAgg {
+	if src == nil {
+		return nil
+	}
+	out := &PlanStepAgg{
+		UpdateEvents:      src.UpdateEvents,
+		TotalSteps:        src.TotalSteps,
+		MaxStepsPerUpdate: src.MaxStepsPerUpdate,
+		StatusCounts:      make(map[string]int, len(src.StatusCounts)),
+		StepCounts:        make(map[string]*PlanStepHotAgg, len(src.StepCounts)),
+	}
+	for status, count := range src.StatusCounts {
+		out.StatusCounts[status] = count
+	}
+	for step, item := range src.StepCounts {
+		if item == nil {
+			continue
+		}
+		copyItem := *item
+		out.StepCounts[step] = &copyItem
 	}
 	return out
 }

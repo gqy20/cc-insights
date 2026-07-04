@@ -250,6 +250,20 @@ func (agg *ProjectAggregate) finalizeCostAnalysis() {
 		analysis.Totals.AvgRoundTripMs = float64(analysis.Totals.TotalRoundTripMs) / float64(analysis.Totals.RequestCount)
 		analysis.Totals.OutputTokensPerSec = float64(analysis.Totals.OutputTokens) / (float64(analysis.Totals.TotalRoundTripMs) / 1000.0)
 	}
+	if agg.ContextStats != nil {
+		context := *agg.ContextStats
+		if context.TokenEvents > 0 {
+			context.AvgInputTokens = float64(analysis.Totals.InputTokens) / float64(context.TokenEvents)
+			context.AvgReasoningTokens = float64(context.TotalReasoningTokens) / float64(context.TokenEvents)
+		}
+		if analysis.Totals.InputTokens > 0 {
+			context.CacheHitRate = float64(context.TotalCachedInputTokens) / float64(analysis.Totals.InputTokens) * 100
+		}
+		if analysis.Totals.OutputTokens > 0 {
+			context.ReasoningOutputRatio = float64(context.TotalReasoningTokens) / float64(analysis.Totals.OutputTokens) * 100
+		}
+		analysis.Context = &context
+	}
 
 	sort.Slice(analysis.ByModel, func(i, j int) bool {
 		if analysis.ByModel[i].TotalTokens == analysis.ByModel[j].TotalTokens {

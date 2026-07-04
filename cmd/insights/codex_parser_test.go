@@ -67,6 +67,15 @@ func TestParseCodexSessionFileAggregate(t *testing.T) {
 	if agg.FileAnalysis == nil || agg.FileAnalysis.Totals.TotalEdits != 1 || agg.FileAnalysis.Totals.TotalWrites != 1 {
 		t.Fatalf("FileAnalysis totals = %+v, want one edit and one write from patch changes", agg.FileAnalysis)
 	}
+	if agg.FileAnalysis.DiffTotals.ChangedFiles != 2 || agg.FileAnalysis.DiffTotals.AddedLines != 2 || agg.FileAnalysis.DiffTotals.DeletedLines != 1 {
+		t.Fatalf("FileAnalysis diff totals = %+v, want changed=2 added=2 deleted=1", agg.FileAnalysis.DiffTotals)
+	}
+	if agg.TaskPlanAnalysis.PlanSteps.UpdateEvents != 1 || agg.TaskPlanAnalysis.PlanSteps.TotalSteps != 1 {
+		t.Fatalf("PlanSteps = %+v, want one update with one step", agg.TaskPlanAnalysis.PlanSteps)
+	}
+	if agg.CostAnalysis.Context == nil || agg.CostAnalysis.Context.TokenEvents != 1 || agg.CostAnalysis.Context.ContextCompactions != 1 {
+		t.Fatalf("CostAnalysis.Context = %+v, want token event and compaction", agg.CostAnalysis.Context)
+	}
 }
 
 func TestBuildFullCacheCodexProvider(t *testing.T) {
@@ -120,6 +129,7 @@ func writeCodexSessionFixture(t *testing.T, dataDir string) string {
 {"timestamp":"2026-07-03T10:00:09Z","type":"response_item","payload":{"type":"custom_tool_call","name":"apply_patch","call_id":"call-patch","input":"*** Begin Patch"}}
 {"timestamp":"2026-07-03T10:00:10Z","type":"event_msg","payload":{"type":"patch_apply_end","call_id":"call-patch","success":true,"status":"success","stdout":"done","stderr":"","changes":{"/tmp/codex-project/main.go":{"type":"update","unified_diff":"@@ -1 +1 @@\n-old\n+new\n"},"/tmp/codex-project/new.go":{"type":"add","content":"package main\n"}}}}
 {"timestamp":"2026-07-03T10:00:11Z","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":20,"cached_input_tokens":8,"output_tokens":10,"reasoning_output_tokens":12,"total_tokens":42},"total_token_usage":{"total_tokens":999}}}}
+{"timestamp":"2026-07-03T10:00:11.500Z","type":"event_msg","payload":{"type":"context_compacted"}}
 {"timestamp":"2026-07-03T10:00:12Z","type":"event_msg","payload":{"type":"task_complete","duration_ms":12345}}
 `
 	if err := os.WriteFile(sessionPath, []byte(content), 0644); err != nil {

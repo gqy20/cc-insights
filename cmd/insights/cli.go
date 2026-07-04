@@ -66,13 +66,14 @@ type cliFailureReport struct {
 }
 
 type cliCostReport struct {
-	Provider  string              `json:"provider"`
-	TimeRange TimeRangeInfo       `json:"time_range"`
-	Totals    TokenUsageBreakdown `json:"totals"`
-	ByModel   []CostModelStat     `json:"by_model"`
-	ByProject []CostProjectStat   `json:"by_project"`
-	BySession []CostSessionStat   `json:"by_session"`
-	Insights  []string            `json:"insights"`
+	Provider  string               `json:"provider"`
+	TimeRange TimeRangeInfo        `json:"time_range"`
+	Totals    TokenUsageBreakdown  `json:"totals"`
+	Context   *ContextAnalysisData `json:"context,omitempty"`
+	ByModel   []CostModelStat      `json:"by_model"`
+	ByProject []CostProjectStat    `json:"by_project"`
+	BySession []CostSessionStat    `json:"by_session"`
+	Insights  []string             `json:"insights"`
 }
 
 type cliCommandReport struct {
@@ -517,6 +518,10 @@ func buildCLICostReport(data *DashboardData, limit int) cliCostReport {
 		return report
 	}
 	report.Totals = data.CostAnalysis.Totals
+	if data.CostAnalysis.Context != nil {
+		contextCopy := *data.CostAnalysis.Context
+		report.Context = &contextCopy
+	}
 	report.ByModel = limitSlice(data.CostAnalysis.ByModel, limit)
 	report.ByProject = limitSlice(data.CostAnalysis.ByProject, limit)
 	report.BySession = limitSlice(data.CostAnalysis.BySession, limit)

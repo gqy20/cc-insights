@@ -628,6 +628,67 @@ func (agg *ProjectAggregate) finalizeFileAnalysis() {
 		analysis.EditedFiles = analysis.EditedFiles[:20]
 	}
 
+	extAgg := make(map[string]*FileDiffExtensionItem)
+	for path, diff := range agg.FileDiffStats {
+		churn := diff.AddedLines + diff.DeletedLines
+		analysis.DiffTotals.ChangedFiles++
+		analysis.DiffTotals.PatchEvents += diff.PatchEvents
+		analysis.DiffTotals.AddedLines += diff.AddedLines
+		analysis.DiffTotals.DeletedLines += diff.DeletedLines
+		if churn >= 200 {
+			analysis.DiffTotals.HighChurnFiles++
+		}
+		if churn > analysis.DiffTotals.LargestChangeLines {
+			analysis.DiffTotals.LargestChangeLines = churn
+		}
+		ext := diff.Extension
+		if ext == "" {
+			ext = "(none)"
+		}
+		if extAgg[ext] == nil {
+			extAgg[ext] = &FileDiffExtensionItem{Extension: ext}
+		}
+		extItem := extAgg[ext]
+		extItem.FileCount++
+		extItem.PatchEvents += diff.PatchEvents
+		extItem.AddedLines += diff.AddedLines
+		extItem.DeletedLines += diff.DeletedLines
+		analysis.DiffHotFiles = append(analysis.DiffHotFiles, FileDiffHotItem{
+			Path:         path,
+			Extension:    ext,
+			PatchEvents:  diff.PatchEvents,
+			AddedLines:   diff.AddedLines,
+			DeletedLines: diff.DeletedLines,
+			NetLines:     diff.AddedLines - diff.DeletedLines,
+			ChurnLines:   churn,
+		})
+	}
+	analysis.DiffTotals.NetLines = analysis.DiffTotals.AddedLines - analysis.DiffTotals.DeletedLines
+	for _, item := range extAgg {
+		item.NetLines = item.AddedLines - item.DeletedLines
+		analysis.DiffByExt = append(analysis.DiffByExt, *item)
+	}
+	sort.Slice(analysis.DiffByExt, func(i, j int) bool {
+		left := analysis.DiffByExt[i].AddedLines + analysis.DiffByExt[i].DeletedLines
+		right := analysis.DiffByExt[j].AddedLines + analysis.DiffByExt[j].DeletedLines
+		if left == right {
+			return analysis.DiffByExt[i].Extension < analysis.DiffByExt[j].Extension
+		}
+		return left > right
+	})
+	if len(analysis.DiffByExt) > 30 {
+		analysis.DiffByExt = analysis.DiffByExt[:30]
+	}
+	sort.Slice(analysis.DiffHotFiles, func(i, j int) bool {
+		if analysis.DiffHotFiles[i].ChurnLines == analysis.DiffHotFiles[j].ChurnLines {
+			return analysis.DiffHotFiles[i].Path < analysis.DiffHotFiles[j].Path
+		}
+		return analysis.DiffHotFiles[i].ChurnLines > analysis.DiffHotFiles[j].ChurnLines
+	})
+	if len(analysis.DiffHotFiles) > 50 {
+		analysis.DiffHotFiles = analysis.DiffHotFiles[:50]
+	}
+
 	// --- Totals ---
 	uniqueFiles := len(agg.FileHotStats)
 	overallEditFailureRate := 0.0
@@ -726,6 +787,45 @@ func (agg *ProjectAggregate) finalizeTaskPlanAnalysis() {
 		})
 		if len(out.PlanFiles) > 20 {
 			out.PlanFiles = out.PlanFiles[:20]
+		}
+	}
+	if agg.PlanStepAgg != nil {
+		steps := agg.PlanStepAgg
+		out.PlanSteps = PlanStepSummaryData{
+			UpdateEvents:      steps.UpdateEvents,
+			TotalSteps:        steps.TotalSteps,
+			MaxStepsPerUpdate: steps.MaxStepsPerUpdate,
+		}
+		if steps.UpdateEvents > 0 {
+			out.PlanSteps.AvgStepsPerUpdate = float64(steps.TotalSteps) / float64(steps.UpdateEvents)
+		}
+		for status, count := range steps.StatusCounts {
+			out.PlanSteps.ByStatus = append(out.PlanSteps.ByStatus, PlanStepStatusItem{Status: status, Count: count})
+		}
+		sort.Slice(out.PlanSteps.ByStatus, func(i, j int) bool {
+			if out.PlanSteps.ByStatus[i].Count == out.PlanSteps.ByStatus[j].Count {
+				return out.PlanSteps.ByStatus[i].Status < out.PlanSteps.ByStatus[j].Status
+			}
+			return out.PlanSteps.ByStatus[i].Count > out.PlanSteps.ByStatus[j].Count
+		})
+		for _, item := range steps.StepCounts {
+			if item == nil {
+				continue
+			}
+			out.PlanSteps.TopSteps = append(out.PlanSteps.TopSteps, PlanStepHotItem{
+				Step:       item.Step,
+				Count:      item.Count,
+				LastStatus: item.LastStatus,
+			})
+		}
+		sort.Slice(out.PlanSteps.TopSteps, func(i, j int) bool {
+			if out.PlanSteps.TopSteps[i].Count == out.PlanSteps.TopSteps[j].Count {
+				return out.PlanSteps.TopSteps[i].Step < out.PlanSteps.TopSteps[j].Step
+			}
+			return out.PlanSteps.TopSteps[i].Count > out.PlanSteps.TopSteps[j].Count
+		})
+		if len(out.PlanSteps.TopSteps) > 30 {
+			out.PlanSteps.TopSteps = out.PlanSteps.TopSteps[:30]
 		}
 	}
 

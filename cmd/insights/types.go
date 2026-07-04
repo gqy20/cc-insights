@@ -631,6 +631,20 @@ type CostAnalysisData struct {
 	BySession      []CostSessionStat    `json:"by_session"`
 	ByAgent        []CostAgentStat      `json:"by_agent"`
 	BudgetTimeline []BudgetTimelineItem `json:"budget_timeline"`
+	Context        *ContextAnalysisData `json:"context,omitempty"`
+}
+
+type ContextAnalysisData struct {
+	TokenEvents            int     `json:"token_events"`
+	ContextCompactions     int     `json:"context_compactions"`
+	MaxInputTokens         int     `json:"max_input_tokens"`
+	MaxTotalTokens         int     `json:"max_total_tokens"`
+	CacheHitRate           float64 `json:"cache_hit_rate"`
+	ReasoningOutputRatio   float64 `json:"reasoning_output_ratio"`
+	AvgInputTokens         float64 `json:"avg_input_tokens"`
+	AvgReasoningTokens     float64 `json:"avg_reasoning_tokens"`
+	TotalCachedInputTokens int     `json:"total_cached_input_tokens"`
+	TotalReasoningTokens   int     `json:"total_reasoning_tokens"`
 }
 
 // FileAnalysisData 文件与编辑质量分析结果
@@ -641,6 +655,38 @@ type FileAnalysisData struct {
 	Snapshots    []FileSnapshotItem       `json:"snapshots"`     // file-history-snapshot 统计
 	EditedFiles  []FileEditedItem         `json:"edited_files"`  // edited_text_file 统计
 	ByModel      []FileOperationModelStat `json:"by_model,omitempty"`
+	DiffTotals   FileDiffTotals           `json:"diff_totals,omitempty"`
+	DiffByExt    []FileDiffExtensionItem  `json:"diff_by_ext,omitempty"`
+	DiffHotFiles []FileDiffHotItem        `json:"diff_hot_files,omitempty"`
+}
+
+type FileDiffTotals struct {
+	ChangedFiles       int `json:"changed_files"`
+	PatchEvents        int `json:"patch_events"`
+	AddedLines         int `json:"added_lines"`
+	DeletedLines       int `json:"deleted_lines"`
+	NetLines           int `json:"net_lines"`
+	HighChurnFiles     int `json:"high_churn_files"`
+	LargestChangeLines int `json:"largest_change_lines"`
+}
+
+type FileDiffExtensionItem struct {
+	Extension    string `json:"extension"`
+	FileCount    int    `json:"file_count"`
+	PatchEvents  int    `json:"patch_events"`
+	AddedLines   int    `json:"added_lines"`
+	DeletedLines int    `json:"deleted_lines"`
+	NetLines     int    `json:"net_lines"`
+}
+
+type FileDiffHotItem struct {
+	Path         string `json:"path"`
+	Extension    string `json:"extension"`
+	PatchEvents  int    `json:"patch_events"`
+	AddedLines   int    `json:"added_lines"`
+	DeletedLines int    `json:"deleted_lines"`
+	NetLines     int    `json:"net_lines"`
+	ChurnLines   int    `json:"churn_lines"`
 }
 
 // FileAnalysisTotals 文件分析汇总数字
@@ -713,6 +759,14 @@ type FileHotStat struct {
 	MissingCount int
 }
 
+type FileDiffAgg struct {
+	Path         string
+	Extension    string
+	PatchEvents  int
+	AddedLines   int
+	DeletedLines int
+}
+
 // FileEditFailureAgg 中间聚合：按文件路径汇总 Edit 失败及原因
 type FileEditFailureAgg struct {
 	Path          string
@@ -743,6 +797,7 @@ type FileEditedAgg struct {
 type TaskPlanAnalysisData struct {
 	PlanLifecycle   PlanLifecycleData   `json:"plan_lifecycle"`   // Plan mode 生命周期
 	PlanFiles       []PlanFileItem      `json:"plan_files"`       // 引用的计划文件
+	PlanSteps       PlanStepSummaryData `json:"plan_steps"`       // Codex update_plan step 状态
 	GoalStatus      []GoalStatusItem    `json:"goal_status"`      // 目标达成状态
 	ReminderSummary ReminderSummaryData `json:"reminder_summary"` // task/todo 提醒频率
 	Tasks           TaskAnalysisData    `json:"tasks"`            // Task 分析（来自 tasks/ 目录）
@@ -773,6 +828,26 @@ type PlanFileItem struct {
 	HasCode   bool   `json:"has_code"`          // 是否包含代码块
 	Preview   string `json:"preview,omitempty"` // 内容前200字符预览
 	RefCount  int    `json:"ref_count"`         // 被引用次数(去重session)
+}
+
+type PlanStepSummaryData struct {
+	UpdateEvents      int                  `json:"update_events"`
+	TotalSteps        int                  `json:"total_steps"`
+	MaxStepsPerUpdate int                  `json:"max_steps_per_update"`
+	AvgStepsPerUpdate float64              `json:"avg_steps_per_update"`
+	ByStatus          []PlanStepStatusItem `json:"by_status"`
+	TopSteps          []PlanStepHotItem    `json:"top_steps"`
+}
+
+type PlanStepStatusItem struct {
+	Status string `json:"status"`
+	Count  int    `json:"count"`
+}
+
+type PlanStepHotItem struct {
+	Step       string `json:"step"`
+	Count      int    `json:"count"`
+	LastStatus string `json:"last_status"`
 }
 
 // GoalStatusItem 目标状态事件
@@ -836,6 +911,20 @@ type PlanModeAgg struct {
 	ExitReasons   map[string]int          // exitReason -> count
 	PlanFilePaths map[string]*PlanFileAgg // filePath -> 详情
 	SessionSet    map[string]bool         // sessionID去重
+}
+
+type PlanStepAgg struct {
+	UpdateEvents      int
+	TotalSteps        int
+	MaxStepsPerUpdate int
+	StatusCounts      map[string]int
+	StepCounts        map[string]*PlanStepHotAgg
+}
+
+type PlanStepHotAgg struct {
+	Step       string
+	Count      int
+	LastStatus string
 }
 
 // PlanFileAgg 中间聚合：单个计划文件的引用详情
@@ -1046,6 +1135,7 @@ type ProjectAggregate struct {
 	CostProjectStats        map[string]*CostProjectStat             `json:"-"`                // 项目 token 统计
 	CostSessionStats        map[string]*CostSessionStat             `json:"-"`                // 会话 token 统计
 	CostAgentStats          map[string]*CostAgentStat               `json:"-"`                // agent token 统计
+	ContextStats            *ContextAnalysisData                    `json:"-"`                // Codex context/token 摘要
 	BudgetTimeline          []BudgetTimelineItem                    `json:"-"`                // 预算事件时间线
 	CostAnalysis            *CostAnalysisData                       `json:"costs"`            // 成本/token 分析（输出格式）
 	ToolStats               map[string]*ToolStatItem                `json:"-"`                // 工具调用统计
@@ -1091,9 +1181,11 @@ type ProjectAggregate struct {
 	FileEditFailures        map[string]*FileEditFailureAgg          `json:"-"`                // 文件编辑失败（按路径+原因聚合）
 	FileSnapshotStats       map[string]*FileSnapshotAgg             `json:"-"`                // file-history-snapshot 统计
 	FileEditedStats         map[string]*FileEditedAgg               `json:"-"`                // edited_text_file 统计
+	FileDiffStats           map[string]*FileDiffAgg                 `json:"-"`                // Codex patch diff 行数统计
 	FileAnalysis            *FileAnalysisData                       `json:"file_analysis"`    // 文件与编辑质量分析（输出格式）
 	// --- task_plan_analysis (Milestone 4) ---
 	PlanModeAgg      *PlanModeAgg          `json:"-"`                  // plan_mode 事件聚合
+	PlanStepAgg      *PlanStepAgg          `json:"-"`                  // Codex update_plan step 聚合
 	GoalStatusAgg    *GoalStatusAgg        `json:"-"`                  // goal_status 事件聚合
 	ReminderAgg      *ReminderAgg          `json:"-"`                  // reminder 频率聚合
 	TaskAgg          *TaskAgg              `json:"-"`                  // tasks/ 目录扫描结果

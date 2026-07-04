@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"io"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -34,6 +35,13 @@ type codexPendingTool struct {
 	WeakFailed     bool
 	WeakPreview    string
 	WeakTimestamp  time.Time
+}
+
+type codexPatchChange struct {
+	Type        string `json:"type"`
+	MovePath    string `json:"move_path"`
+	UnifiedDiff string `json:"unified_diff"`
+	Content     string `json:"content"`
 }
 
 func parseCodexSessionFileAggregate(filePath string, tf TimeFilter, agg *ProjectAggregate) {
@@ -198,6 +206,8 @@ func parseCodexEventMessage(raw json.RawMessage, state *codexSessionState, times
 		recordCodexSessionSeen(agg, state, timestamp)
 	case "task_complete":
 		recordCodexTaskComplete(raw, state, timestamp, agg)
+	case "context_compacted":
+		recordCodexContextCompacted(state, timestamp, agg)
 	case "token_count":
 		recordCodexTokenCount(raw, state, timestamp, agg)
 	case "exec_command_end":
@@ -344,15 +354,12 @@ func recordCodexExecCommandEnd(raw json.RawMessage, state *codexSessionState, ti
 
 func recordCodexPatchApplyEnd(raw json.RawMessage, state *codexSessionState, timestamp time.Time, agg *ProjectAggregate) {
 	var payload struct {
-		CallID  string `json:"call_id"`
-		Success *bool  `json:"success"`
-		Status  string `json:"status"`
-		Stdout  string `json:"stdout"`
-		Stderr  string `json:"stderr"`
-		Changes map[string]struct {
-			Type     string `json:"type"`
-			MovePath string `json:"move_path"`
-		} `json:"changes"`
+		CallID  string                      `json:"call_id"`
+		Success *bool                       `json:"success"`
+		Status  string                      `json:"status"`
+		Stdout  string                      `json:"stdout"`
+		Stderr  string                      `json:"stderr"`
+		Changes map[string]codexPatchChange `json:"changes"`
 	}
 	if json.Unmarshal(raw, &payload) != nil {
 		return
@@ -430,6 +437,17 @@ func recordCodexTaskComplete(raw json.RawMessage, state *codexSessionState, time
 	}
 }
 
+func recordCodexContextCompacted(state *codexSessionState, timestamp time.Time, agg *ProjectAggregate) {
+	call := pendingToolCall{
+		Project:   codexProject(state),
+		SessionID: codexSessionID(state),
+		Timestamp: timestamp,
+	}
+	for _, target := range codexAggregatesForCall(agg, call) {
+		ensureCodexContextStats(target).ContextCompactions++
+	}
+}
+
 func recordCodexTokenCount(raw json.RawMessage, state *codexSessionState, timestamp time.Time, agg *ProjectAggregate) {
 	var payload struct {
 		Info struct {
@@ -463,6 +481,7 @@ func recordCodexTokenCount(raw json.RawMessage, state *codexSessionState, timest
 		recordModelTokenBreakdownLocked(target, model, payload.Info.LastTokenUsage.InputTokens, payload.Info.LastTokenUsage.CachedInputTokens, payload.Info.LastTokenUsage.OutputTokens, payload.Info.LastTokenUsage.ReasoningOutputTokens)
 		recordCodexSessionTokenUsage(target, sessionID, projectName, model, timestamp, payload.Info.LastTokenUsage.InputTokens, payload.Info.LastTokenUsage.OutputTokens+payload.Info.LastTokenUsage.ReasoningOutputTokens, tokens)
 		recordCodexCostUsageLocked(target, sessionID, projectName, model, payload.Info.LastTokenUsage.InputTokens, payload.Info.LastTokenUsage.CachedInputTokens, payload.Info.LastTokenUsage.OutputTokens+payload.Info.LastTokenUsage.ReasoningOutputTokens, tokens)
+		recordCodexContextTokenUsage(target, payload.Info.LastTokenUsage.InputTokens, payload.Info.LastTokenUsage.CachedInputTokens, payload.Info.LastTokenUsage.ReasoningOutputTokens, tokens)
 	}
 	if agg.DailyModelCounts[dateKey] == nil {
 		agg.DailyModelCounts[dateKey] = make(map[string]int)
@@ -552,14 +571,12 @@ func recordCodexUpdatePlanEvent(agg *ProjectAggregate, state *codexSessionState,
 		} else {
 			recordPlanModeLocked(target, "", false, call.SessionID, call.Project)
 		}
+		recordCodexPlanSteps(target, payload.Plan)
 	}
 	state.ActivePlan = true
 }
 
-func recordCodexPatchFileOperations(agg *ProjectAggregate, pending *codexPendingTool, changes map[string]struct {
-	Type     string `json:"type"`
-	MovePath string `json:"move_path"`
-}, failed bool) {
+func recordCodexPatchFileOperations(agg *ProjectAggregate, pending *codexPendingTool, changes map[string]codexPatchChange, failed bool) {
 	if pending == nil || len(changes) == 0 {
 		return
 	}
@@ -567,8 +584,11 @@ func recordCodexPatchFileOperations(agg *ProjectAggregate, pending *codexPending
 		for path, change := range changes {
 			operation := codexPatchFileOperation(change.Type)
 			recordCodexFileOperation(target, operation, path, pending.Model, failed)
+			added, deleted := codexPatchLineDelta(change)
+			recordCodexFileDiff(target, path, added, deleted)
 			if change.MovePath != "" && change.MovePath != path {
 				recordCodexFileOperation(target, "Write", change.MovePath, pending.Model, failed)
+				recordCodexFileDiff(target, change.MovePath, 0, 0)
 			}
 		}
 	}
@@ -601,6 +621,76 @@ func recordCodexFileOperation(agg *ProjectAggregate, operation, path, model stri
 	updateFileHotResultLocked(agg, path, false, false)
 }
 
+func recordCodexFileDiff(agg *ProjectAggregate, path string, addedLines, deletedLines int) {
+	if strings.TrimSpace(path) == "" {
+		return
+	}
+	if agg.FileDiffStats == nil {
+		agg.FileDiffStats = make(map[string]*FileDiffAgg)
+	}
+	if agg.FileDiffStats[path] == nil {
+		agg.FileDiffStats[path] = &FileDiffAgg{Path: path, Extension: fileExtensionLabel(path)}
+	}
+	stat := agg.FileDiffStats[path]
+	stat.PatchEvents++
+	stat.AddedLines += addedLines
+	stat.DeletedLines += deletedLines
+}
+
+func recordCodexPlanSteps(agg *ProjectAggregate, steps []struct {
+	Step   string `json:"step"`
+	Status string `json:"status"`
+}) {
+	if len(steps) == 0 {
+		return
+	}
+	if agg.PlanStepAgg == nil {
+		agg.PlanStepAgg = &PlanStepAgg{
+			StatusCounts: make(map[string]int),
+			StepCounts:   make(map[string]*PlanStepHotAgg),
+		}
+	}
+	agg.PlanStepAgg.UpdateEvents++
+	agg.PlanStepAgg.TotalSteps += len(steps)
+	if len(steps) > agg.PlanStepAgg.MaxStepsPerUpdate {
+		agg.PlanStepAgg.MaxStepsPerUpdate = len(steps)
+	}
+	for _, step := range steps {
+		status := normalizeCodexPlanStatus(step.Status)
+		agg.PlanStepAgg.StatusCounts[status]++
+		label := previewString(step.Step, 160)
+		if label == "" {
+			label = "(empty)"
+		}
+		if agg.PlanStepAgg.StepCounts[label] == nil {
+			agg.PlanStepAgg.StepCounts[label] = &PlanStepHotAgg{Step: label}
+		}
+		item := agg.PlanStepAgg.StepCounts[label]
+		item.Count++
+		item.LastStatus = status
+	}
+}
+
+func recordCodexContextTokenUsage(agg *ProjectAggregate, inputTokens, cachedInputTokens, reasoningTokens, totalTokens int) {
+	context := ensureCodexContextStats(agg)
+	context.TokenEvents++
+	context.TotalCachedInputTokens += cachedInputTokens
+	context.TotalReasoningTokens += reasoningTokens
+	if inputTokens > context.MaxInputTokens {
+		context.MaxInputTokens = inputTokens
+	}
+	if totalTokens > context.MaxTotalTokens {
+		context.MaxTotalTokens = totalTokens
+	}
+}
+
+func ensureCodexContextStats(agg *ProjectAggregate) *ContextAnalysisData {
+	if agg.ContextStats == nil {
+		agg.ContextStats = &ContextAnalysisData{}
+	}
+	return agg.ContextStats
+}
+
 func codexPatchFileOperation(changeType string) string {
 	switch strings.ToLower(strings.TrimSpace(changeType)) {
 	case "add":
@@ -614,6 +704,62 @@ func codexPatchFileOperation(changeType string) string {
 	default:
 		return "Edit"
 	}
+}
+
+func codexPatchLineDelta(change codexPatchChange) (int, int) {
+	if change.UnifiedDiff != "" {
+		return countUnifiedDiffLines(change.UnifiedDiff)
+	}
+	switch strings.ToLower(strings.TrimSpace(change.Type)) {
+	case "add":
+		return countTextLines(change.Content), 0
+	case "delete", "remove":
+		return 0, countTextLines(change.Content)
+	default:
+		return 0, 0
+	}
+}
+
+func countUnifiedDiffLines(diff string) (int, int) {
+	added, deleted := 0, 0
+	for _, line := range strings.Split(diff, "\n") {
+		switch {
+		case strings.HasPrefix(line, "+++") || strings.HasPrefix(line, "---"):
+			continue
+		case strings.HasPrefix(line, "+"):
+			added++
+		case strings.HasPrefix(line, "-"):
+			deleted++
+		}
+	}
+	return added, deleted
+}
+
+func countTextLines(text string) int {
+	if text == "" {
+		return 0
+	}
+	text = strings.TrimSuffix(text, "\n")
+	if text == "" {
+		return 0
+	}
+	return strings.Count(text, "\n") + 1
+}
+
+func fileExtensionLabel(path string) string {
+	ext := strings.ToLower(filepath.Ext(path))
+	if ext == "" {
+		return "(none)"
+	}
+	return ext
+}
+
+func normalizeCodexPlanStatus(status string) string {
+	status = strings.ToLower(strings.TrimSpace(status))
+	if status == "" {
+		return "unknown"
+	}
+	return status
 }
 
 func recordCodexMissingTool(agg *ProjectAggregate, call pendingToolCall) {

@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-const CacheVersion = "4.11"
+const CacheVersion = "4.12"
 
 // CacheFile 缓存文件结构
 type CacheFile struct {
@@ -87,6 +87,7 @@ type ProjectFileAggregate struct {
 	CostProjectStats        map[string]CostProjectStat                 `json:"cost_project_stats,omitempty"`
 	CostSessionStats        map[string]CostSessionStat                 `json:"cost_session_stats,omitempty"`
 	CostAgentStats          map[string]CostAgentStat                   `json:"cost_agent_stats,omitempty"`
+	ContextStats            *ContextAnalysisData                       `json:"context_stats,omitempty"`
 	BudgetTimeline          []BudgetTimelineItem                       `json:"budget_timeline,omitempty"`
 	ToolStats               map[string]ToolStatItem                    `json:"tool_stats,omitempty"`
 	ToolModelStats          map[string]ToolModelStatItem               `json:"tool_model_stats,omitempty"`
@@ -124,7 +125,9 @@ type ProjectFileAggregate struct {
 	FileEditFailures        map[string]FileEditFailureAgg              `json:"file_edit_failures,omitempty"`
 	FileSnapshotStats       map[string]FileSnapshotAgg                 `json:"file_snapshot_stats,omitempty"`
 	FileEditedStats         map[string]FileEditedAgg                   `json:"file_edited_stats,omitempty"`
+	FileDiffStats           map[string]FileDiffAgg                     `json:"file_diff_stats,omitempty"`
 	PlanModeAgg             *SerializedPlanModeAgg                     `json:"plan_mode_agg,omitempty"`
+	PlanStepAgg             *PlanStepAgg                               `json:"plan_step_agg,omitempty"`
 	GoalStatusAgg           *GoalStatusAgg                             `json:"goal_status_agg,omitempty"`
 	ReminderAgg             *ReminderAgg                               `json:"reminder_agg,omitempty"`
 	ToolPerfStats           map[string]ToolPerfAgg                     `json:"tool_perf_stats,omitempty"`
@@ -466,6 +469,10 @@ func cloneCostAnalysis(source *CostAnalysisData) *CostAnalysisData {
 	copyValue.BySession = append([]CostSessionStat(nil), source.BySession...)
 	copyValue.ByAgent = append([]CostAgentStat(nil), source.ByAgent...)
 	copyValue.BudgetTimeline = append([]BudgetTimelineItem(nil), source.BudgetTimeline...)
+	if source.Context != nil {
+		contextCopy := *source.Context
+		copyValue.Context = &contextCopy
+	}
 	return &copyValue
 }
 
@@ -532,6 +539,9 @@ func cloneFileAnalysis(source *FileAnalysisData) *FileAnalysisData {
 	copyValue.EditFailures = append([]FileEditFailureItem(nil), source.EditFailures...)
 	copyValue.Snapshots = append([]FileSnapshotItem(nil), source.Snapshots...)
 	copyValue.EditedFiles = append([]FileEditedItem(nil), source.EditedFiles...)
+	copyValue.ByModel = append([]FileOperationModelStat(nil), source.ByModel...)
+	copyValue.DiffByExt = append([]FileDiffExtensionItem(nil), source.DiffByExt...)
+	copyValue.DiffHotFiles = append([]FileDiffHotItem(nil), source.DiffHotFiles...)
 	return &copyValue
 }
 
@@ -541,6 +551,8 @@ func cloneTaskPlanAnalysis(source *TaskPlanAnalysisData) *TaskPlanAnalysisData {
 	}
 	copyValue := *source
 	copyValue.PlanFiles = append([]PlanFileItem(nil), source.PlanFiles...)
+	copyValue.PlanSteps.ByStatus = append([]PlanStepStatusItem(nil), source.PlanSteps.ByStatus...)
+	copyValue.PlanSteps.TopSteps = append([]PlanStepHotItem(nil), source.PlanSteps.TopSteps...)
 	copyValue.GoalStatus = append([]GoalStatusItem(nil), source.GoalStatus...)
 	if source.ReminderSummary.TopTaskSessions != nil {
 		copyValue.ReminderSummary.TopTaskSessions = append([]ReminderSessionItem(nil), source.ReminderSummary.TopTaskSessions...)

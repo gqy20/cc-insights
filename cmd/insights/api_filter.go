@@ -928,6 +928,7 @@ func recomputeCostTotals(cost *CostAnalysisData) {
 	if totals.TotalTokens > 0 {
 		cost.Totals = totals
 	}
+	cost.Context = nil
 }
 
 func recomputeToolPerformanceTotals(tp *ToolPerformanceData) {
