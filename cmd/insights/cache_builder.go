@@ -22,8 +22,6 @@ type CacheBuilder struct {
 	Provider  Provider
 }
 
-var cacheRefreshMu sync.Mutex
-
 type projectFileInfo struct {
 	RelPath string
 	AbsPath string
@@ -214,27 +212,33 @@ func diagnosticsCachePath(cachePath string) string {
 }
 
 func refreshGlobalCache(force bool) error {
-	cacheRefreshMu.Lock()
-	defer cacheRefreshMu.Unlock()
+	cache, err := refreshCacheForConfig(cfg, force)
+	if err != nil {
+		return err
+	}
+	globalCache = cache
+	return nil
+}
 
-	if err := os.MkdirAll(cfg.CacheDir, 0755); err != nil {
-		return fmt.Errorf("创建缓存目录失败: %w", err)
+func refreshCacheForConfig(config Config, force bool) (*CacheFile, error) {
+	if err := os.MkdirAll(config.CacheDir, 0755); err != nil {
+		return nil, fmt.Errorf("创建缓存目录失败: %w", err)
 	}
 
-	cachePath := cachePathForConfig(cfg)
+	cachePath := cachePathForConfig(config)
 	if err := os.MkdirAll(filepath.Dir(cachePath), 0755); err != nil {
-		return fmt.Errorf("创建 provider 缓存目录失败: %w", err)
+		return nil, fmt.Errorf("创建 provider 缓存目录失败: %w", err)
 	}
 	lock, err := acquireCacheBuildLock(cachePath)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer lock.release()
 
 	builder := &CacheBuilder{
 		CachePath: cachePath,
-		DataDir:   cfg.DataDir,
-		Provider:  cfg.Provider,
+		DataDir:   config.DataDir,
+		Provider:  config.Provider,
 	}
 
 	if force || builder.NeedsRebuild() {
@@ -242,7 +246,7 @@ func refreshGlobalCache(force bool) error {
 		start := time.Now()
 		if err := builder.BuildFullCache(); err != nil {
 			Error("缓存构建失败", "error", err.Error())
-			return fmt.Errorf("构建缓存失败: %w", err)
+			return nil, fmt.Errorf("构建缓存失败: %w", err)
 		}
 		elapsed := time.Since(start)
 		Info("缓存构建完成", "duration_sec", elapsed.Seconds())
@@ -253,16 +257,15 @@ func refreshGlobalCache(force bool) error {
 	cache, err := LoadCacheFile(cachePath)
 	if err != nil {
 		Error("加载缓存失败", "error", err.Error())
-		return fmt.Errorf("加载缓存失败: %w", err)
+		return nil, fmt.Errorf("加载缓存失败: %w", err)
 	}
 
-	globalCache = cache
 	Info("缓存已加载",
-		"provider", globalCache.Provider,
-		"messages", globalCache.TotalMessages,
-		"sessions", globalCache.TotalSessions,
+		"provider", cache.Provider,
+		"messages", cache.TotalMessages,
+		"sessions", cache.TotalSessions,
 	)
-	return nil
+	return cache, nil
 }
 
 type cacheBuildLock struct {

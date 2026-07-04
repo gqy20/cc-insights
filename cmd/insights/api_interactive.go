@@ -4,7 +4,6 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 )
 
@@ -47,8 +46,6 @@ type AnalysisFilter struct {
 	Target      string
 	Family      string
 }
-
-var providerSwitchMu sync.Mutex
 
 type overviewData struct {
 	Summary     overviewSummary `json:"summary"`
@@ -257,6 +254,23 @@ func handleTimelineAPI(w http.ResponseWriter, r *http.Request) {
 }
 
 func buildRecommendationDataWithFilter(filter AnalysisFilter) (*DashboardData, string, error) {
+	if filter.ProviderSet && filter.Provider != "" {
+		config := cfg
+		config.Provider = filter.Provider
+		if filter.ProviderRaw != ProviderAuto && (filter.Provider == ProviderClaude || filter.Provider == ProviderCodex) {
+			config.DataDir = defaultDataDirForProvider(filter.Provider)
+		}
+		cache, err := providerCacheForConfig(config, false)
+		if err != nil {
+			return nil, "cache", err
+		}
+		data, source, err := buildRecommendationDashboardDataWithCache(cache, filter.TimeFilter, filter.Preset)
+		if err != nil {
+			return nil, source, err
+		}
+		applyDashboardFilter(data, filter)
+		return data, source, nil
+	}
 	return loadDashboardDataWithFilter(filter, buildRecommendationDashboardData)
 }
 
@@ -387,9 +401,10 @@ func buildOverviewData(data *DashboardData, diagnostics cliRecommendationReport,
 			trend.Sessions = append(trend.Sessions, data.Sessions.DailySessionMap[date])
 		}
 	}
-	if globalCache != nil {
+	cache := dashboardRuntimeCache(data)
+	if cache != nil {
 		for _, date := range trend.Dates {
-			day := globalCache.DailyStats[date]
+			day := cache.DailyStats[date]
 			if day == nil {
 				trend.Tokens = append(trend.Tokens, 0)
 				trend.Failures = append(trend.Failures, 0)
@@ -426,11 +441,12 @@ func buildOverviewData(data *DashboardData, diagnostics cliRecommendationReport,
 }
 
 func buildTimelineData(data *DashboardData) timelineData {
+	cache := dashboardRuntimeCache(data)
 	out := timelineData{Days: make([]timelineDay, 0, len(data.DailyTrend.Dates))}
 	for _, date := range data.DailyTrend.Dates {
 		day := timelineDay{Date: date}
-		if globalCache != nil && globalCache.DailyStats[date] != nil {
-			stats := globalCache.DailyStats[date]
+		if cache != nil && cache.DailyStats[date] != nil {
+			stats := cache.DailyStats[date]
 			day.Messages = stats.MessageCount
 			day.Sessions = stats.SessionCount
 			day.ToolCalls = stats.ToolCallCount
@@ -504,7 +520,7 @@ func sendInteractiveJSON(w http.ResponseWriter, data interface{}, source string,
 		Success: true,
 		Meta: apiMeta{
 			Source:       source,
-			CacheVersion: cacheVersionForMeta(),
+			CacheVersion: cacheVersionForMeta(filter),
 			GeneratedAt:  time.Now().Format(time.RFC3339),
 			RuntimeMs:    time.Since(startedAt).Milliseconds(),
 			TimeRange:    tr,
@@ -548,7 +564,15 @@ func (filter AnalysisFilter) metaFilters() map[string]interface{} {
 	return values
 }
 
-func cacheVersionForMeta() string {
+func cacheVersionForMeta(filter AnalysisFilter) string {
+	if filter.ProviderSet && filter.Provider != "" {
+		providerCachePool.RLock()
+		cache := providerCachePool.items[filter.Provider]
+		providerCachePool.RUnlock()
+		if cache != nil {
+			return cache.Version
+		}
+	}
 	if globalCache != nil {
 		return globalCache.Version
 	}

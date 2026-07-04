@@ -16,6 +16,15 @@ func buildRecommendationDashboardData(tf TimeFilter, preset string) (*DashboardD
 		Warn("Bash 规则刷新失败，继续尝试现有缓存", "error", err.Error())
 	}
 
+	return buildRecommendationDashboardDataWithCache(globalCache, tf, preset)
+}
+
+func buildRecommendationDashboardDataWithCache(cache *CacheFile, tf TimeFilter, preset string) (*DashboardData, string, error) {
+	if cache == nil {
+		data, source, err := buildDashboardData(tf, preset)
+		return data, source, err
+	}
+
 	var start, end time.Time
 	if tf.Start != nil {
 		start = *tf.Start
@@ -24,9 +33,9 @@ func buildRecommendationDashboardData(tf TimeFilter, preset string) (*DashboardD
 		end = *tf.End
 	}
 	queryStartedAt := time.Now()
-	cached := globalCache.QueryByTimeRange(start, end)
+	cached := cache.QueryByTimeRange(start, end)
 	if cached.Provider == "" {
-		cached.Provider = globalCache.Provider
+		cached.Provider = cache.Provider
 	}
 	Debug("诊断缓存查询完成",
 		"preset", preset,
@@ -54,6 +63,7 @@ func buildRecommendationDashboardData(tf TimeFilter, preset string) (*DashboardD
 		SessionAnalysis:  cloneSessionAnalysis(cached.SessionAnalysis),
 		EventAnalysis:    cloneEventAnalysis(cached.EventAnalysis),
 		TaskPlanAnalysis: cloneTaskPlanAnalysis(cached.TaskPlanAnalysis),
+		RuntimeCache:     cache,
 	}, "cache", nil
 }
 

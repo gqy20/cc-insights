@@ -217,12 +217,13 @@ func applyDimensionTimeSeries(data *DashboardData, filter AnalysisFilter) {
 	for i := range weekdayStats.WeekdayData {
 		weekdayStats.WeekdayData[i] = WeekdayItem{Weekday: i, WeekdayName: weekdayName(i)}
 	}
-	if globalCache == nil {
+	cache := dashboardRuntimeCache(data)
+	if cache == nil {
 		clearUnscopedTimeSeries(data)
 		return
 	}
 	for _, date := range dates {
-		day := globalCache.DailyStats[date]
+		day := cache.DailyStats[date]
 		count := 0
 		if day != nil {
 			if filter.Project != "" {
@@ -251,7 +252,8 @@ func applyDimensionTimeSeries(data *DashboardData, filter AnalysisFilter) {
 }
 
 func applyRuntimeDailyTrend(data *DashboardData, filter AnalysisFilter) bool {
-	if globalCache == nil || (len(globalCache.DailyRuntime) == 0 && len(globalCache.DailyProjectRuntime) == 0 && len(globalCache.DailySessionRuntime) == 0) {
+	cache := dashboardRuntimeCache(data)
+	if cache == nil || (len(cache.DailyRuntime) == 0 && len(cache.DailyProjectRuntime) == 0 && len(cache.DailySessionRuntime) == 0) {
 		return false
 	}
 	if filter.Family != "" || (filter.Tool == "" && filter.Reason == "" && filter.Category == "" && filter.Model == "") {
@@ -259,7 +261,7 @@ func applyRuntimeDailyTrend(data *DashboardData, filter AnalysisFilter) bool {
 	}
 	dates := append([]string(nil), data.DailyTrend.Dates...)
 	if len(dates) == 0 {
-		for date := range globalCache.DailyStats {
+		for date := range cache.DailyStats {
 			dates = append(dates, date)
 		}
 		sort.Strings(dates)
@@ -270,7 +272,7 @@ func applyRuntimeDailyTrend(data *DashboardData, filter AnalysisFilter) bool {
 		weekdayStats.WeekdayData[i] = WeekdayItem{Weekday: i, WeekdayName: weekdayName(i)}
 	}
 	for _, date := range dates {
-		count := dailyRuntimeCountForDate(date, filter)
+		count := dailyRuntimeCountForDate(cache, date, filter)
 		counts = append(counts, count)
 		if parsed, err := parseDateOnly(date); err == nil {
 			weekday := (int(parsed.Weekday()) + 6) % 7
@@ -292,10 +294,10 @@ func applyRuntimeDailyTrend(data *DashboardData, filter AnalysisFilter) bool {
 	return true
 }
 
-func dailyRuntimeCountForDate(date string, filter AnalysisFilter) int {
+func dailyRuntimeCountForDate(cache *CacheFile, date string, filter AnalysisFilter) int {
 	if filter.Session != "" {
 		total := 0
-		for sessionID, snapshot := range globalCache.DailySessionRuntime[date] {
+		for sessionID, snapshot := range cache.DailySessionRuntime[date] {
 			if matchContains(filter.Session, sessionID) {
 				total += dailyRuntimeCount(snapshot, filter)
 			}
@@ -304,14 +306,14 @@ func dailyRuntimeCountForDate(date string, filter AnalysisFilter) int {
 	}
 	if filter.Project != "" {
 		total := 0
-		for project, snapshot := range globalCache.DailyProjectRuntime[date] {
+		for project, snapshot := range cache.DailyProjectRuntime[date] {
 			if matchContains(filter.Project, project) {
 				total += dailyRuntimeCount(snapshot, filter)
 			}
 		}
 		return total
 	}
-	return dailyRuntimeCount(globalCache.DailyRuntime[date], filter)
+	return dailyRuntimeCount(cache.DailyRuntime[date], filter)
 }
 
 func dailyRuntimeCount(snapshot ProjectFileAggregate, filter AnalysisFilter) int {

@@ -19,8 +19,12 @@ type APIResponse struct {
 	Error   string      `json:"error,omitempty"`
 }
 
-// globalCache 全局缓存实例
+// globalCache 保留给 CLI 和旧测试路径使用；Web 请求优先使用 providerCachePool。
 var globalCache *CacheFile
+var providerCachePool = struct {
+	sync.RWMutex
+	items map[Provider]*CacheFile
+}{items: make(map[Provider]*CacheFile)}
 
 // DashboardData Dashboard 数据
 type DashboardData struct {
@@ -48,6 +52,7 @@ type DashboardData struct {
 	TaskPlanAnalysis *TaskPlanAnalysisData   `json:"task_plan_analysis,omitempty"`
 	ToolPerformance  *ToolPerformanceData    `json:"tool_performance,omitempty"`
 	Coverage         map[string]CoverageInfo `json:"coverage,omitempty"`
+	RuntimeCache     *CacheFile              `json:"-"`
 }
 
 type CoverageInfo struct {
@@ -119,6 +124,13 @@ func handleDataAPI(w http.ResponseWriter, r *http.Request) {
 
 // buildDataFromCache 从缓存数据构建 API 响应
 func buildDataFromCache(tf TimeFilter, preset string) (*DashboardData, error) {
+	return buildDataFromCacheWith(globalCache, tf, preset)
+}
+
+func buildDataFromCacheWith(cache *CacheFile, tf TimeFilter, preset string) (*DashboardData, error) {
+	if cache == nil {
+		return nil, fmt.Errorf("缓存未初始化")
+	}
 	startedAt := time.Now()
 
 	type historyResult struct {
@@ -141,9 +153,9 @@ func buildDataFromCache(tf TimeFilter, preset string) (*DashboardData, error) {
 
 	// 从缓存查询时间范围数据
 	queryStartedAt := time.Now()
-	cached := globalCache.QueryByTimeRange(start, end)
+	cached := cache.QueryByTimeRange(start, end)
 	if cached.Provider == "" {
-		cached.Provider = globalCache.Provider
+		cached.Provider = cache.Provider
 	}
 	queryDuration := time.Since(queryStartedAt)
 
@@ -208,6 +220,7 @@ func buildDataFromCache(tf TimeFilter, preset string) (*DashboardData, error) {
 		FileAnalysis:     fileAnalysis,
 		TaskPlanAnalysis: taskPlanAnalysis,
 		ToolPerformance:  toolPerformance,
+		RuntimeCache:     cache,
 	}
 	Debug("缓存数据组装完成",
 		"preset", preset,
@@ -577,25 +590,40 @@ func buildDashboardData(tf TimeFilter, preset string) (*DashboardData, string, e
 	return data, "parsing", nil
 }
 
+func buildDashboardDataWithCache(cache *CacheFile, tf TimeFilter, preset string) (*DashboardData, string, error) {
+	data, err := buildDataFromCacheWith(cache, tf, preset)
+	if err == nil {
+		return data, "cache", nil
+	}
+	return nil, "cache", err
+}
+
+func dashboardRuntimeCache(data *DashboardData) *CacheFile {
+	if data != nil && data.RuntimeCache != nil {
+		return data.RuntimeCache
+	}
+	return globalCache
+}
+
 type dashboardDataLoader func(TimeFilter, string) (*DashboardData, string, error)
 
 func loadDashboardDataWithFilter(filter AnalysisFilter, load dashboardDataLoader) (*DashboardData, string, error) {
 	if filter.ProviderSet && filter.Provider != "" {
-		providerSwitchMu.Lock()
-		defer providerSwitchMu.Unlock()
-		original := cfg
-		cfg.Provider = filter.Provider
+		config := cfg
+		config.Provider = filter.Provider
 		if filter.ProviderRaw != ProviderAuto && (filter.Provider == ProviderClaude || filter.Provider == ProviderCodex) {
-			cfg.DataDir = defaultDataDirForProvider(filter.Provider)
+			config.DataDir = defaultDataDirForProvider(filter.Provider)
 		}
-		defer func() {
-			cfg = original
-		}()
-		if globalCache == nil || globalCache.Provider != string(resolveProvider(cfg.Provider, cfg.DataDir)) {
-			if err := refreshGlobalCache(false); err != nil {
-				return nil, "cache", err
-			}
+		cache, err := providerCacheForConfig(config, false)
+		if err != nil {
+			return nil, "cache", err
 		}
+		data, source, err := buildDashboardDataWithCache(cache, filter.TimeFilter, filter.Preset)
+		if err != nil {
+			return nil, source, err
+		}
+		applyDashboardFilter(data, filter)
+		return data, source, nil
 	}
 	data, source, err := load(filter.TimeFilter, filter.Preset)
 	if err != nil {
@@ -603,6 +631,31 @@ func loadDashboardDataWithFilter(filter AnalysisFilter, load dashboardDataLoader
 	}
 	applyDashboardFilter(data, filter)
 	return data, source, nil
+}
+
+func providerCacheForConfig(config Config, force bool) (*CacheFile, error) {
+	provider := resolveProvider(config.Provider, config.DataDir)
+	config.Provider = provider
+	providerCachePool.RLock()
+	cached := providerCachePool.items[provider]
+	providerCachePool.RUnlock()
+	if cached != nil && !force && cached.Provider == string(provider) {
+		rulesHash, err := currentBashRulesHash()
+		if err != nil {
+			return nil, err
+		}
+		if cached.Version == CacheVersion && cached.BashRulesHash == rulesHash {
+			return cached, nil
+		}
+	}
+	cache, err := refreshCacheForConfig(config, force)
+	if err != nil {
+		return nil, err
+	}
+	providerCachePool.Lock()
+	providerCachePool.items[provider] = cache
+	providerCachePool.Unlock()
+	return cache, nil
 }
 
 func refreshGlobalCacheIfRulesChanged() error {
