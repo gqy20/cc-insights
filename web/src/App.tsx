@@ -41,6 +41,9 @@ function App() {
   const provider = dashboard.data?.provider
   const selectedProvider = provider ?? filters.provider ?? 'claude'
   const isInitialLoading = (overview.isLoading && !overview.data) || (dashboard.isLoading && !dashboard.data)
+  const skillInvocations = dashboard.data?.skill_analysis?.total_invocations ?? 0
+  const showSkillAnalysis = dashboard.isLoading || selectedProvider !== 'codex' || skillInvocations > 0
+  const showAgentAnalysis = dashboard.isLoading || selectedProvider !== 'codex' || hasNonMainAgentData(dashboard.data?.agent_analysis)
 
   return (
     <div className="min-h-screen bg-background" data-provider={selectedProvider}>
@@ -194,11 +197,15 @@ function App() {
             data={dashboard.data?.session_analysis}
             loading={dashboard.isLoading}
           />
-          <AgentChart data={dashboard.data?.agent_analysis} loading={dashboard.isLoading} />
+          {showAgentAnalysis && (
+            <AgentChart data={dashboard.data?.agent_analysis} loading={dashboard.isLoading} />
+          )}
           <TaskPlanChart data={dashboard.data?.task_plan_analysis} loading={dashboard.isLoading} />
           <EventHookChart data={dashboard.data?.event_analysis} loading={dashboard.isLoading} />
           <HookStatChart data={dashboard.data?.event_analysis} loading={dashboard.isLoading} />
-          <SkillAnalysisChart data={dashboard.data?.skill_analysis} loading={dashboard.isLoading} />
+          {showSkillAnalysis && (
+            <SkillAnalysisChart data={dashboard.data?.skill_analysis} loading={dashboard.isLoading} />
+          )}
           <div className="xl:col-span-2">
             <RuntimeToolsChart
               data={dashboard.data?.runtime_tools}
@@ -221,6 +228,12 @@ function providerLabel(provider: string): string {
   if (provider === 'codex') return 'Codex'
   if (provider === 'claude') return 'Claude Code'
   return provider
+}
+
+function hasNonMainAgentData(agentAnalysis: { agents?: Array<{ agent_id?: string; is_sidechain?: boolean }>; sidechain_tool_calls?: number } | undefined): boolean {
+  if (!agentAnalysis) return false
+  if ((agentAnalysis.sidechain_tool_calls ?? 0) > 0) return true
+  return (agentAnalysis.agents ?? []).some((agent) => agent.is_sidechain || (agent.agent_id && agent.agent_id !== 'main'))
 }
 
 function compact(n: number): string {

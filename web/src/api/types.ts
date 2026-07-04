@@ -260,9 +260,30 @@ export interface PlanFileStat {
   char_count?: number
   [key: string]: unknown
 }
+export interface PlanStepStatusStat {
+  status: string
+  count?: number
+  [key: string]: unknown
+}
+export interface PlanStepHotStat {
+  step: string
+  count?: number
+  last_status?: string
+  [key: string]: unknown
+}
+export interface PlanStepSummaryData {
+  update_events?: number
+  total_steps?: number
+  max_steps_per_update?: number
+  avg_steps_per_update?: number
+  by_status?: PlanStepStatusStat[]
+  top_steps?: PlanStepHotStat[]
+  [key: string]: unknown
+}
 export interface TaskPlanAnalysisData {
   plan_lifecycle?: Record<string, number>
   plan_files?: PlanFileStat[]
+  plan_steps?: PlanStepSummaryData
   [key: string]: unknown
 }
 export interface EventTypeStat {

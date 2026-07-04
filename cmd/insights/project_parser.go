@@ -70,6 +70,11 @@ func ParseProjectsConcurrentOnceFromDir(tf TimeFilter, dataDir string) (*Project
 	if provider == ProviderClaude {
 		recordInstalledSkillsLocked(aggregate, dataDir)
 	}
+	if provider == ProviderCodex {
+		if err := recordCodexSQLiteHooksLocked(aggregate, dataDir, tf); err != nil {
+			Warn("Codex hook SQLite 扫描失败", "error", err.Error())
+		}
+	}
 
 	// 后处理：生成输出格式数据
 	aggregate.finalize()

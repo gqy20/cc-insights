@@ -384,6 +384,11 @@ func (cb *CacheBuilder) buildProjectAggregateIncremental(dataDir string, previou
 	if provider == ProviderClaude {
 		recordInstalledSkillsLocked(aggregate, dataDir)
 	}
+	if provider == ProviderCodex {
+		if err := recordCodexSQLiteHooksLocked(aggregate, dataDir, TimeFilter{}); err != nil {
+			Warn("Codex hook SQLite 扫描失败", "error", err.Error())
+		}
+	}
 
 	aggregate.finalize()
 
