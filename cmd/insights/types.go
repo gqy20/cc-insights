@@ -869,6 +869,7 @@ type SerializedPlanModeAgg struct {
 	ReentryCount  int                               `json:"reentry_count"`
 	ExitReasons   map[string]int                    `json:"exit_reasons"`
 	PlanFilePaths map[string]*SerializedPlanFileAgg `json:"plan_file_paths"`
+	SessionIDs    []string                          `json:"session_ids,omitempty"`
 }
 
 // GoalStatusAgg 中间聚合：goal_status 事件

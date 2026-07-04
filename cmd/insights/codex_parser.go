@@ -24,6 +24,7 @@ type codexSessionState struct {
 	CurrentModel string
 	StartedAt    time.Time
 	PendingTools map[string]*codexPendingTool
+	ActivePlan   bool
 }
 
 type codexPendingTool struct {
@@ -146,6 +147,7 @@ func parseCodexResponseItem(raw json.RawMessage, state *codexSessionState, times
 		Role      string          `json:"role"`
 		Name      string          `json:"name"`
 		Arguments json.RawMessage `json:"arguments"`
+		Input     json.RawMessage `json:"input"`
 		CallID    string          `json:"call_id"`
 		Output    json.RawMessage `json:"output"`
 	}
@@ -161,7 +163,11 @@ func parseCodexResponseItem(raw json.RawMessage, state *codexSessionState, times
 			recordCodexUserMessage(agg, state, timestamp)
 		}
 	case "function_call", "custom_tool_call":
-		recordCodexToolCall(agg, state, payload.Name, payload.CallID, codexArgumentsRaw(payload.Arguments), timestamp)
+		input := codexToolInputRaw(payload.Arguments, payload.Input)
+		recordCodexToolCall(agg, state, payload.Name, payload.CallID, input, timestamp)
+		if payload.Name == "update_plan" {
+			recordCodexUpdatePlanEvent(agg, state, input, timestamp)
+		}
 	case "web_search_call":
 		recordCodexToolCall(agg, state, "web_search", payload.CallID, nil, timestamp)
 	case "tool_search_call":
@@ -188,6 +194,10 @@ func parseCodexEventMessage(raw json.RawMessage, state *codexSessionState, times
 		recordCodexSessionSeen(agg, state, timestamp)
 	case "user_message":
 		recordCodexUserMessage(agg, state, timestamp)
+	case "task_started":
+		recordCodexSessionSeen(agg, state, timestamp)
+	case "task_complete":
+		recordCodexTaskComplete(raw, state, timestamp, agg)
 	case "token_count":
 		recordCodexTokenCount(raw, state, timestamp, agg)
 	case "exec_command_end":
@@ -318,7 +328,9 @@ func recordCodexExecCommandEnd(raw json.RawMessage, state *codexSessionState, ti
 	pending := ensureCodexPendingForResult(state, payload.CallID, "exec_command", timestamp)
 	if len(pending.Input) == 0 && payload.Command != "" {
 		pending.Input = mustJSONRaw(map[string]string{"cmd": payload.Command})
-		recordStructuredToolInputLocked(agg, &pending.pendingToolCall)
+		for _, target := range codexAggregatesForCall(agg, pending.pendingToolCall) {
+			recordStructuredToolInputLocked(target, &pending.pendingToolCall)
+		}
 	}
 	failed := strings.EqualFold(payload.Status, "failed") || (payload.ExitCode != nil && *payload.ExitCode != 0)
 	classification := toolFailureClassification{}
@@ -337,6 +349,10 @@ func recordCodexPatchApplyEnd(raw json.RawMessage, state *codexSessionState, tim
 		Status  string `json:"status"`
 		Stdout  string `json:"stdout"`
 		Stderr  string `json:"stderr"`
+		Changes map[string]struct {
+			Type     string `json:"type"`
+			MovePath string `json:"move_path"`
+		} `json:"changes"`
 	}
 	if json.Unmarshal(raw, &payload) != nil {
 		return
@@ -351,6 +367,7 @@ func recordCodexPatchApplyEnd(raw json.RawMessage, state *codexSessionState, tim
 		classification = newFailureClassification("tool_error", "tool", "apply_patch_failed")
 	}
 	preview := previewString(strings.TrimSpace(payload.Stderr+"\n"+payload.Stdout), 240)
+	recordCodexPatchFileOperations(agg, pending, payload.Changes, failed)
 	recordCodexToolResult(agg, pending, classification, preview, timestamp, 0)
 	delete(state.PendingTools, payload.CallID)
 }
@@ -387,6 +404,30 @@ func recordCodexTurnAborted(raw json.RawMessage, state *codexSessionState, times
 	recordSessionTimestamp(stat, timestamp)
 	stat.Outcome = "aborted"
 	stat.StopReason = previewString(payload.Reason, 120)
+}
+
+func recordCodexTaskComplete(raw json.RawMessage, state *codexSessionState, timestamp time.Time, agg *ProjectAggregate) {
+	var payload struct {
+		DurationMs int64 `json:"duration_ms"`
+	}
+	if json.Unmarshal(raw, &payload) != nil {
+		return
+	}
+	recordCodexSessionSeen(agg, state, timestamp)
+	call := pendingToolCall{
+		Project:   codexProject(state),
+		SessionID: codexSessionID(state),
+		Timestamp: timestamp,
+	}
+	for _, target := range codexAggregatesForCall(agg, call) {
+		recordTurnDurationLocked(target, payload.DurationMs, 0, call.SessionID, call.Project, timestamp)
+	}
+	if state.ActivePlan {
+		for _, target := range codexAggregatesForCall(agg, call) {
+			recordPlanModeExitLocked(target, "task_complete", call.SessionID)
+		}
+		state.ActivePlan = false
+	}
 }
 
 func recordCodexTokenCount(raw json.RawMessage, state *codexSessionState, timestamp time.Time, agg *ProjectAggregate) {
@@ -487,6 +528,94 @@ func recordCodexToolResult(agg *ProjectAggregate, pending *codexPendingTool, cla
 	}
 }
 
+func recordCodexUpdatePlanEvent(agg *ProjectAggregate, state *codexSessionState, input json.RawMessage, timestamp time.Time) {
+	if len(input) == 0 {
+		return
+	}
+	var payload struct {
+		Plan []struct {
+			Step   string `json:"step"`
+			Status string `json:"status"`
+		} `json:"plan"`
+	}
+	if json.Unmarshal(input, &payload) != nil || len(payload.Plan) == 0 {
+		return
+	}
+	call := pendingToolCall{
+		Project:   codexProject(state),
+		SessionID: codexSessionID(state),
+		Timestamp: timestamp,
+	}
+	for _, target := range codexAggregatesForCall(agg, call) {
+		if state.ActivePlan {
+			recordPlanModeReentryLocked(target, call.SessionID)
+		} else {
+			recordPlanModeLocked(target, "", false, call.SessionID, call.Project)
+		}
+	}
+	state.ActivePlan = true
+}
+
+func recordCodexPatchFileOperations(agg *ProjectAggregate, pending *codexPendingTool, changes map[string]struct {
+	Type     string `json:"type"`
+	MovePath string `json:"move_path"`
+}, failed bool) {
+	if pending == nil || len(changes) == 0 {
+		return
+	}
+	for _, target := range codexAggregatesForCall(agg, pending.pendingToolCall) {
+		for path, change := range changes {
+			operation := codexPatchFileOperation(change.Type)
+			recordCodexFileOperation(target, operation, path, pending.Model, failed)
+			if change.MovePath != "" && change.MovePath != path {
+				recordCodexFileOperation(target, "Write", change.MovePath, pending.Model, failed)
+			}
+		}
+	}
+}
+
+func recordCodexFileOperation(agg *ProjectAggregate, operation, path, model string, failed bool) {
+	if strings.TrimSpace(path) == "" {
+		return
+	}
+	key := operation + "\x00" + path
+	if agg.FileOperationStats[key] == nil {
+		agg.FileOperationStats[key] = &FileOperationStat{Operation: operation, Path: path}
+	}
+	stat := agg.FileOperationStats[key]
+	stat.CallCount++
+	mStat := ensureFileOperationModelStat(agg, operation, path, model)
+	mStat.CallCount++
+	recordFileHotStatLocked(agg, operation, path)
+	if failed {
+		stat.FailureCount++
+		mStat.FailureCount++
+		updateFileHotResultLocked(agg, path, true, false)
+		if operation == "Edit" {
+			recordFileEditFailureLocked(agg, path, "tool", "apply_patch_failed")
+		}
+		return
+	}
+	stat.SuccessCount++
+	mStat.SuccessCount++
+	updateFileHotResultLocked(agg, path, false, false)
+}
+
+func codexPatchFileOperation(changeType string) string {
+	switch strings.ToLower(strings.TrimSpace(changeType)) {
+	case "add":
+		return "Write"
+	case "update":
+		return "Edit"
+	case "delete", "remove":
+		return "Write"
+	case "move", "rename":
+		return "Edit"
+	default:
+		return "Edit"
+	}
+}
+
 func recordCodexMissingTool(agg *ProjectAggregate, call pendingToolCall) {
 	for _, target := range codexAggregatesForCall(agg, call) {
 		addMissingToolResultLocked(target, call)
@@ -533,9 +662,20 @@ func codexArgumentsRaw(raw json.RawMessage) json.RawMessage {
 	}
 	var s string
 	if json.Unmarshal(raw, &s) == nil {
-		return json.RawMessage(s)
+		trimmed := strings.TrimSpace(s)
+		if json.Valid([]byte(trimmed)) {
+			return json.RawMessage(trimmed)
+		}
+		return mustJSONRaw(map[string]string{"input": s})
 	}
 	return raw
+}
+
+func codexToolInputRaw(arguments, input json.RawMessage) json.RawMessage {
+	if len(arguments) != 0 {
+		return codexArgumentsRaw(arguments)
+	}
+	return codexArgumentsRaw(input)
 }
 
 func codexWeakClassification(pending *codexPendingTool) toolFailureClassification {

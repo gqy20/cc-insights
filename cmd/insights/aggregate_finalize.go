@@ -314,6 +314,14 @@ func (agg *ProjectAggregate) finalizeEventAnalysis() {
 	analysis.QueuedCommands = agg.EventTypes["attachment:queued_command"]
 	analysis.PlanModeCount = agg.EventTypes["attachment:plan_mode"]
 	analysis.PlanModeExitCount = agg.EventTypes["attachment:plan_mode_exit"]
+	if agg.PlanModeAgg != nil {
+		if analysis.PlanModeCount == 0 {
+			analysis.PlanModeCount = agg.PlanModeAgg.EntryCount
+		}
+		if analysis.PlanModeExitCount == 0 {
+			analysis.PlanModeExitCount = agg.PlanModeAgg.ExitCount
+		}
+	}
 	if agg.BudgetSummary != nil {
 		budgetCopy := *agg.BudgetSummary
 		analysis.Budget = &budgetCopy

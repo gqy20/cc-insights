@@ -1169,6 +1169,10 @@ func serializePlanModeAgg(agg *PlanModeAgg) *SerializedPlanModeAgg {
 		ExitReasons:   make(map[string]int),
 		PlanFilePaths: make(map[string]*SerializedPlanFileAgg),
 	}
+	for sid := range agg.SessionSet {
+		out.SessionIDs = append(out.SessionIDs, sid)
+	}
+	sort.Strings(out.SessionIDs)
 	for r, c := range agg.ExitReasons {
 		out.ExitReasons[r] = c
 	}
@@ -1201,6 +1205,11 @@ func deserializePlanModeAgg(s *SerializedPlanModeAgg) *PlanModeAgg {
 	}
 	for r, c := range s.ExitReasons {
 		out.ExitReasons[r] = c
+	}
+	for _, sid := range s.SessionIDs {
+		if sid != "" {
+			out.SessionSet[sid] = true
+		}
 	}
 	for fp, spf := range s.PlanFilePaths {
 		out.PlanFilePaths[fp] = &PlanFileAgg{
