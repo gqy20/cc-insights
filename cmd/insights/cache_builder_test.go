@@ -646,3 +646,57 @@ func TestCacheBuildLockRemovesStaleLock(t *testing.T) {
 		t.Fatalf("stale lock still exists or stat failed: %v", err)
 	}
 }
+
+func TestRefreshCacheForConfigUsesFreshCacheDespiteLock(t *testing.T) {
+	tmpDir := t.TempDir()
+	dataDir := filepath.Join(tmpDir, "data")
+	projectPath := filepath.Join(dataDir, "projects", "demo", "session.jsonl")
+	if err := os.MkdirAll(filepath.Dir(projectPath), 0755); err != nil {
+		t.Fatalf("Create projects dir failed: %v", err)
+	}
+	if err := os.WriteFile(projectPath, []byte("{}\n"), 0644); err != nil {
+		t.Fatalf("Write project file failed: %v", err)
+	}
+	old := time.Now().Add(-1 * time.Hour)
+	if err := os.Chtimes(projectPath, old, old); err != nil {
+		t.Fatalf("Set project file time failed: %v", err)
+	}
+
+	config := defaultConfig()
+	config.CacheDir = filepath.Join(tmpDir, "cache")
+	config.DataDir = dataDir
+	config.Provider = ProviderClaude
+	cachePath := cachePathForConfig(config)
+	rulesHash, err := currentBashRulesHash()
+	if err != nil {
+		t.Fatalf("load rules hash failed: %v", err)
+	}
+	cache := &CacheFile{
+		Version:       CacheVersion,
+		Provider:      string(ProviderClaude),
+		LastUpdate:    time.Now(),
+		BashRulesHash: rulesHash,
+		TotalMessages: 7,
+	}
+	if err := cache.Save(cachePath); err != nil {
+		t.Fatalf("Save cache failed: %v", err)
+	}
+	if err := os.WriteFile(cachePath+".lock", []byte("pid=999999\n"), 0644); err != nil {
+		t.Fatalf("Write lock failed: %v", err)
+	}
+
+	startedAt := time.Now()
+	loaded, err := refreshCacheForConfig(config, false)
+	if err != nil {
+		t.Fatalf("refreshCacheForConfig() failed: %v", err)
+	}
+	if elapsed := time.Since(startedAt); elapsed > time.Second {
+		t.Fatalf("refreshCacheForConfig waited on lock for %s", elapsed)
+	}
+	if loaded.TotalMessages != 7 {
+		t.Fatalf("TotalMessages = %d, want 7", loaded.TotalMessages)
+	}
+	if _, err := os.Stat(cachePath + ".lock"); err != nil {
+		t.Fatalf("fresh-cache path should not touch lock file: %v", err)
+	}
+}

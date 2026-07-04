@@ -2,8 +2,8 @@
 @tailwind components;
 @tailwind utilities;
 
-/* 设计 token（§3.2 暖色 Claude 风）映射到 shadcn 标准变量：
-   赤陶强调 = --primary；卡片 = --card；画布 = --background。
+/* 设计 token 映射到 shadcn 标准变量：
+   默认沿用 Claude Code 暖色；Codex provider 用 OpenAI/Codex 风的中性蓝色强调。
    以 RGB 通道值存储，供 Tailwind alpha 语法与 Recharts 复用。 */
 @layer base {
   :root {
@@ -31,6 +31,28 @@
     --radius: 0.5rem;
   }
 
+  [data-provider='codex'] {
+    --background: 248 250 252;          /* #F8FAFC neutral-cool canvas */
+    --foreground: 15 23 42;             /* #0F172A slate-900 */
+    --card: 255 255 255;
+    --card-foreground: 15 23 42;
+    --popover: 255 255 255;
+    --popover-foreground: 15 23 42;
+    --primary: 37 99 235;               /* #2563EB Codex/OpenAI blue accent */
+    --primary-foreground: 255 255 255;
+    --secondary: 241 245 249;           /* #F1F5F9 */
+    --secondary-foreground: 15 23 42;
+    --muted: 241 245 249;
+    --muted-foreground: 71 85 105;      /* #475569 */
+    --accent: 219 234 254;              /* #DBEAFE */
+    --accent-foreground: 29 78 216;
+    --border: 226 232 240;              /* #E2E8F0 */
+    --input: 226 232 240;
+    --ring: 37 99 235;
+    --success: 22 163 74;
+    --warning: 202 138 4;
+  }
+
   .dark {
     --background: 26 25 23;             /* #1A1917 */
     --foreground: 245 243 238;
@@ -53,6 +75,28 @@
     --ring: 224 133 96;
     --success: 106 158 121;
     --warning: 206 150 70;
+  }
+
+  .dark [data-provider='codex'] {
+    --background: 10 15 28;             /* #0A0F1C */
+    --foreground: 226 232 240;
+    --card: 15 23 42;                   /* #0F172A */
+    --card-foreground: 226 232 240;
+    --popover: 15 23 42;
+    --popover-foreground: 226 232 240;
+    --primary: 96 165 250;              /* #60A5FA */
+    --primary-foreground: 10 15 28;
+    --secondary: 30 41 59;              /* #1E293B */
+    --secondary-foreground: 226 232 240;
+    --muted: 30 41 59;
+    --muted-foreground: 148 163 184;
+    --accent: 30 58 138;
+    --accent-foreground: 191 219 254;
+    --border: 51 65 85;
+    --input: 51 65 85;
+    --ring: 96 165 250;
+    --success: 74 222 128;
+    --warning: 250 204 21;
   }
 }
 

@@ -21,8 +21,15 @@ type APIResponse struct {
 
 var providerCachePool = struct {
 	sync.RWMutex
-	items map[string]*CacheFile
-}{items: make(map[string]*CacheFile)}
+	items   map[string]*CacheFile
+	loading map[string]*providerCacheLoad
+}{items: make(map[string]*CacheFile), loading: make(map[string]*providerCacheLoad)}
+
+type providerCacheLoad struct {
+	done  chan struct{}
+	cache *CacheFile
+	err   error
+}
 
 // DashboardData Dashboard 数据
 type DashboardData struct {
@@ -623,23 +630,47 @@ func providerCacheForConfig(config Config, force bool) (*CacheFile, error) {
 	providerCachePool.RLock()
 	cached := providerCachePool.items[key]
 	providerCachePool.RUnlock()
-	if cached != nil && !force && cached.Provider == string(provider) {
-		rulesHash, err := currentBashRulesHash()
-		if err != nil {
-			return nil, err
-		}
-		if cached.Version == CacheVersion && cached.BashRulesHash == rulesHash {
-			return cached, nil
-		}
+	if ok, err := reusableProviderCache(cached, provider, force); ok || err != nil {
+		return cached, err
 	}
-	cache, err := refreshCacheForConfig(config, force)
-	if err != nil {
-		return nil, err
-	}
+
 	providerCachePool.Lock()
-	providerCachePool.items[key] = cache
+	cached = providerCachePool.items[key]
+	if ok, err := reusableProviderCache(cached, provider, force); ok || err != nil {
+		providerCachePool.Unlock()
+		return cached, err
+	}
+	if loading := providerCachePool.loading[key]; loading != nil {
+		providerCachePool.Unlock()
+		<-loading.done
+		return loading.cache, loading.err
+	}
+	loading := &providerCacheLoad{done: make(chan struct{})}
+	providerCachePool.loading[key] = loading
 	providerCachePool.Unlock()
-	return cache, nil
+
+	cache, err := refreshCacheForConfig(config, force)
+	providerCachePool.Lock()
+	if err == nil {
+		providerCachePool.items[key] = cache
+	}
+	loading.cache = cache
+	loading.err = err
+	delete(providerCachePool.loading, key)
+	close(loading.done)
+	providerCachePool.Unlock()
+	return cache, err
+}
+
+func reusableProviderCache(cache *CacheFile, provider Provider, force bool) (bool, error) {
+	if cache == nil || force || cache.Provider != string(provider) {
+		return false, nil
+	}
+	rulesHash, err := currentBashRulesHash()
+	if err != nil {
+		return false, err
+	}
+	return cache.Version == CacheVersion && cache.BashRulesHash == rulesHash, nil
 }
 
 func providerCachePoolKey(config Config) string {

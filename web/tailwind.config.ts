@@ -1,8 +1,8 @@
 import type { Config } from 'tailwindcss'
 import animate from 'tailwindcss-animate'
 
-// 设计 token 走 CSS 变量（见 globals.css），亮/暗双套。
-// 暖色（claude.ai 风）映射到 shadcn 标准变量名，组件默认即为暖色。
+// 设计 token 走 CSS 变量（见 globals.css），按亮/暗和 provider 覆盖。
+// Claude Code 默认暖色，Codex provider 使用中性蓝色强调。
 export default {
   darkMode: 'class',
   content: ['./index.html', './src/**/*.{ts,tsx}'],

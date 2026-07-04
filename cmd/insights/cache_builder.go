@@ -220,17 +220,32 @@ func refreshCacheForConfig(config Config, force bool) (*CacheFile, error) {
 	if err := os.MkdirAll(filepath.Dir(cachePath), 0755); err != nil {
 		return nil, fmt.Errorf("创建 provider 缓存目录失败: %w", err)
 	}
-	lock, err := acquireCacheBuildLock(cachePath)
-	if err != nil {
-		return nil, err
-	}
-	defer lock.release()
-
 	builder := &CacheBuilder{
 		CachePath: cachePath,
 		DataDir:   config.DataDir,
 		Provider:  config.Provider,
 	}
+
+	if !force && !builder.NeedsRebuild() {
+		Info("使用现有缓存", "cache_path", cachePath)
+		cache, err := LoadCacheFile(cachePath)
+		if err != nil {
+			Error("加载缓存失败", "error", err.Error())
+			return nil, fmt.Errorf("加载缓存失败: %w", err)
+		}
+		Info("缓存已加载",
+			"provider", cache.Provider,
+			"messages", cache.TotalMessages,
+			"sessions", cache.TotalSessions,
+		)
+		return cache, nil
+	}
+
+	lock, err := acquireCacheBuildLock(cachePath)
+	if err != nil {
+		return nil, err
+	}
+	defer lock.release()
 
 	if force || builder.NeedsRebuild() {
 		Info("正在构建缓存...", "cache_path", cachePath, "force", force)
