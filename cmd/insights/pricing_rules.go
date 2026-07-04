@@ -31,19 +31,25 @@ type pricingRulesFile struct {
 // pricingTier 单个模型（或 default/prefix）的单价，单位为 currency / 百万 token。
 // 字段用 *float64 以区分「未设置」（触发缺省派生）与「显式为 0」（如限时免费缓存读）。
 type pricingTier struct {
-	Input         *float64 `yaml:"input"`
-	Output        *float64 `yaml:"output"`
-	CacheRead     *float64 `yaml:"cache_read"`
-	CacheCreation *float64 `yaml:"cache_creation"`
-	Rationale     string   `yaml:"rationale"`
+	Input              *float64 `yaml:"input"`
+	Output             *float64 `yaml:"output"`
+	CacheRead          *float64 `yaml:"cache_read"`
+	CacheCreation      *float64 `yaml:"cache_creation"`
+	Currency           string   `yaml:"currency"`
+	CacheReadInInput   *bool    `yaml:"cache_read_in_input"`
+	CacheCreationPrice *bool    `yaml:"cache_creation_price"`
+	Rationale          string   `yaml:"rationale"`
 }
 
 // resolvedPrice 匹配并应用缺省派生后的确定单价（currency / 百万 token）。
 type resolvedPrice struct {
-	Input         float64
-	Output        float64
-	CacheRead     float64
-	CacheCreation float64
+	Input              float64
+	Output             float64
+	CacheRead          float64
+	CacheCreation      float64
+	Currency           string
+	CacheReadInInput   bool
+	CacheCreationPrice bool
 }
 
 type prefixEntry struct {
@@ -209,7 +215,22 @@ func (r *pricingRulesSet) matchPrice(model string) (resolvedPrice, bool) {
 	out := valf(tier.Output, valf(r.Default.Output, 20.0))
 	cr := valf(tier.CacheRead, in*0.1)
 	cc := valf(tier.CacheCreation, in*1.25)
-	return resolvedPrice{Input: in, Output: out, CacheRead: cr, CacheCreation: cc}, true
+	currency := strings.TrimSpace(tier.Currency)
+	if currency == "" {
+		currency = strings.TrimSpace(r.Default.Currency)
+	}
+	if currency == "" {
+		currency = r.Currency
+	}
+	return resolvedPrice{
+		Input:              in,
+		Output:             out,
+		CacheRead:          cr,
+		CacheCreation:      cc,
+		Currency:           strings.ToUpper(currency),
+		CacheReadInInput:   valb(tier.CacheReadInInput, valb(r.Default.CacheReadInInput, false)),
+		CacheCreationPrice: valb(tier.CacheCreationPrice, valb(r.Default.CacheCreationPrice, true)),
+	}, true
 }
 
 // pricingCurrency 返回当前规则集的货币（默认 CNY）；加载失败时回退 CNY。
@@ -223,6 +244,14 @@ func pricingCurrency() string {
 
 // valf 解引用可选 float：p 非 nil 取 *p，否则取 fallback。
 func valf(p *float64, fallback float64) float64 {
+	if p != nil {
+		return *p
+	}
+	return fallback
+}
+
+// valb 解引用可选 bool：p 非 nil 取 *p，否则取 fallback。
+func valb(p *bool, fallback bool) bool {
 	if p != nil {
 		return *p
 	}

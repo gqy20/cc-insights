@@ -421,6 +421,7 @@ func recordCodexTokenCount(raw json.RawMessage, state *codexSessionState, timest
 		recordModelUsageLocked(target, model, tokens)
 		recordModelTokenBreakdownLocked(target, model, payload.Info.LastTokenUsage.InputTokens, payload.Info.LastTokenUsage.CachedInputTokens, payload.Info.LastTokenUsage.OutputTokens, payload.Info.LastTokenUsage.ReasoningOutputTokens)
 		recordCodexSessionTokenUsage(target, sessionID, projectName, model, timestamp, payload.Info.LastTokenUsage.InputTokens, payload.Info.LastTokenUsage.OutputTokens+payload.Info.LastTokenUsage.ReasoningOutputTokens, tokens)
+		recordCodexCostUsageLocked(target, sessionID, projectName, model, payload.Info.LastTokenUsage.InputTokens, payload.Info.LastTokenUsage.CachedInputTokens, payload.Info.LastTokenUsage.OutputTokens+payload.Info.LastTokenUsage.ReasoningOutputTokens, tokens)
 	}
 	if agg.DailyModelCounts[dateKey] == nil {
 		agg.DailyModelCounts[dateKey] = make(map[string]int)
@@ -430,6 +431,34 @@ func recordCodexTokenCount(raw json.RawMessage, state *codexSessionState, timest
 		agg.DailyModelTokens[dateKey] = make(map[string]int)
 	}
 	agg.DailyModelTokens[dateKey][model] += tokens
+}
+
+func recordCodexCostUsageLocked(agg *ProjectAggregate, sessionID, projectName, model string, inputTokens, cachedInputTokens, outputTokens, totalTokens int) {
+	modelStat := ensureCostModelStat(agg, model)
+	modelStat.RequestCount++
+	modelStat.InputTokens += inputTokens
+	modelStat.OutputTokens += outputTokens
+	modelStat.CacheReadTokens += cachedInputTokens
+	modelStat.TotalTokens += totalTokens
+
+	projectStat := ensureCostProjectStat(agg, projectName)
+	projectStat.RequestCount++
+	projectStat.InputTokens += inputTokens
+	projectStat.OutputTokens += outputTokens
+	projectStat.TotalTokens += totalTokens
+
+	if sessionID != "" {
+		sessionStat := ensureCostSessionStat(agg, sessionID, projectName)
+		sessionStat.RequestCount++
+		sessionStat.InputTokens += inputTokens
+		sessionStat.OutputTokens += outputTokens
+		sessionStat.TotalTokens += totalTokens
+		if sessionStat.Model == "" {
+			sessionStat.Model = model
+		} else if sessionStat.Model != model {
+			sessionStat.Model = "mixed"
+		}
+	}
 }
 
 func recordCodexSessionTokenUsage(agg *ProjectAggregate, sessionID, projectName, model string, timestamp time.Time, inputTokens, outputTokens, totalTokens int) {

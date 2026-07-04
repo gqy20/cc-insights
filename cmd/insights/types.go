@@ -549,6 +549,11 @@ type TokenUsageBreakdown struct {
 	CacheReadCostCNY         float64 `json:"cache_read_cost_cny"`
 	CacheCreationCostCNY     float64 `json:"cache_creation_cost_cny"`
 	CostCNY                  float64 `json:"cost_cny"`
+	InputCostUSD             float64 `json:"input_cost_usd,omitempty"`
+	OutputCostUSD            float64 `json:"output_cost_usd,omitempty"`
+	CacheReadCostUSD         float64 `json:"cache_read_cost_usd,omitempty"`
+	CacheCreationCostUSD     float64 `json:"cache_creation_cost_usd,omitempty"`
+	CostUSD                  float64 `json:"cost_usd,omitempty"`
 	// 单请求 round-trip（assistant 行 timestamp 与上一条 message 行 timestamp 之差）
 	// 汇总，反映端到端响应速度。不含首 token 延迟粒度。
 	TotalRoundTripMs   int64   `json:"total_round_trip_ms,omitempty"`
@@ -573,6 +578,11 @@ type CostModelStat struct {
 	CacheReadCostCNY      float64 `json:"cache_read_cost_cny"`
 	CacheCreationCostCNY  float64 `json:"cache_creation_cost_cny"`
 	CostCNY               float64 `json:"cost_cny"`
+	InputCostUSD          float64 `json:"input_cost_usd,omitempty"`
+	OutputCostUSD         float64 `json:"output_cost_usd,omitempty"`
+	CacheReadCostUSD      float64 `json:"cache_read_cost_usd,omitempty"`
+	CacheCreationCostUSD  float64 `json:"cache_creation_cost_usd,omitempty"`
+	CostUSD               float64 `json:"cost_usd,omitempty"`
 	// 单请求 round-trip 累计耗时（ms），用于派生 AvgRoundTripMs / OutputTokensPerSec。
 	TotalRoundTripMs   int64   `json:"total_round_trip_ms,omitempty"`
 	AvgRoundTripMs     float64 `json:"avg_round_trip_ms,omitempty"`
@@ -614,6 +624,7 @@ type CostAgentStat struct {
 
 // CostAnalysisData token/成本分析结果
 type CostAnalysisData struct {
+	Currency       string               `json:"currency,omitempty"`
 	Totals         TokenUsageBreakdown  `json:"totals"`
 	ByModel        []CostModelStat      `json:"by_model"`
 	ByProject      []CostProjectStat    `json:"by_project"`

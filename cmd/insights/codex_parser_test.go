@@ -24,8 +24,18 @@ func TestParseCodexSessionFileAggregate(t *testing.T) {
 	}
 	if model := agg.ModelUsage["gpt-5.5"]; model == nil || model.Count != 1 || model.Tokens != 42 {
 		t.Fatalf("ModelUsage[gpt-5.5] = %+v, want count=1 tokens=42", model)
-	} else if model.InputTokens != 20 || model.OutputTokens != 10 || model.ReasoningOutputTokens != 12 {
-		t.Fatalf("ModelUsage token breakdown = %+v, want input=20 output=10 reasoning=12", model)
+	} else if model.InputTokens != 20 || model.CachedInputTokens != 8 || model.OutputTokens != 10 || model.ReasoningOutputTokens != 12 {
+		t.Fatalf("ModelUsage token breakdown = %+v, want input=20 cached=8 output=10 reasoning=12", model)
+	}
+	if agg.CostAnalysis == nil || len(agg.CostAnalysis.ByModel) == 0 {
+		t.Fatalf("CostAnalysis missing: %+v", agg.CostAnalysis)
+	}
+	cost := agg.CostAnalysis.ByModel[0]
+	if cost.CostUSD < 0.000723 || cost.CostUSD > 0.000725 {
+		t.Fatalf("Codex CostUSD = %.9f, want about 0.000724", cost.CostUSD)
+	}
+	if cost.InputCostUSD < 0.000059 || cost.InputCostUSD > 0.000061 {
+		t.Fatalf("Codex InputCostUSD = %.9f, want uncached input only", cost.InputCostUSD)
 	}
 
 	execStat := agg.ToolStats["exec_command"]
@@ -87,7 +97,7 @@ func writeCodexSessionFixture(t *testing.T, dataDir string) string {
 {"timestamp":"2026-07-03T10:00:08Z","type":"response_item","payload":{"type":"function_call","name":"exec_command","call_id":"call-missing","arguments":"{\"cmd\":\"pwd\"}"}}
 {"timestamp":"2026-07-03T10:00:09Z","type":"response_item","payload":{"type":"custom_tool_call","name":"apply_patch","call_id":"call-patch","input":"*** Begin Patch"}}
 {"timestamp":"2026-07-03T10:00:10Z","type":"event_msg","payload":{"type":"patch_apply_end","call_id":"call-patch","success":true,"status":"success","stdout":"done","stderr":""}}
-{"timestamp":"2026-07-03T10:00:11Z","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":20,"output_tokens":10,"reasoning_output_tokens":12,"total_tokens":42},"total_token_usage":{"total_tokens":999}}}}
+{"timestamp":"2026-07-03T10:00:11Z","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":20,"cached_input_tokens":8,"output_tokens":10,"reasoning_output_tokens":12,"total_tokens":42},"total_token_usage":{"total_tokens":999}}}}
 `
 	if err := os.WriteFile(sessionPath, []byte(content), 0644); err != nil {
 		t.Fatalf("Write session fixture failed: %v", err)

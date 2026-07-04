@@ -205,8 +205,14 @@ export interface CostByModel {
   cache_read_cost_cny?: number
   cache_creation_cost_cny?: number
   cost_cny?: number
+  input_cost_usd?: number
+  output_cost_usd?: number
+  cache_read_cost_usd?: number
+  cache_creation_cost_usd?: number
+  cost_usd?: number
 }
 export interface CostAnalysisData {
+  currency?: string
   totals?: Record<string, number>
   by_model?: CostByModel[]
   by_project?: CostByModel[]
@@ -356,6 +362,7 @@ export interface TimelineData {
 // 前端 filter（驱动所有 Query，见 hooks/useFilters.ts）
 export interface Filters {
   preset: string
+  provider?: 'claude' | 'codex' | 'auto'
   start?: string
   end?: string
   project?: string

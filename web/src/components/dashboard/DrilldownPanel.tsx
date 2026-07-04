@@ -63,7 +63,7 @@ const KINDS: Record<DetailKind, KindCfg> = {
               Number(r.input_tokens ?? 0) + Number(r.output_tokens ?? 0),
           ),
       },
-      { header: '成本', cell: (r) => `¥${Number(r.cost_cny ?? 0).toFixed(2)}` },
+      { header: '成本', cell: (r) => formatMoney(Number(r.cost_usd ?? r.cost_cny ?? 0), r.cost_usd ? 'USD' : 'CNY') },
     ],
   },
   sessions: {
@@ -85,6 +85,10 @@ const KINDS: Record<DetailKind, KindCfg> = {
       { header: '错误率', cell: (r) => `${Number(r.error_rate ?? 0).toFixed(2)}%` },
     ],
   },
+}
+
+function formatMoney(value: number, currency: 'CNY' | 'USD'): string {
+  return `${currency === 'USD' ? '$' : '¥'}${value.toFixed(2)}`
 }
 
 export function DrilldownPanel() {

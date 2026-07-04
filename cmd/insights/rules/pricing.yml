@@ -17,6 +17,69 @@ default:
   rationale: 匹配不到任何模型时的兜底价，取 GLM-5-Turbo 级别保守值
 
 models:
+  gpt-5.5:
+    currency: USD
+    input: 5.0
+    output: 30.0
+    cache_read: 0.5
+    cache_creation: 0.0
+    cache_read_in_input: true
+    cache_creation_price: false
+    rationale: OpenAI API Standard short-context price, USD per 1M tokens, checked 2026-07-04. Codex/OpenAI cached input is a subset of input_tokens, so input cost uses input minus cached input.
+  gpt-5.5-long:
+    currency: USD
+    input: 10.0
+    output: 45.0
+    cache_read: 1.0
+    cache_creation: 0.0
+    cache_read_in_input: true
+    cache_creation_price: false
+    rationale: OpenAI API Standard long-context price, USD per 1M tokens. Kept as an explicit override because Codex logs do not always expose enough context-window routing data.
+  gpt-5.4:
+    currency: USD
+    input: 2.5
+    output: 15.0
+    cache_read: 0.25
+    cache_creation: 0.0
+    cache_read_in_input: true
+    cache_creation_price: false
+    rationale: OpenAI API Standard short-context price, USD per 1M tokens, checked 2026-07-04.
+  gpt-5.4-mini:
+    currency: USD
+    input: 0.75
+    output: 4.5
+    cache_read: 0.075
+    cache_creation: 0.0
+    cache_read_in_input: true
+    cache_creation_price: false
+    rationale: OpenAI API Standard price, USD per 1M tokens, checked 2026-07-04.
+  gpt-5.4-nano:
+    currency: USD
+    input: 0.2
+    output: 1.25
+    cache_read: 0.02
+    cache_creation: 0.0
+    cache_read_in_input: true
+    cache_creation_price: false
+    rationale: OpenAI API Standard price, USD per 1M tokens, checked 2026-07-04.
+  gpt-5.3-codex:
+    currency: USD
+    input: 1.75
+    output: 14.0
+    cache_read: 0.175
+    cache_creation: 0.0
+    cache_read_in_input: true
+    cache_creation_price: false
+    rationale: OpenAI API Codex Standard price, USD per 1M tokens, checked 2026-07-04.
+  gpt-5.3-codex-priority:
+    currency: USD
+    input: 3.5
+    output: 28.0
+    cache_read: 0.35
+    cache_creation: 0.0
+    cache_read_in_input: true
+    cache_creation_price: false
+    rationale: OpenAI API Codex Priority price, USD per 1M tokens. Use via custom pricing override if logs identify priority routing.
   glm-5v-turbo:
     input: 5.0
     output: 22.0
@@ -59,6 +122,46 @@ models:
 
 # 前缀匹配（model 字段以 key 开头即命中，按 key 长度降序）；用于兜住带后缀的变体
 prefixes:
+  gpt-5.5:
+    currency: USD
+    input: 5.0
+    output: 30.0
+    cache_read: 0.5
+    cache_creation: 0.0
+    cache_read_in_input: true
+    cache_creation_price: false
+  gpt-5.4-mini:
+    currency: USD
+    input: 0.75
+    output: 4.5
+    cache_read: 0.075
+    cache_creation: 0.0
+    cache_read_in_input: true
+    cache_creation_price: false
+  gpt-5.4-nano:
+    currency: USD
+    input: 0.2
+    output: 1.25
+    cache_read: 0.02
+    cache_creation: 0.0
+    cache_read_in_input: true
+    cache_creation_price: false
+  gpt-5.4:
+    currency: USD
+    input: 2.5
+    output: 15.0
+    cache_read: 0.25
+    cache_creation: 0.0
+    cache_read_in_input: true
+    cache_creation_price: false
+  gpt-5.3-codex:
+    currency: USD
+    input: 1.75
+    output: 14.0
+    cache_read: 0.175
+    cache_creation: 0.0
+    cache_read_in_input: true
+    cache_creation_price: false
   glm-5.2:                 # 兜住历史里出现的 glm-5.2[1m] 等后缀变体
     input: 8.0
     output: 28.0

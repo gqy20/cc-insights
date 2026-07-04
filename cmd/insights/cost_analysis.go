@@ -1,6 +1,9 @@
 package main
 
-import "sort"
+import (
+	"sort"
+	"strings"
+)
 
 // roundTripMs 是本次 assistant 响应与上一条 message 行的时间差（ms）。
 // <=0 表示无法测量（该 session 首请求、或间隔异常被排除），此时不累加耗时。
@@ -169,8 +172,11 @@ func (agg *ProjectAggregate) finalizeCostAnalysis() {
 		BudgetTimeline: append([]BudgetTimelineItem(nil), agg.BudgetTimeline...),
 	}
 
-	// 定价规则加载失败时跳过成本计算（CostCNY 保持 0），不影响其他统计。
+	// 定价规则加载失败时跳过成本计算（cost 保持 0），不影响其他统计。
 	rules, _ := currentPricingRules()
+	if rules != nil {
+		analysis.Currency = rules.Currency
+	}
 
 	for _, stat := range agg.CostModelStats {
 		statCopy := *stat
@@ -186,16 +192,48 @@ func (agg *ProjectAggregate) finalizeCostAnalysis() {
 			statCopy.CacheReadRatio = float64(statCopy.CacheReadTokens) / float64(inputTotal) * 100
 		}
 		if price, ok := rules.matchPrice(statCopy.Model); ok {
-			statCopy.InputCostCNY = float64(statCopy.InputTokens) * price.Input / 1e6
-			statCopy.OutputCostCNY = float64(statCopy.OutputTokens) * price.Output / 1e6
-			statCopy.CacheReadCostCNY = float64(statCopy.CacheReadTokens) * price.CacheRead / 1e6
-			statCopy.CacheCreationCostCNY = float64(statCopy.CacheCreationTokens) * price.CacheCreation / 1e6
-			statCopy.CostCNY = statCopy.InputCostCNY + statCopy.OutputCostCNY + statCopy.CacheReadCostCNY + statCopy.CacheCreationCostCNY
-			analysis.Totals.InputCostCNY += statCopy.InputCostCNY
-			analysis.Totals.OutputCostCNY += statCopy.OutputCostCNY
-			analysis.Totals.CacheReadCostCNY += statCopy.CacheReadCostCNY
-			analysis.Totals.CacheCreationCostCNY += statCopy.CacheCreationCostCNY
-			analysis.Totals.CostCNY += statCopy.CostCNY
+			inputTokensForCost := statCopy.InputTokens
+			if price.CacheReadInInput {
+				inputTokensForCost -= statCopy.CacheReadTokens
+			}
+			if inputTokensForCost < 0 {
+				inputTokensForCost = 0
+			}
+			cacheCreationPrice := price.CacheCreation
+			if !price.CacheCreationPrice {
+				cacheCreationPrice = 0
+			}
+			inputCost := float64(inputTokensForCost) * price.Input / 1e6
+			outputCost := float64(statCopy.OutputTokens) * price.Output / 1e6
+			cacheReadCost := float64(statCopy.CacheReadTokens) * price.CacheRead / 1e6
+			cacheCreationCost := float64(statCopy.CacheCreationTokens) * cacheCreationPrice / 1e6
+			totalCost := inputCost + outputCost + cacheReadCost + cacheCreationCost
+			if strings.EqualFold(price.Currency, "USD") {
+				statCopy.InputCostUSD = inputCost
+				statCopy.OutputCostUSD = outputCost
+				statCopy.CacheReadCostUSD = cacheReadCost
+				statCopy.CacheCreationCostUSD = cacheCreationCost
+				statCopy.CostUSD = totalCost
+				analysis.Totals.InputCostUSD += statCopy.InputCostUSD
+				analysis.Totals.OutputCostUSD += statCopy.OutputCostUSD
+				analysis.Totals.CacheReadCostUSD += statCopy.CacheReadCostUSD
+				analysis.Totals.CacheCreationCostUSD += statCopy.CacheCreationCostUSD
+				analysis.Totals.CostUSD += statCopy.CostUSD
+				if analysis.Currency == "" || analysis.Currency == rules.Currency {
+					analysis.Currency = "USD"
+				}
+			} else {
+				statCopy.InputCostCNY = inputCost
+				statCopy.OutputCostCNY = outputCost
+				statCopy.CacheReadCostCNY = cacheReadCost
+				statCopy.CacheCreationCostCNY = cacheCreationCost
+				statCopy.CostCNY = totalCost
+				analysis.Totals.InputCostCNY += statCopy.InputCostCNY
+				analysis.Totals.OutputCostCNY += statCopy.OutputCostCNY
+				analysis.Totals.CacheReadCostCNY += statCopy.CacheReadCostCNY
+				analysis.Totals.CacheCreationCostCNY += statCopy.CacheCreationCostCNY
+				analysis.Totals.CostCNY += statCopy.CostCNY
+			}
 		}
 		analysis.Totals.InputTokens += statCopy.InputTokens
 		analysis.Totals.OutputTokens += statCopy.OutputTokens
