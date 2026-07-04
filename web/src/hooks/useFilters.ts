@@ -12,7 +12,7 @@ function readFromURL(): Filters {
   const raw = p.get('preset')
   const preset = raw && (PRESETS as readonly string[]).includes(raw) ? raw : '30d'
   const rawProvider = p.get('provider')
-  const provider = rawProvider && (PROVIDERS as readonly string[]).includes(rawProvider) ? rawProvider as Filters['provider'] : undefined
+  const provider = rawProvider && (PROVIDERS as readonly string[]).includes(rawProvider) ? rawProvider as Filters['provider'] : 'auto'
   return {
     preset,
     provider,

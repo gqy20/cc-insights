@@ -26,24 +26,26 @@ type interactiveAPIResponse struct {
 }
 
 type AnalysisFilter struct {
-	TimeFilter TimeFilter
-	Preset     string
-	Provider   Provider
-	Start      string
-	End        string
-	Limit      int
-	Samples    int
-	Detail     bool
-	ID         string
-	Project    string
-	Session    string
-	Tool       string
-	Model      string
-	Category   string
-	Reason     string
-	Severity   string
-	Target     string
-	Family     string
+	TimeFilter  TimeFilter
+	Preset      string
+	Provider    Provider
+	ProviderRaw Provider
+	ProviderSet bool
+	Start       string
+	End         string
+	Limit       int
+	Samples     int
+	Detail      bool
+	ID          string
+	Project     string
+	Session     string
+	Tool        string
+	Model       string
+	Category    string
+	Reason      string
+	Severity    string
+	Target      string
+	Family      string
 }
 
 var providerSwitchMu sync.Mutex
@@ -283,10 +285,12 @@ func parseAnalysisFilter(r *http.Request) (AnalysisFilter, error) {
 		Category: strings.TrimSpace(q.Get("category")),
 		Reason:   strings.TrimSpace(q.Get("reason")),
 	}
+	rawProvider := Provider("")
 	if provider != "" {
 		if err := opts.Config.Provider.Set(provider); err != nil {
 			return AnalysisFilter{}, err
 		}
+		rawProvider = opts.Config.Provider
 		if opts.Config.Provider == ProviderCodex && cfg.Provider != ProviderCodex {
 			opts.Config.DataDir = defaultDataDirForProvider(ProviderCodex)
 		} else if opts.Config.Provider == ProviderClaude && cfg.Provider != ProviderClaude {
@@ -299,24 +303,26 @@ func parseAnalysisFilter(r *http.Request) (AnalysisFilter, error) {
 		return AnalysisFilter{}, err
 	}
 	return AnalysisFilter{
-		TimeFilter: tf,
-		Preset:     normalizedPreset,
-		Provider:   opts.Config.Provider,
-		Start:      start,
-		End:        end,
-		Limit:      opts.Limit,
-		Samples:    opts.Samples,
-		ID:         opts.ID,
-		Detail:     opts.Detail,
-		Project:    opts.Project,
-		Session:    opts.Session,
-		Tool:       opts.Tool,
-		Model:      opts.Model,
-		Category:   opts.Category,
-		Reason:     opts.Reason,
-		Severity:   strings.TrimSpace(q.Get("severity")),
-		Target:     strings.TrimSpace(q.Get("target")),
-		Family:     strings.TrimSpace(q.Get("family")),
+		TimeFilter:  tf,
+		Preset:      normalizedPreset,
+		Provider:    opts.Config.Provider,
+		ProviderRaw: rawProvider,
+		ProviderSet: provider != "",
+		Start:       start,
+		End:         end,
+		Limit:       opts.Limit,
+		Samples:     opts.Samples,
+		ID:          opts.ID,
+		Detail:      opts.Detail,
+		Project:     opts.Project,
+		Session:     opts.Session,
+		Tool:        opts.Tool,
+		Model:       opts.Model,
+		Category:    opts.Category,
+		Reason:      opts.Reason,
+		Severity:    strings.TrimSpace(q.Get("severity")),
+		Target:      strings.TrimSpace(q.Get("target")),
+		Family:      strings.TrimSpace(q.Get("family")),
 	}, nil
 }
 

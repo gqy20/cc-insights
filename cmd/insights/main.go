@@ -48,10 +48,7 @@ func runWebServer() error {
 		"listen_addr", cfg.ListenAddr,
 	)
 
-	// 初始化缓存
-	if err := initializeCache(); err != nil {
-		Warn("缓存初始化失败，将使用实时解析模式", "error", err.Error())
-	}
+	Info("缓存将在首次 API 请求时按 provider 初始化")
 
 	// 路由
 	mux := http.NewServeMux()

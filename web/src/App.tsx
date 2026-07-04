@@ -39,6 +39,8 @@ function App() {
   const s = overview.data?.summary
   const trend = overview.data?.trend
   const provider = dashboard.data?.provider
+  const selectedProvider = filters.provider ?? provider
+  const isRefreshing = overview.isFetching || dashboard.isFetching
 
   return (
     <div className="min-h-screen bg-background">
@@ -76,6 +78,18 @@ function App() {
             <ThemeToggle />
           </div>
         </header>
+
+        {(isRefreshing || overview.isError || dashboard.isError) && (
+          <div className="mt-4 rounded-md border border-border bg-muted px-3 py-2 text-sm text-muted-foreground">
+            {isRefreshing ? (
+              <>
+                正在加载 {providerLabel(selectedProvider ?? 'claude')} 数据，冷缓存首次构建可能需要几十秒。
+              </>
+            ) : (
+              <span className="text-destructive">数据加载失败，请检查后端日志或缩小时间范围后重试。</span>
+            )}
+          </div>
+        )}
 
         <div className="mt-4">
           <TopFilterBar />
@@ -208,6 +222,7 @@ function App() {
 function providerLabel(provider: string): string {
   if (provider === 'codex') return 'Codex'
   if (provider === 'claude') return 'Claude Code'
+  if (provider === 'auto') return 'Auto'
   return provider
 }
 
