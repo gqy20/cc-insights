@@ -1,6 +1,6 @@
 # 架构说明
 
-cc-insights 是面向 code agent 的本地使用诊断工具。默认 provider 是 Claude Code，读取 `~/.claude`；也支持 Codex provider，读取 `~/.codex/sessions/**/*.jsonl`。不同 provider 的日志会经过各自 parser 映射到统一 `ProjectAggregate`，再为 CLI 和 Web Dashboard 提供统一数据。
+cc-insights 是面向 code agent 的本地使用诊断工具。默认 provider 是 Claude Code，读取 `~/.claude`；也支持 Codex provider，读取 `~/.codex/sessions/**/*.jsonl` 和 Codex SQLite runtime 日志。不同 provider 的日志会经过各自 parser 映射到统一 `ProjectAggregate`，再为 CLI 和 Web Dashboard 提供统一数据。
 
 ## 核心目标
 
@@ -32,15 +32,17 @@ Claude provider 主要数据源：
 Codex provider 主要数据源：
 
 - `sessions/**/*.jsonl`：核心 session、cwd/project、turn context、模型、token、工具调用、结构化工具结果和运行事件。
+- `logs_2.sqlite`：Codex runtime trace，当前用于 hook trace、app-server hook 事件和部分运行上下文核对。
 - `history.jsonl`、`session_index.jsonl`：暂未作为主分析来源，后续可补充 prompt/title 类信息。
 
-Codex 第一版不会读取 `auth.json`、attachments、shell snapshots 或 sqlite 文件，避免扩大隐私和实现边界。
+Codex provider 不读取 `auth.json`、attachments 或 shell snapshots，避免扩大隐私和实现边界。SQLite 只读取聚合所需的 runtime 事件，不展示完整 prompt、assistant 回复、命令输出或 instructions。
 
 ## 主要模块
 
 - `cmd/insights/cli.go`、`cli_*.go`：CLI 命令、报告构建和输出。
 - `cmd/insights/project_parser.go`、`parser.go`：Claude 项目 JSONL 解析和事件识别。
 - `cmd/insights/codex_parser.go`：Codex session JSONL 解析和 provider 映射。
+- `cmd/insights/codex_hooks.go`：Codex `logs_2.sqlite` hook trace 解析、去重和日级 runtime 写入。
 - `cmd/insights/aggregate.go`、`aggregate_finalize.go`：聚合与最终分析结果生成。
 - `cmd/insights/cache.go`、`cache_builder.go`：缓存结构、文件级复用和诊断缓存。
 - `web/`：React + Vite 前端源码；构建产物进入 `cmd/insights/static/dist/` 并由 Go embed 进单二进制。
@@ -82,6 +84,8 @@ CLI 下钻命令优先复用诊断缓存，避免因为当前 agent 会话正在
 ## Web Dashboard
 
 Web Dashboard 负责可视化趋势、运行时统计和分析结果。当前主线是让 Web 后续承载 `rec` 的结构化诊断，而不是继续堆孤立图表。
+
+Web 的 provider 选择是显式的：默认 Claude Code，用户可在顶部筛选栏切换 Codex。前端按 provider 调整展示语义，例如 Codex 下 Plan 卡展示 `update_plan` 步骤而不是 Claude 的 Plan 文件；Codex 没有可靠 skill invocation 或非 main agent 数据时隐藏对应空卡片，避免把“无等价数据源”误读为“解析失败”。
 
 ## 交互式 API
 

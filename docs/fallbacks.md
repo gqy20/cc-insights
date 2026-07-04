@@ -1,6 +1,6 @@
 # 容错与降级策略
 
-cc-insights 读取的是本机 `~/.claude` 数据，不是受控数据库。目录可能缺失，JSONL 可能被截断，缓存可能过期，工具调用也可能没有对应结果。容错目标不是掩盖问题，而是在可用数据范围内继续产出诊断，并把缺失、样本不足和无法精确计算的部分显式暴露出来。
+cc-insights 读取的是本机 code agent 数据目录，不是受控数据库。默认 provider 是 Claude Code 的 `~/.claude`，也可读取 Codex 的 `~/.codex`。目录可能缺失，JSONL 可能被截断，SQLite runtime 日志可能正在写入，缓存可能过期，工具调用也可能没有对应结果。容错目标不是掩盖问题，而是在可用数据范围内继续产出诊断，并把缺失、样本不足和无法精确计算的部分显式暴露出来。
 
 ## 基本原则
 
@@ -22,22 +22,27 @@ cc-insights 读取的是本机 `~/.claude` 数据，不是受控数据库。目�
 
 当前缓存模型是文件级快照加时间范围查询，不宣称真正的增量解析。
 
-- `NeedsRebuild` 负责判断缓存是否需要重建：缓存不存在、损坏、版本不匹配、Bash 规则 hash 变化或数据文件更新时间超过缓存时间时返回 true。
-- `BuildFullCache` 会重建完整缓存，同时复用未变化的 `ProjectFileCache`，避免重复解析未变化的 project JSONL。
+- `NeedsRebuild` 负责判断缓存是否需要重建：缓存不存在、损坏、版本不匹配、provider 不一致、Bash 规则 hash 变化或数据文件更新时间超过缓存时间时返回 true。
+- `BuildFullCache` 会重建完整缓存，同时复用未变化的 `ProjectFileCache`，避免重复解析未变化的 provider log file。
 - `RebuildIfChanged` 只做变化检测后重建，不做局部增量合并。
 - `QueryByTimeRange` 基于日级、项目级、session 级 runtime 索引重建指定时间范围内的聚合结果。
 - `rec` 诊断优先尝试轻量 `diagnostics.db`，不可用时再回退到完整 `cache.db` 或触发重建。
 
-缓存失败的影响是性能下降，不应该改变诊断语义。只有缓存构建本身失败时，Web 启动或 API 刷新才应返回明确错误。
+缓存失败的影响是性能下降，不应该改变诊断语义。只有缓存构建本身失败时，Web 启动或 API 刷新才应返回明确错误。Web 按 provider 维护独立 cache loader 和 singleflight，避免 Claude/Codex 切换时互相等待或串用缓存。
 
 ## 实时解析降级
 
-缓存不可用时，`buildDataFromParsing` 会并行解析四类来源：
+缓存不可用时，`buildDataFromParsing` 会按 provider 并行解析可用来源。Claude Code 主要来源：
 
 - `history.jsonl`
 - `projects/**/*.jsonl`
 - `debug/`
 - `tasks/`
+
+Codex 主要来源：
+
+- `sessions/**/*.jsonl`
+- `logs_2.sqlite`
 
 每个入口都有 safe wrapper：
 
@@ -55,15 +60,21 @@ cc-insights 读取的是本机 `~/.claude` 数据，不是受控数据库。目�
 
 `history.jsonl` 主要提供 slash command、命令历史和部分小时分布。缺失或损坏时，相关命令统计为空，不影响 projects 主分析。
 
-### projects
+### projects / sessions
 
-`projects/**/*.jsonl` 是核心数据源，负责消息、模型、Token、工具调用、失败原因、Session 生命周期、文件编辑、性能、Skill 和 Agent 统计。目录缺失或解析失败时返回空 `ProjectAggregate`，对应分析模块为空。
+Claude 的 `projects/**/*.jsonl` 和 Codex 的 `sessions/**/*.jsonl` 是各自 provider 的核心数据源，负责消息、模型、Token、工具调用、失败原因、Session 生命周期、文件编辑和性能统计。目录缺失或解析失败时返回空 `ProjectAggregate`，对应分析模块为空。
 
 空 `ProjectAggregate` 必须通过 `newProjectAggregate()` 初始化并 finalize，不能手写一份字段 map 清单。这样新增聚合字段后，正常解析路径和降级路径会同时具备相同结构，避免 fallback 只在少数字段上可用。
 
 ### debug
 
 `debug/` 是 runtime 事件日志来源，用于补充 MCP runtime 工具信号、hook、skill、budget、opened file 等事件。缺失时这些运行时信号为空，但不影响 projects 中解析出的工具调用和成本统计。
+
+### Codex SQLite runtime
+
+`logs_2.sqlite` 是 Codex runtime trace 来源，当前用于 hook trace 和 app-server hook 事件。文件缺失、被锁或查询失败时只记录 warn，不影响 session JSONL 中的核心工具、Token、失败和 Plan 分析。Codex hook trace 会做 turn/session 去重，避免 register/deregister poller 日志重复计数。
+
+`state_5.sqlite` 目前只用于能力核对，不作为主分析来源。只有当 agent jobs、thread spawn 等表中存在稳定数据并能映射到现有语义时，才应进入 Agent 分析。
 
 ### tasks
 
@@ -102,9 +113,10 @@ cc-insights 读取的是本机 `~/.claude` 数据，不是受控数据库。目�
 Web Dashboard 必须对空数组、空对象和缺失字段稳定：
 
 - 图表无数据时显示空态。
-- 本地 ECharts 资源必须可用，局域网访问不能依赖 CDN。
+- 本地静态资源必须可用，局域网访问不能依赖 CDN。
 - 一个接口失败不应导致已成功返回的图表状态被误渲染。
 - loading 和错误文案要说明是数据不可用、筛选不可计算，还是接口错误。
+- 前端必须区分“无数据”和“该 provider 没有可靠等价信号”。例如 Codex 当前没有稳定 skill invocation 和非 main agent 数据时，应隐藏对应卡片，而不是显示误导性的空图。
 
 ## 维护要求
 
@@ -113,5 +125,5 @@ Web Dashboard 必须对空数组、空对象和缺失字段稳定：
 - 不要把真实机器的一次性统计数字写成长期事实。
 - 新增数据源时必须明确：缺失时返回什么、坏记录如何处理、是否进入 coverage、是否影响 `rec`。
 - 如果某个函数只是变化检测后完整重建，命名中不要使用“增量”。
-- 项目 JSONL 文件发现应复用 `listProjectJSONLFileInfos`。需要路径列表时从 `AbsPath` 派生，不要新增第二套 `WalkDir`。
+- provider 日志文件发现应复用 `listLogFileInfos`。需要路径列表时从 `AbsPath` 派生，不要新增第二套 `WalkDir`。
 - cache 和实时解析最终都应走共享的 `DashboardData` 组装 helper；新增对外字段时要同时检查 cache、parsing、filter 和 coverage。

@@ -1,6 +1,6 @@
 # Web Dashboard 前端重构计划：迁移到 React + shadcn/ui
 
-> 状态：✅ 已完成实施（2026-06-19，Phase 0–6 全部落地；19 图表 + 诊断 + 下钻 + filter + 暗色 + Anthropic 双字体，单二进制 2.7MB）
+> 状态：✅ 已完成实施（2026-06-19，Phase 0–6 全部落地；19 图表 + 诊断 + 下钻 + filter + 暗色 + Anthropic 双字体，保持单二进制分发）
 > 日期：2026-06-19
 > 关联模块：`cmd/insights/static/`、`cmd/insights/main.go`（web 服务）
 > 变更：v0.2 新增 §3 设计方向与视觉规范（PostHog 结构 + claude.ai 暖色 + Tremor 组件）；细化 §9 文件级代码量预估
@@ -30,7 +30,7 @@
 
 前置调研排除了两个常见顾虑：
 
-1. **二进制体积不是障碍**。实测当前 `make build` 产物 **2.6 MB**（UPX 前 8.6 MB，UPX `--best --lzma` 压缩比 30%）。`echarts.min.js` 占前端 87.5%、占 UPX 后二进制约 300 KB。React + shadcn + Recharts 替换 ECharts 后，静态资源净变化 −100KB ~ +400KB（原始），UPX 后约 **−30KB ~ +120KB**，二进制维持 2.6 ~ 2.75 MB，分发无感。
+1. **二进制体积不是主要障碍**。前端资源经 Vite 构建后由 Go `embed` 内联，React + shadcn + Recharts 替换 ECharts 不改变单二进制分发模型。
 2. **图表迁移零能力损失**。经核查，19 个图表全部为 `bar`/`line`/`pie` 及其组合（双 Y 轴柱+线、柱状条件着色）。唯一的 `visualMap` 仅用于给「工作时段柱状图」按小时区间上色（工作/非工作时间），并非热力图。无 heatmap / 关系图 / 桑基 / 3D 等高级图，**Recharts 全覆盖，无迁移难点**。
 
 选择 C 档的核心原因：**UI 壳（shadcn）、图表层（Recharts 声明式）、数据层（TanStack Query）三大块都有成熟轮子**，迁移后净代码量约 **4200 → 1500–2000 行**，同时换来产品级设计一致性与可维护性。
@@ -51,7 +51,7 @@
 - 用组件树取代 `innerHTML` 拼接；图表配置从命令式 `setOption` 改为声明式 JSX。
 - **功能 100% 对齐现状**：所有 API 端点不变，全部 19 个图表、诊断卡、下钻、时间轴、filter 联动行为不丢。
 - 保持 `make build` 产出**单二进制**；前端构建产物经 Go `embed` 内联，用户无需 Node 即可运行。
-- `make build` 文件大小不显著膨胀（控制在 +150KB / UPX 后以内）。
+- `make build` 保持单二进制分发，前端资源增长不影响用户运行时依赖。
 
 ### 非目标
 
@@ -458,7 +458,7 @@ cc-insights/
 
 ## 11. 验收标准
 
-- [ ] `make build` 仍是单二进制，体积 ≤ 2.75 MB（UPX 后）。
+- [ ] `make build` 仍是单二进制。
 - [ ] `./cc-insights web` 打开 Dashboard，19 个图表、KPI、诊断卡、5 个下钻面板、时间轴全部渲染且数据正确。
 - [ ] preset / 自定义日期 / timeline / 四个过滤项联动行为与现状一致；URL 可刷新复现。
 - [ ] **视觉**：配色/字体/布局/卡片符合 §3 规范；KPI 卡含 delta + sparkline；暗色模式可用。

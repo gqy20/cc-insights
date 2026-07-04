@@ -1,6 +1,6 @@
 # 路线图
 
-本文档记录 cc-insights 的当前能力、近期重点和暂缓方向。项目主线是 code agent 使用诊断，而不是单纯 Dashboard 图表扩展。Claude Code 是默认 provider，Codex 已有 MVP 支持。
+本文档记录 cc-insights 的当前能力、近期重点和暂缓方向。项目主线是 code agent 使用诊断，而不是单纯 Dashboard 图表扩展。Claude Code 是默认 provider，Codex 已进入可用分析阶段。
 
 ## 已完成
 
@@ -9,19 +9,20 @@
 - 单二进制 Go CLI / Web Dashboard。
 - 时间范围筛选：`24h`、`7d`、`30d`、`90d`、`all` 和自定义日期。
 - 文件级缓存和轻量诊断缓存。
-- 多数据源 provider 基础设施：`claude` / `codex` / `auto`，缓存按 provider 隔离。
-- 静态资源嵌入，ECharts 本地化，支持局域网访问。
+- 多数据源 provider 基础设施：`claude` / `codex`，CLI 保留 `auto` 检测，Web 使用显式 provider 切换，缓存按 provider 隔离。
+- 静态资源嵌入，React Dashboard 支持局域网访问。
 
 ### 核心分析
 
 - 失败原因分析：按 reason、tool+reason、model+reason 聚合，保留样例摘要。
 - Bash 命令分析：命令族、具体命令、高风险命令、可配置分类规则。
-- Token 与成本分析：按模型、项目、Session、Agent 聚合。
+- Token 与成本分析：按模型、项目、Session、Agent 聚合，支持 Claude 与 GPT/Codex 价格估算。
 - Session 生命周期：长会话、高失败会话、状态、队列、权限和计划信号。
-- Task / Plan 分析：Plan 生命周期、计划文件引用、Task 状态、提醒频率。
+- Task / Plan 分析：Claude Plan 文件、Task 状态、提醒频率；Codex `update_plan` 步骤状态和 Top steps。
 - Tool performance：工具类别耗时、最慢调用、质量分布、错误率。
 - `rec` 结构化诊断：trigger、root cause、examples、actions、targets、drilldown commands。
-- Codex session 日志 MVP：读取 `~/.codex/sessions/**/*.jsonl`，统计 session、项目、模型 token、工具调用、命令、失败和 session 生命周期。
+- Codex provider：读取 `~/.codex/sessions/**/*.jsonl` 与 `logs_2.sqlite`，统计 session、项目、模型 token、工具调用、命令、失败、Plan 步骤、hook trace、patch diff、上下文和预算信号。
+- Provider-aware Web：Codex 下隐藏没有可靠来源的 Skill / Agent 空卡片，Plan 自动切换为步骤视图。
 
 ### CLI 命令体系
 
@@ -66,10 +67,10 @@
 
 ### P2: Codex provider 增强
 
-- 将 Codex token 拆分为 input、cached input、output、reasoning output，而不仅是 token-only fallback。
 - 更细致地区分 Codex `turn_aborted`、sandbox、approval policy 等运行上下文。
-- 根据 `patch_apply_end.changes` 提取文件修改统计。
-- 为 Web Dashboard 增加清晰的 provider 标识和 Codex 不适用信号的空态说明。
+- 继续核对 `state_5.sqlite` 中 agent job / thread spawn 等信号，只有存在真实数据时才接入 Agent 分析。
+- 为 Codex hook trace 提供更细的阶段命名和耗时估计；当前 SQLite 日志只能稳定识别运行阶段和 session 关联。
+- 评估是否引入 Codex history/title/prompt 轻量分析，同时避免展示完整对话或 instructions。
 
 ## 暂缓方向
 

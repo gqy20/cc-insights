@@ -440,7 +440,11 @@ func TestIntegration_ChainCommandEndToEnd(t *testing.T) {
 
 	// 验证风险检测
 	if cmdMap["rm"] == nil || cmdMap["rm"].RiskLevel != "high" {
-		t.Errorf("rm.RiskLevel = %q, want high (risk in later segment)", statVal(cmdMap, "rm", "RiskLevel"))
+		got := ""
+		if cmdMap["rm"] != nil {
+			got = cmdMap["rm"].RiskLevel
+		}
+		t.Errorf("rm.RiskLevel = %q, want high (risk in later segment)", got)
 	}
 
 	// 验证 RiskyCommands 包含 rm

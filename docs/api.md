@@ -12,12 +12,14 @@ cc-insights 的 Web Dashboard 基于本地 HTTP API，默认监听 `:8932`，所
 GET /api/data?preset=7d
 GET /api/data?preset=custom&start=2025-12-01&end=2026-01-08
 GET /api/data?preset=7d&project=cc-insights&model=claude-sonnet-4-6&reason=timeout
+GET /api/data?preset=7d&provider=codex
 ```
 
 **参数：**
 
 | 参数 | 说明 |
 |------|------|
+| `provider` | 数据源：`claude` \| `codex`。Web 默认 `claude`，切换 provider 会使用独立缓存 |
 | `preset` | `24h` \| `7d` \| `30d` \| `90d` \| `all` \| `custom` |
 | `start` / `end` | 自定义范围起止日期（`YYYY-MM-DD`），仅 `preset=custom` 时生效 |
 | `project` | 按项目路径片段过滤 |
@@ -79,6 +81,7 @@ GET /api/data?preset=7d&project=cc-insights&model=claude-sonnet-4-6&reason=timeo
 GET /api/overview?preset=7d
 GET /api/diagnostics?preset=7d&detail=true
 GET /api/diagnostics?preset=7d&id=performance.slowest_call
+GET /api/overview?preset=7d&provider=codex
 GET /api/detail/failures?preset=7d&reason=timeout
 GET /api/detail/commands?preset=7d&family=test
 GET /api/detail/tokens?preset=7d&project=cc-insights
@@ -89,7 +92,7 @@ GET /api/timeline?preset=all
 
 ## 元数据与可信度
 
-所有交互式接口返回统一 `meta`，包含数据源、缓存版本、时间范围、过滤条件和运行耗时。`/api/data` 接受同一组过滤参数，前端会用同一个 filter 同步刷新主图表和下钻面板。
+所有交互式接口返回统一 `meta`，包含数据源、缓存版本、时间范围、过滤条件和运行耗时。`/api/data` 接受同一组过滤参数，前端会用同一个 filter 同步刷新主图表和下钻面板。`provider` 会参与缓存选择和 query key，Claude Code 与 Codex 不共享缓存快照。
 
 当前 Web 同时保留两层数据面：
 
@@ -97,6 +100,15 @@ GET /api/timeline?preset=all
 - `/api/overview`、`/api/diagnostics`、`/api/detail/*`、`/api/timeline`：按页面区域拆分的交互式接口，适合下钻和轻量刷新。
 
 新增接口时优先复用现有 filter 和 report builder，不要绕过 `coverage` 语义新增一套独立筛选规则。
+
+## Provider 差异
+
+API 尽量返回统一结构，但不同 provider 的可用信号不同：
+
+- Claude Code：完整支持 hooks、skills、tasks、Plan 文件、debug runtime 信号。
+- Codex：支持 session、tool、token、成本、失败、Plan steps、hook trace、patch diff 和上下文/预算信号；当前没有可靠的 skill invocation 和非 main agent 数据时，前端会隐藏对应卡片。
+
+调用方不应把缺失字段等同于错误。需要判断某个图是否可展示时，应优先看对应数组/计数是否存在实际数据，并结合 `provider` 和 `coverage`。
 
 Dashboard 响应会附带 `coverage` 元数据，说明每个图在当前筛选下的可信度：
 

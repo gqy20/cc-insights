@@ -1,15 +1,15 @@
-# Claude Code 工作指南
+# cc-insights 工作指南
 
 ## 项目定位
 
-cc-insights 是面向 Claude Code 的使用诊断工具。它读取 Claude Code 历史数据、项目会话、工具调用、失败样例、Token 消耗和 Session 生命周期，把这些数据整理成可解释的证据、判断和改进方向。
+cc-insights 是面向 Claude Code / Codex 的使用诊断工具。它读取本地 code agent 历史数据、项目会话、工具调用、失败样例、Token 消耗、Plan、hook 和 Session 生命周期，把这些数据整理成可解释的证据、判断和改进方向。
 
 本项目的核心目标不是继续堆统计图，也不是为每类问题新增命令，而是帮助用户回答：
 
-- Claude Code 经常失败在哪里？
+- Claude Code / Codex 经常失败在哪里？
 - 失败更像环境、路径、依赖、权限、网络、工具参数，还是任务拆分问题？
 - 哪些项目、Session、命令族和工具调用消耗了最多时间与 Token？
-- 应该优化 `CLAUDE.md`、hooks、MCP 配置，还是封装新的稳定工具？
+- 应该优化 `CLAUDE.md`、hooks、MCP 配置、Codex workflow，还是封装新的稳定工具？
 
 ## 命令职责
 
@@ -30,10 +30,11 @@ CLI 命令必须保持收敛：
 主代码位于 `cmd/insights/`，使用单个 Go `main` 包。
 
 - `cli.go`、`cli_*.go`：CLI 参数、报告构建和输出。
-- `parser.go`、`project_parser.go`、`history_parser.go`、`debug_parser.go`：数据解析。
+- `parser.go`、`project_parser.go`、`history_parser.go`、`debug_parser.go`：Claude Code 数据解析。
+- `codex_parser.go`、`codex_hooks.go`：Codex session JSONL 与 SQLite runtime / hook trace 解析。
 - `aggregate.go`、`aggregate_finalize.go`：聚合和最终分析结果生成。
 - `cache.go`、`cache_builder.go`：缓存结构、文件级快照、变化检测和快速查询。
-- `*_analysis.go`：成本、Session、Skill、命令、失败等专项分析。
+- `*_analysis.go`：成本、Session、Skill、Agent、Plan、命令、失败等专项分析。
 - `command_file_analysis.go`：Bash 命令解析，支持多段 `&&`/`;` 链式命令独立统计（含引号感知分割、同链去重、结果分发和逐段风险检测）。
 - `cmd/insights/static/dist/`：Web Dashboard 构建产物（Vite 输出），由 `web/` 生成后经 `go:embed` 内联进单二进制。
 - `web/`：Web Dashboard 前端源码（React + TypeScript + Vite + Tailwind + Recharts + TanStack Query），`pnpm build` 产物落到 `cmd/insights/static/dist/`。设计方向见 `docs/plan/frontend-react-refactor.md`。
@@ -73,7 +74,7 @@ go run ./cmd/insights web --addr :8932
 - 对结构化数据优先使用现有聚合和缓存结构，不要临时扫描或拼字符串。
 - 修改 Bash 分类规则时优先编辑 `cmd/insights/rules/bash.yml`，避免把可配置规则硬编码进 Go。
 - 修改诊断阈值说明、指标来源和触发解释时优先编辑 `cmd/insights/rules/diagnostics.yml`。
-- 不提交真实 Claude Code 数据、缓存文件或日志。
+- 不提交真实 Claude Code / Codex 数据、缓存文件或日志。
 
 ## 测试要求
 

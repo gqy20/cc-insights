@@ -9,10 +9,40 @@
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-07-04
+
+### 新增
+- **Codex provider 支持**：新增 `--provider codex`，支持解析 `~/.codex/sessions/*.jsonl` 与 Codex SQLite 日志，CLI / Web / 缓存输出统一携带 provider 信息。
+- **Web provider 切换**：Dashboard 顶部支持在 Claude Code 与 Codex 之间切换，按 provider 独立加载、缓存和重载数据。
+- **Provider 缓存隔离**：Claude Code 与 Codex 使用独立缓存目录与加载锁，避免不同 provider 的数据互相污染；冷缓存构建期间 API 会按 provider 单独等待。
+- **Codex 深度分析**：解析 Codex session、turn、tool call、模型、Token、上下文压缩、预算时间线、patch diff、文件编辑与失败原因。
+- **Codex hook 统计**：从 `~/.codex/logs_2.sqlite` 读取 hook trace，统计 `run_hooks_and_record_inputs`、`run_turn_stop_hooks` 与 app-server hook 事件，并关联 session。
+- **Codex Plan 分析**：识别 `update_plan` 步骤，统计进入 / 退出 / 重入、步骤状态分布、Top steps 与涉及 session。
+- **GPT / Codex 成本估算**：补充 GPT 模型价格映射与人民币估算，支持在 `tok` 与 Web 成本面板中查看 Codex token 与费用。
+
+### 改进
+- **Provider-aware Dashboard**：Codex 下隐藏没有可靠数据来源的 Skill、Agent 空卡片；Plan 卡根据数据自动切换为 Claude 的 Plan 文件视图或 Codex 的 Plan 步骤视图。
+- **Codex 主题样式**：Codex provider 下使用更贴近 Codex 的视觉配色，同时保留 Claude Code 默认主题。
+- **Token 明细**：扩展输入、输出、缓存读取、推理与上下文窗口相关统计，提升 Codex 成本解释能力。
+- **Web 缓存加载体验**：修复启动后 provider 数据不刷新、旧缓存覆盖新请求、构建锁导致 provider 切换响应异常等问题。
+- **日志解析结构**：抽象 provider 日志发现与解析入口，为 Claude Code / Codex 共用聚合、缓存、CLI 和 API 管线。
+
+### 移除
+- **Web provider auto 选项**：移除前端 `Auto` provider，默认显示 Claude Code，用户显式切换 Codex。
+- **全局缓存耦合**：清理单例式缓存依赖，避免 Web 多 provider 场景下缓存状态串线。
+- **旧 Dashboard 解析遗留代码**：删除不再使用的旧前端解析与辅助逻辑。
+
+### 修复
+- **Provider 显示与筛选**：修复 Web 首行 provider 显示错误、API query 未透传 provider、时间范围切换后 provider 数据不一致的问题。
+- **Codex 缓存刷新**：修复 Codex 缓存版本、增量重建和首轮加载下 hook / plan / event 数据缺失的问题。
+- **诊断证据可靠性**：改进诊断 ID 匹配、异常 session 解释、Bash 错误文本降噪和 session 计数一致性。
+- **构建与发布**：保持 release notes 从 changelog 生成，清理 release workflow 中无意义说明。
+- **发布版本元数据**：同步 Go toolchain 到 1.26.4，并将 Web package 版本标记为 0.2.0。
+
 ## [0.1.2] - 2026-06-20
 
 ### 新增
-- **Web Dashboard 全面重构**：前端从「原生 JS + ECharts」迁移到「React + TypeScript + Vite + Tailwind + Recharts + TanStack Query」，源码独立到 `web/`，构建产物经 Go `embed` 内联进单二进制（UPX 后 2.7MB）。
+- **Web Dashboard 全面重构**：前端从「原生 JS + ECharts」迁移到「React + TypeScript + Vite + Tailwind + Recharts + TanStack Query」，源码独立到 `web/`，构建产物经 Go `embed` 内联进单二进制。
   - 19 个图表全部迁移到 Recharts（双轴组合图、饼图、堆叠柱、条件着色）。
   - KPI 卡（数字 + sparkline）、诊断建议卡（severity + 证据 + 动作）、证据下钻面板（5 个 tab 表格：失败 / 命令 / Token / Session / 工具）。
   - filter 联动：模型 / 工具 / 原因下拉（候选项稳定，选中后仍可切换）+ 项目搜索，全部同步到 URL search params。

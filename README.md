@@ -12,11 +12,11 @@
 <p align="center">
   <a href="https://github.com/gqy20/cc-insights/actions/workflows/ci.yml"><img src="https://github.com/gqy20/cc-insights/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
   <a href="https://github.com/gqy20/cc-insights/releases"><img src="https://img.shields.io/github/v/release/gqy20/cc-insights" alt="Release" /></a>
-  <a href="https://go.dev/"><img src="https://img.shields.io/badge/Go-1.21+-00ADD8?logo=go&logoColor=white" alt="Go" /></a>
+  <a href="https://go.dev/"><img src="https://img.shields.io/badge/Go-1.26+-00ADD8?logo=go&logoColor=white" alt="Go" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT" /></a>
 </p>
 
-cc-insights 是一个 code agent 使用诊断 CLI：默认读取 Claude Code 本地数据，也可通过 provider 读取 Codex session 日志。它把历史数据、项目会话、工具调用、失败样例、Token 消耗和 Session 生命周期整理成**可解释的证据、诊断结论和改进方向**。默认输出可读摘要，也提供本地 Web Dashboard，并支持时间范围筛选、缓存预聚合和并发解析。
+cc-insights 是一个 code agent 使用诊断 CLI：默认读取 Claude Code 本地数据，也可通过 provider 读取 Codex session 与 runtime 日志。它把历史数据、项目会话、工具调用、失败样例、Token 消耗和 Session 生命周期整理成**可解释的证据、诊断结论和改进方向**。默认输出可读摘要，也提供本地 Web Dashboard，并支持时间范围筛选、缓存预聚合和并发解析。
 
 ## 目录
 
@@ -47,7 +47,7 @@ cc-insights 的目标不是展示「用了多少 token、跑了多少命令」�
 
 - **诊断优先** — `rec` 先给判断，再给证据和可执行下钻命令；不为每种解释继续堆命令
 - **AI 友好** — JSON / Markdown / Table 三种输出，AI 直接解析继续分析
-- **单文件部署** — 静态资源内嵌二进制（UPX 后约 2.7MB），无外部依赖、无数据库
+- **单文件部署** — 静态资源内嵌二进制，无外部服务依赖
 - **规则可配置** — Bash 分类与诊断阈值用 YAML 配置，无需改代码
 - **缓存加速** — 启动时构建 `~/.cc-insights/cache/`，API 优先读预聚合数据
 
@@ -81,7 +81,7 @@ chmod +x ~/.local/bin/cc-insights
 
 Windows 直接下载 `cc-insights_<ver>_windows_amd64.exe`，放到 `~/.local/bin`（或任意 PATH 目录）；也可下 `.zip`（含 README/LICENSE）。
 
-**源码构建（需要 Go 1.21+，会自动构建前端）**
+**源码构建（需要 Go 1.26+，会自动构建前端）**
 
 ```bash
 make build          # 先 pnpm 前端再 go build（static + strip + UPX），输出 ./cc-insights
@@ -116,8 +116,8 @@ provider 说明：
 
 | Provider | 默认数据目录 | 主数据源 | 说明 |
 |----------|--------------|----------|------|
-| `claude` | `~/.claude` | `projects/**/*.jsonl` | 默认值，保留 Claude Code 的 hooks、tasks、skills 等完整诊断信号 |
-| `codex` | `~/.codex` | `sessions/**/*.jsonl` | 支持 session、项目、模型 token、工具调用、命令、失败和 session 生命周期；成本估算为 token-only fallback |
+| `claude` | `~/.claude` | `projects/**/*.jsonl`、`debug/`、`tasks/` | 默认值，保留 Claude Code 的 hooks、tasks、skills 等完整诊断信号 |
+| `codex` | `~/.codex` | `sessions/**/*.jsonl`、`logs_2.sqlite` | 支持 session、项目、模型 token、工具调用、命令、失败、Plan 步骤、hook trace 和 GPT/Codex 成本估算 |
 | `auto` | 按 `--data` 目录检测 | `projects/` 或 `sessions/` | 适合显式传入数据目录时自动识别 |
 
 可用 `--data` 指定任意目录：
@@ -137,6 +137,8 @@ Codex 数据目录示例：
 ~/.codex/
 ├── history.jsonl
 ├── session_index.jsonl
+├── logs_2.sqlite        # Codex runtime / hook trace 日志
+├── state_5.sqlite       # Codex 本地状态（当前仅作能力核对，不作为主分析来源）
 └── sessions/            # Codex session JSONL，按 YYYY/MM/DD 分层
 ```
 
@@ -200,7 +202,7 @@ cc-insights rec -p 30d --id performance.slowest_call -j
 
 ## Dashboard
 
-`cc-insights web` 启动本地 Dashboard，一个全局筛选状态驱动整屏分析，支持暗色模式。
+`cc-insights web` 启动本地 Dashboard，一个全局筛选状态驱动整屏分析，支持暗色模式和 Claude Code / Codex provider 切换。
 
 ![Dashboard Preview](docs/dashboard.png)
 
@@ -210,6 +212,7 @@ cc-insights rec -p 30d --id performance.slowest_call -j
 - Slash Commands 使用、模型使用分析（含 Token）
 - 诊断建议卡（severity + 证据 + 动作）与证据下钻面板（失败 / 命令 / Token / Session / 工具 5 个 tab）
 - 时间范围快捷预设 + 自定义；模型 / 工具 / 原因 / 项目 / Session 多维联动
+- Provider-aware 运行时面板：Claude Code 展示 hooks / skills / task 文件信号；Codex 展示 hook trace 与 `update_plan` 步骤，并隐藏没有可靠数据来源的 Skill / Agent 空卡片
 
 打开浏览器访问：
 

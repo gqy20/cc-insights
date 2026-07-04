@@ -152,7 +152,6 @@ jobs:
           cp README.md "${package_dir}/README.md" 2>/dev/null || true
           cp LICENSE "${package_dir}/LICENSE" 2>/dev/null || true
 
-          # Windows: UPX 压缩
           if [[ "${GOOS}" == "windows" ]]; then
             upx --best --lzma "${package_dir}/${BINARY_NAME}${ext}"
           fi
@@ -162,7 +161,6 @@ jobs:
               cd package
               zip -r "../dist/${artifact_base}.zip" "${artifact_base}"
             )
-            # Windows 同时产出独立 exe（zip 内仍保留带 README/LICENSE 的完整包）
             cp "${package_dir}/${BINARY_NAME}${ext}" "dist/${artifact_base}${ext}"
           else
             tar -C package -czf "dist/${artifact_base}.tar.gz" "${artifact_base}"
