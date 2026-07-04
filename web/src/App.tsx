@@ -39,7 +39,7 @@ function App() {
   const s = overview.data?.summary
   const trend = overview.data?.trend
   const provider = dashboard.data?.provider
-  const selectedProvider = filters.provider ?? provider
+  const selectedProvider = provider ?? filters.provider ?? 'auto'
   const isRefreshing = overview.isFetching || dashboard.isFetching
 
   return (
@@ -49,11 +49,9 @@ function App() {
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <h1 className="text-2xl font-bold font-serif tracking-tight">cc-insights</h1>
-              {provider && (
-                <Badge variant={provider === 'codex' ? 'default' : 'secondary'} className="font-mono">
-                  {providerLabel(provider)}
-                </Badge>
-              )}
+              <Badge variant={selectedProvider === 'codex' ? 'default' : 'secondary'} className="font-mono">
+                {providerLabel(selectedProvider)}
+              </Badge>
               {version && (
                 <span className="font-mono text-xs font-normal text-muted-foreground">
                   {version}

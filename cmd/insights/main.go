@@ -28,7 +28,7 @@ func runWebServer() error {
 	}
 	defer CloseLogger()
 
-	Info("Claude Code Dashboard 启动",
+	Info("cc-insights Dashboard 启动",
 		"version", version,
 		"commit", commit,
 		"provider", cfg.Provider,
