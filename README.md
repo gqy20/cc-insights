@@ -204,7 +204,7 @@ cc-insights rec -p 30d --id performance.slowest_call -j
 
 `cc-insights web` 启动本地 Dashboard，一个全局筛选状态驱动整屏分析，支持暗色模式和 Claude Code / Codex provider 切换。
 
-![Dashboard Preview](docs/dashboard.png)
+<img src="docs/dashboard.png?v=0.2.0-dashboard-20260704" alt="cc-insights Dashboard：Claude Code provider 总览、诊断建议与证据下钻" />
 
 **能力一览：**
 
