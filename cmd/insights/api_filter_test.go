@@ -102,8 +102,7 @@ func TestApplyDashboardFilterNarrowsDashboardData(t *testing.T) {
 }
 
 func TestApplyDashboardFilterKeepsPreciseToolData(t *testing.T) {
-	origCache := globalCache
-	globalCache = &CacheFile{
+	cache := &CacheFile{
 		DailyStats: map[string]*DayAggregate{
 			"2026-06-01": {Date: "2026-06-01"},
 		},
@@ -116,11 +115,11 @@ func TestApplyDashboardFilterKeepsPreciseToolData(t *testing.T) {
 			},
 		},
 	}
-	defer func() { globalCache = origCache }()
 
 	data := &DashboardData{
-		DailyTrend: DailyTrendData{Dates: []string{"2026-06-01"}, Counts: []int{10}},
-		Commands:   []CommandStats{{Command: "/resume", Count: 2}},
+		RuntimeCache: cache,
+		DailyTrend:   DailyTrendData{Dates: []string{"2026-06-01"}, Counts: []int{10}},
+		Commands:     []CommandStats{{Command: "/resume", Count: 2}},
 		RuntimeTools: []RuntimeToolSignal{
 			{Server: "crawl", Tool: "search", Count: 5},
 			{Server: "other", Tool: "read", Count: 3},
@@ -160,8 +159,7 @@ func TestApplyDashboardFilterKeepsPreciseToolData(t *testing.T) {
 }
 
 func TestApplyDashboardFilterRebuildsReasonTrend(t *testing.T) {
-	origCache := globalCache
-	globalCache = &CacheFile{
+	cache := &CacheFile{
 		DailyStats: map[string]*DayAggregate{
 			"2026-06-01": {Date: "2026-06-01"},
 			"2026-06-02": {Date: "2026-06-02"},
@@ -180,10 +178,10 @@ func TestApplyDashboardFilterRebuildsReasonTrend(t *testing.T) {
 			},
 		},
 	}
-	defer func() { globalCache = origCache }()
 
 	data := &DashboardData{
-		DailyTrend: DailyTrendData{Dates: []string{"2026-06-01", "2026-06-02"}, Counts: []int{10, 20}},
+		RuntimeCache: cache,
+		DailyTrend:   DailyTrendData{Dates: []string{"2026-06-01", "2026-06-02"}, Counts: []int{10, 20}},
 		FailureAnalysis: &FailureAnalysisData{
 			ByReason: []FailureReasonStat{
 				{Category: "bash", Reason: "exit_code_1", Count: 7},
@@ -262,8 +260,7 @@ func TestCoverageKeepsCommandFamilyExact(t *testing.T) {
 }
 
 func TestApplyDashboardFilterUsesDailyProjectRuntime(t *testing.T) {
-	origCache := globalCache
-	globalCache = &CacheFile{
+	cache := &CacheFile{
 		DailyStats: map[string]*DayAggregate{
 			"2026-06-01": {Date: "2026-06-01"},
 		},
@@ -282,10 +279,10 @@ func TestApplyDashboardFilterUsesDailyProjectRuntime(t *testing.T) {
 			},
 		},
 	}
-	defer func() { globalCache = origCache }()
 
 	data := &DashboardData{
-		DailyTrend: DailyTrendData{Dates: []string{"2026-06-01"}, Counts: []int{99}},
+		RuntimeCache: cache,
+		DailyTrend:   DailyTrendData{Dates: []string{"2026-06-01"}, Counts: []int{99}},
 		ToolAnalysis: &ToolAnalysisData{
 			Tools: []ToolStatItem{{Tool: "Bash", CallCount: 14}},
 		},
@@ -302,8 +299,7 @@ func TestApplyDashboardFilterUsesDailyProjectRuntime(t *testing.T) {
 }
 
 func TestApplyDashboardFilterUsesDailySessionRuntime(t *testing.T) {
-	origCache := globalCache
-	globalCache = &CacheFile{
+	cache := &CacheFile{
 		DailyStats: map[string]*DayAggregate{
 			"2026-06-01": {Date: "2026-06-01"},
 		},
@@ -322,10 +318,10 @@ func TestApplyDashboardFilterUsesDailySessionRuntime(t *testing.T) {
 			},
 		},
 	}
-	defer func() { globalCache = origCache }()
 
 	data := &DashboardData{
-		DailyTrend: DailyTrendData{Dates: []string{"2026-06-01"}, Counts: []int{99}},
+		RuntimeCache: cache,
+		DailyTrend:   DailyTrendData{Dates: []string{"2026-06-01"}, Counts: []int{99}},
 		FailureAnalysis: &FailureAnalysisData{
 			ByReason: []FailureReasonStat{{Category: "rate_limit", Reason: "rate_limit_429", Count: 13}},
 		},

@@ -46,12 +46,9 @@ func TestDashboardDataConsistencyFromScopedCache(t *testing.T) {
 		t.Fatalf("LoadCacheFile failed: %v", err)
 	}
 
-	originalCache := globalCache
 	originalDataDir := cfg.DataDir
-	globalCache = cache
 	cfg.DataDir = dataDir
 	defer func() {
-		globalCache = originalCache
 		cfg.DataDir = originalDataDir
 	}()
 
@@ -61,7 +58,7 @@ func TestDashboardDataConsistencyFromScopedCache(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewTimeFilterCustom failed: %v", err)
 	}
-	data, err := buildDataFromCache(tf, "custom")
+	data, err := buildDataFromCache(cache, tf, "custom")
 	if err != nil {
 		t.Fatalf("buildDataFromCache failed: %v", err)
 	}

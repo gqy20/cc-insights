@@ -126,17 +126,31 @@ func reloadHandler(w http.ResponseWriter, r *http.Request) {
 
 	start := time.Now()
 	force := r.URL.Query().Get("force") == "1" || r.URL.Query().Get("force") == "true"
-	if err := refreshGlobalCache(force); err != nil {
+	filter, err := parseAnalysisFilter(r)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		fmt.Fprintf(w, `{"status":"error","message":%q}`, err.Error())
+		return
+	}
+	config := cfg
+	if filter.ProviderSet && filter.Provider != "" {
+		config.Provider = filter.Provider
+		if filter.ProviderRaw != ProviderAuto && (filter.Provider == ProviderClaude || filter.Provider == ProviderCodex) {
+			config.DataDir = defaultDataDirForProvider(filter.Provider)
+		}
+	}
+	cache, err := providerCacheForConfig(config, force)
+	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		fmt.Fprintf(w, `{"status":"error","message":%q}`, err.Error())
 		return
 	}
 
 	messages, sessions, rulesHash := 0, 0, ""
-	if globalCache != nil {
-		messages = globalCache.TotalMessages
-		sessions = globalCache.TotalSessions
-		rulesHash = globalCache.BashRulesHash
+	if cache != nil {
+		messages = cache.TotalMessages
+		sessions = cache.TotalSessions
+		rulesHash = cache.BashRulesHash
 	}
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"status":       "ok",
@@ -156,9 +170,4 @@ func versionHandler(w http.ResponseWriter, r *http.Request) {
 		"commit":    commit,
 		"buildDate": buildDate,
 	})
-}
-
-// initializeCache 初始化缓存系统
-func initializeCache() error {
-	return refreshGlobalCache(false)
 }

@@ -59,11 +59,12 @@ func fastRun(build func(*DashboardData, cliOptions) error) func(cliOptions) erro
 		if err != nil {
 			return err
 		}
-		if err := prepareCLIDataForRecommendations(); err != nil {
+		cache, err := prepareCLIDataForRecommendations()
+		if err != nil {
 			return err
 		}
 		defer CloseLogger()
-		data, _, err := buildRecommendationDashboardData(tf, preset)
+		data, _, err := buildRecommendationDashboardDataWithCache(cache, tf, preset)
 		if err != nil {
 			return err
 		}
@@ -82,11 +83,12 @@ var cmdSum = &Command{
 		if err != nil {
 			return err
 		}
-		if err := prepareCLIData(); err != nil {
+		cache, err := prepareCLIData()
+		if err != nil {
 			return err
 		}
 		defer CloseLogger()
-		data, _, err := buildDashboardData(tf, preset)
+		data, _, err := buildDashboardDataWithCache(cache, tf, preset)
 		if err != nil {
 			return err
 		}
@@ -193,7 +195,8 @@ var cmdRec = &Command{
 		}
 		startedAt := time.Now()
 		prepareStartedAt := time.Now()
-		if err := prepareCLIDataForRecommendations(); err != nil {
+		cache, err := prepareCLIDataForRecommendations()
+		if err != nil {
 			return err
 		}
 		prepareDuration := time.Since(prepareStartedAt)
@@ -213,7 +216,7 @@ var cmdRec = &Command{
 			return outputCLI(report, opts.Format, os.Stdout)
 		}
 		dataStartedAt := time.Now()
-		data, source, err := buildRecommendationDashboardData(tf, preset)
+		data, source, err := buildRecommendationDashboardDataWithCache(cache, tf, preset)
 		if err != nil {
 			return err
 		}

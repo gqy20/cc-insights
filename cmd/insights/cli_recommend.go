@@ -8,15 +8,7 @@ import (
 )
 
 func buildRecommendationDashboardData(tf TimeFilter, preset string) (*DashboardData, string, error) {
-	if globalCache == nil {
-		data, source, err := buildDashboardData(tf, preset)
-		return data, source, err
-	}
-	if err := refreshGlobalCacheIfRulesChanged(); err != nil {
-		Warn("Bash 规则刷新失败，继续尝试现有缓存", "error", err.Error())
-	}
-
-	return buildRecommendationDashboardDataWithCache(globalCache, tf, preset)
+	return buildDashboardData(tf, preset)
 }
 
 func buildRecommendationDashboardDataWithCache(cache *CacheFile, tf TimeFilter, preset string) (*DashboardData, string, error) {
@@ -945,8 +937,8 @@ func buildPerformanceDiagnostics(data *DashboardData) []diagnosticFinding {
 			})
 		}
 	}
-	if globalCache != nil && globalCache.BuildStats != nil {
-		stats := globalCache.BuildStats
+	if data.RuntimeCache != nil && data.RuntimeCache.BuildStats != nil {
+		stats := data.RuntimeCache.BuildStats
 		if stats.BuildDurationMs >= 10_000 || stats.ParsedFiles >= 500 {
 			findings = append(findings, diagnosticFinding{
 				ID:       "performance.cache.build_cost",

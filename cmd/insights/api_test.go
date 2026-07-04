@@ -782,10 +782,7 @@ func TestQueryByTimeRange_FilterGlobalStats(t *testing.T) {
 }
 
 func TestBuildDataFromCacheUsesSessionAnalysisCount(t *testing.T) {
-	oldCache := globalCache
-	defer func() { globalCache = oldCache }()
-
-	globalCache = &CacheFile{
+	cache := &CacheFile{
 		Version:    CacheVersion,
 		LastUpdate: time.Now(),
 		DailyStats: map[string]*DayAggregate{
@@ -817,7 +814,7 @@ func TestBuildDataFromCacheUsesSessionAnalysisCount(t *testing.T) {
 		},
 	}
 
-	data, err := buildDataFromCache(TimeFilter{}, "all")
+	data, err := buildDataFromCache(cache, TimeFilter{}, "all")
 	if err != nil {
 		t.Fatalf("buildDataFromCache failed: %v", err)
 	}

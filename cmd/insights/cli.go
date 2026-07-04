@@ -303,35 +303,35 @@ func normalizeParsedConfig(config *Config, fs *flag.FlagSet) {
 	config.Provider = resolveProvider(config.Provider, config.DataDir)
 }
 
-func prepareCLIData() error {
+func prepareCLIData() (*CacheFile, error) {
 	return prepareCLIDataWithCacheRefresh(true)
 }
 
-func prepareCLIDataForRecommendations() error {
+func prepareCLIDataForRecommendations() (*CacheFile, error) {
 	return prepareCLIDataWithCacheRefresh(false)
 }
 
-func prepareCLIDataWithCacheRefresh(refreshStale bool) error {
+func prepareCLIDataWithCacheRefresh(refreshStale bool) (*CacheFile, error) {
 	if _, err := os.Stat(cfg.DataDir); os.IsNotExist(err) {
-		return fmt.Errorf("数据目录不存在: %s", cfg.DataDir)
+		return nil, fmt.Errorf("数据目录不存在: %s", cfg.DataDir)
 	}
 	logDir := filepath.Join(filepath.Dir(cfg.CacheDir), "logs")
 	if err := InitLogger(logDir); err != nil {
-		return fmt.Errorf("日志初始化失败: %w", err)
+		return nil, fmt.Errorf("日志初始化失败: %w", err)
 	}
 	if !refreshStale {
 		if loaded, err := loadReusableCacheSnapshot(); err == nil {
-			globalCache = loaded
-			Info("使用现有缓存快照", "messages", globalCache.TotalMessages, "sessions", globalCache.TotalSessions)
-			return nil
+			Info("使用现有缓存快照", "messages", loaded.TotalMessages, "sessions", loaded.TotalSessions)
+			return loaded, nil
 		} else {
 			Warn("缓存快照不可复用，将刷新缓存", "error", err.Error())
 		}
 	}
-	if err := initializeCache(); err != nil {
+	cache, err := refreshCacheForConfig(cfg, false)
+	if err != nil {
 		Warn("缓存初始化失败，将使用实时解析模式", "error", err.Error())
 	}
-	return nil
+	return cache, nil
 }
 
 func loadReusableCacheSnapshot() (*CacheFile, error) {

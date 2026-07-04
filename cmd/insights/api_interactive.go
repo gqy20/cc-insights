@@ -566,15 +566,18 @@ func (filter AnalysisFilter) metaFilters() map[string]interface{} {
 
 func cacheVersionForMeta(filter AnalysisFilter) string {
 	if filter.ProviderSet && filter.Provider != "" {
+		config := cfg
+		config.Provider = filter.Provider
+		if filter.ProviderRaw != ProviderAuto && (filter.Provider == ProviderClaude || filter.Provider == ProviderCodex) {
+			config.DataDir = defaultDataDirForProvider(filter.Provider)
+		}
+		key := providerCachePoolKey(config)
 		providerCachePool.RLock()
-		cache := providerCachePool.items[filter.Provider]
+		cache := providerCachePool.items[key]
 		providerCachePool.RUnlock()
 		if cache != nil {
 			return cache.Version
 		}
-	}
-	if globalCache != nil {
-		return globalCache.Version
 	}
 	return CacheVersion
 }

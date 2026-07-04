@@ -211,15 +211,6 @@ func diagnosticsCachePath(cachePath string) string {
 	return filepath.Join(filepath.Dir(cachePath), "diagnostics.db")
 }
 
-func refreshGlobalCache(force bool) error {
-	cache, err := refreshCacheForConfig(cfg, force)
-	if err != nil {
-		return err
-	}
-	globalCache = cache
-	return nil
-}
-
 func refreshCacheForConfig(config Config, force bool) (*CacheFile, error) {
 	if err := os.MkdirAll(config.CacheDir, 0755); err != nil {
 		return nil, fmt.Errorf("创建缓存目录失败: %w", err)

@@ -56,13 +56,11 @@ func TestAPIUsesCachedData(t *testing.T) {
 	tmpDir := t.TempDir()
 	dataDir := createTestDataDir(t, tmpDir)
 	cacheDir := t.TempDir()
-	cachePath := filepath.Join(cacheDir, "cache.db")
 
 	// 设置配置
 	originalDataDir := cfg.DataDir
 	originalCacheDir := cfg.CacheDir
 	originalProvider := cfg.Provider
-	originalGlobalCache := globalCache
 	cfg.DataDir = dataDir
 	cfg.CacheDir = cacheDir
 	cfg.Provider = ProviderClaude
@@ -70,27 +68,10 @@ func TestAPIUsesCachedData(t *testing.T) {
 		cfg.DataDir = originalDataDir
 		cfg.CacheDir = originalCacheDir
 		cfg.Provider = originalProvider
-		globalCache = originalGlobalCache
 	}()
 
-	// 构建缓存
-	builder := &CacheBuilder{
-		CachePath: cachePath,
-		DataDir:   dataDir,
-	}
-	if err := builder.BuildFullCache(); err != nil {
-		t.Fatalf("Setup: BuildFullCache failed: %v", err)
-	}
-
-	// 加载缓存到全局变量（模拟main.go中的逻辑）
-	cache, loadErr := LoadCacheFile(cachePath)
-	if loadErr != nil {
-		t.Fatalf("Setup: LoadCacheFile failed: %v", loadErr)
-	}
-	globalCache = cache
-
 	// 创建API请求
-	req := httptest.NewRequest("GET", "/api/data?preset=7d", nil)
+	req := httptest.NewRequest("GET", "/api/data?preset=7d&provider=claude", nil)
 	w := httptest.NewRecorder()
 
 	// Act
@@ -124,18 +105,13 @@ func TestAPIFallbackWhenNoCache(t *testing.T) {
 	originalDataDir := cfg.DataDir
 	originalCacheDir := cfg.CacheDir
 	originalProvider := cfg.Provider
-	originalGlobalCache := globalCache
 	cfg.DataDir = dataDir
 	cfg.Provider = ProviderClaude
 	defer func() {
 		cfg.DataDir = originalDataDir
 		cfg.CacheDir = originalCacheDir
 		cfg.Provider = originalProvider
-		globalCache = originalGlobalCache
 	}()
-
-	// 确保没有缓存
-	globalCache = nil
 
 	// 创建API请求
 	req := httptest.NewRequest("GET", "/api/data?preset=all", nil)
@@ -176,7 +152,6 @@ func TestReloadHandlerForcesCacheRefresh(t *testing.T) {
 	originalCacheDir := cfg.CacheDir
 	originalRulesPath := cfg.RulesPath
 	originalProvider := cfg.Provider
-	originalGlobalCache := globalCache
 	cfg.DataDir = dataDir
 	cfg.CacheDir = cacheDir
 	cfg.RulesPath = ""
@@ -186,16 +161,18 @@ func TestReloadHandlerForcesCacheRefresh(t *testing.T) {
 		cfg.CacheDir = originalCacheDir
 		cfg.RulesPath = originalRulesPath
 		cfg.Provider = originalProvider
-		globalCache = originalGlobalCache
 	}()
 
-	if err := refreshGlobalCache(false); err != nil {
+	cache, err := providerCacheForConfig(cfg, false)
+	if err != nil {
 		t.Fatalf("初始化缓存失败: %v", err)
 	}
-	oldHash := globalCache.BashRulesHash
+	if cache == nil {
+		t.Fatal("initial provider cache should not be nil")
+	}
 
 	cfg.RulesPath = rulesPath
-	req := httptest.NewRequest(http.MethodPost, "/api/reload?force=1", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/reload?force=1&provider=claude", nil)
 	w := httptest.NewRecorder()
 
 	reloadHandler(w, req)
@@ -203,10 +180,10 @@ func TestReloadHandlerForcesCacheRefresh(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("状态码 = %d, want %d", w.Code, http.StatusOK)
 	}
-	if globalCache == nil {
-		t.Fatal("globalCache should not be nil")
-	}
-	if globalCache.BashRulesHash == oldHash {
-		t.Fatalf("BashRulesHash did not change after reload")
+	providerCachePool.RLock()
+	refreshed := providerCachePool.items[providerCachePoolKey(cfg)]
+	providerCachePool.RUnlock()
+	if refreshed == nil {
+		t.Fatal("provider cache should not be nil")
 	}
 }

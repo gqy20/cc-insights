@@ -46,10 +46,6 @@ func TestBuildTimelineData(t *testing.T) {
 		},
 		Sessions: &SessionStats{DailySessionMap: map[string]int{"2026-06-12": 1, "2026-06-13": 2}},
 	}
-	oldCache := globalCache
-	globalCache = nil
-	t.Cleanup(func() { globalCache = oldCache })
-
 	timeline := buildTimelineData(data)
 	if timeline.Start != "2026-06-12" || timeline.End != "2026-06-13" {
 		t.Fatalf("range=%s..%s, want 2026-06-12..2026-06-13", timeline.Start, timeline.End)

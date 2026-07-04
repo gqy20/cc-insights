@@ -19,12 +19,10 @@ type APIResponse struct {
 	Error   string      `json:"error,omitempty"`
 }
 
-// globalCache 保留给 CLI 和旧测试路径使用；Web 请求优先使用 providerCachePool。
-var globalCache *CacheFile
 var providerCachePool = struct {
 	sync.RWMutex
-	items map[Provider]*CacheFile
-}{items: make(map[Provider]*CacheFile)}
+	items map[string]*CacheFile
+}{items: make(map[string]*CacheFile)}
 
 // DashboardData Dashboard 数据
 type DashboardData struct {
@@ -122,12 +120,8 @@ func handleDataAPI(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// buildDataFromCache 从缓存数据构建 API 响应
-func buildDataFromCache(tf TimeFilter, preset string) (*DashboardData, error) {
-	return buildDataFromCacheWith(globalCache, tf, preset)
-}
-
-func buildDataFromCacheWith(cache *CacheFile, tf TimeFilter, preset string) (*DashboardData, error) {
+// buildDataFromCache 从指定缓存数据构建 API 响应。
+func buildDataFromCache(cache *CacheFile, tf TimeFilter, preset string) (*DashboardData, error) {
 	if cache == nil {
 		return nil, fmt.Errorf("缓存未初始化")
 	}
@@ -572,17 +566,6 @@ func dashboardValidationEnabled() bool {
 }
 
 func buildDashboardData(tf TimeFilter, preset string) (*DashboardData, string, error) {
-	if globalCache != nil {
-		if err := refreshGlobalCacheIfRulesChanged(); err != nil {
-			Warn("Bash 规则刷新失败，继续尝试现有缓存", "error", err.Error())
-		}
-		data, err := buildDataFromCache(tf, preset)
-		if err == nil {
-			return data, "cache", nil
-		}
-		Warn("缓存读取失败，降级到实时解析", "error", err.Error())
-	}
-
 	data, err := buildDataFromParsing(tf, preset)
 	if err != nil {
 		return nil, "parsing", err
@@ -591,7 +574,7 @@ func buildDashboardData(tf TimeFilter, preset string) (*DashboardData, string, e
 }
 
 func buildDashboardDataWithCache(cache *CacheFile, tf TimeFilter, preset string) (*DashboardData, string, error) {
-	data, err := buildDataFromCacheWith(cache, tf, preset)
+	data, err := buildDataFromCache(cache, tf, preset)
 	if err == nil {
 		return data, "cache", nil
 	}
@@ -602,7 +585,7 @@ func dashboardRuntimeCache(data *DashboardData) *CacheFile {
 	if data != nil && data.RuntimeCache != nil {
 		return data.RuntimeCache
 	}
-	return globalCache
+	return nil
 }
 
 type dashboardDataLoader func(TimeFilter, string) (*DashboardData, string, error)
@@ -636,8 +619,9 @@ func loadDashboardDataWithFilter(filter AnalysisFilter, load dashboardDataLoader
 func providerCacheForConfig(config Config, force bool) (*CacheFile, error) {
 	provider := resolveProvider(config.Provider, config.DataDir)
 	config.Provider = provider
+	key := providerCachePoolKey(config)
 	providerCachePool.RLock()
-	cached := providerCachePool.items[provider]
+	cached := providerCachePool.items[key]
 	providerCachePool.RUnlock()
 	if cached != nil && !force && cached.Provider == string(provider) {
 		rulesHash, err := currentBashRulesHash()
@@ -653,28 +637,14 @@ func providerCacheForConfig(config Config, force bool) (*CacheFile, error) {
 		return nil, err
 	}
 	providerCachePool.Lock()
-	providerCachePool.items[provider] = cache
+	providerCachePool.items[key] = cache
 	providerCachePool.Unlock()
 	return cache, nil
 }
 
-func refreshGlobalCacheIfRulesChanged() error {
-	if globalCache == nil {
-		return nil
-	}
-	if globalCache.Provider != string(resolveProvider(cfg.Provider, cfg.DataDir)) {
-		Info("缓存 provider 已变更，刷新缓存")
-		return refreshGlobalCache(false)
-	}
-	rulesHash, err := currentBashRulesHash()
-	if err != nil {
-		return err
-	}
-	if globalCache.BashRulesHash == rulesHash {
-		return nil
-	}
-	Info("Bash 命令规则已变更，刷新缓存")
-	return refreshGlobalCache(false)
+func providerCachePoolKey(config Config) string {
+	config.Provider = resolveProvider(config.Provider, config.DataDir)
+	return cachePathForConfig(config) + "\x00" + config.DataDir
 }
 
 // sendJSON 发送 JSON 响应
