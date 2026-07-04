@@ -39,7 +39,7 @@ function App() {
   const s = overview.data?.summary
   const trend = overview.data?.trend
   const provider = dashboard.data?.provider
-  const selectedProvider = provider ?? filters.provider ?? 'auto'
+  const selectedProvider = provider ?? filters.provider ?? 'claude'
   const isRefreshing = overview.isFetching || dashboard.isFetching
 
   return (
@@ -220,7 +220,6 @@ function App() {
 function providerLabel(provider: string): string {
   if (provider === 'codex') return 'Codex'
   if (provider === 'claude') return 'Claude Code'
-  if (provider === 'auto') return 'Auto'
   return provider
 }
 

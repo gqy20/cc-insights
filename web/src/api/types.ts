@@ -362,7 +362,7 @@ export interface TimelineData {
 // 前端 filter（驱动所有 Query，见 hooks/useFilters.ts）
 export interface Filters {
   preset: string
-  provider?: 'claude' | 'codex' | 'auto'
+  provider?: 'claude' | 'codex'
   start?: string
   end?: string
   project?: string

@@ -29,7 +29,6 @@ export function TopFilterBar() {
       >
         <option value="claude">Claude Code</option>
         <option value="codex">Codex</option>
-        <option value="auto">Auto</option>
       </select>
 
       <input
