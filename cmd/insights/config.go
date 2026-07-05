@@ -16,6 +16,9 @@ type Config struct {
 	RulesPath   string
 	PricingPath string
 	Provider    Provider
+	// DataDirExplicit 表示用户通过 --data 显式指定了数据目录。
+	// 为真时，Web API 不得在切换 provider 时用该 provider 的默认目录覆盖 DataDir。
+	DataDirExplicit bool
 }
 
 var cfg Config

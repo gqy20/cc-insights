@@ -9,6 +9,9 @@
 
 ## [Unreleased]
 
+### 修复
+- **Web 忽略 `--data` 参数**：Dashboard 收到带 `provider=claude`/`codex` 的请求时，会无条件把数据目录重置为该 provider 的默认目录（如 `~/.claude`），导致用户通过 `--data` 指定的自定义数据目录被丢弃、预建缓存无法复用、每次请求都全量重扫并触发 60s 超时（HTTP 408）。现新增 `Config.DataDirExplicit` 标记：用户显式传入 `--data` 时，切换 provider 不再覆盖数据目录。
+
 ## [0.2.0] - 2026-07-04
 
 ### 新增

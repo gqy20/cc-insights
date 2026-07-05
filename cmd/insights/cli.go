@@ -298,6 +298,7 @@ func normalizeParsedConfig(config *Config, fs *flag.FlagSet) {
 			}
 		})
 	}
+	config.DataDirExplicit = dataProvided
 	if !dataProvided && config.Provider == ProviderCodex {
 		config.DataDir = defaultDataDirForProvider(ProviderCodex)
 	}

@@ -257,7 +257,7 @@ func buildRecommendationDataWithFilter(filter AnalysisFilter) (*DashboardData, s
 	if filter.ProviderSet && filter.Provider != "" {
 		config := cfg
 		config.Provider = filter.Provider
-		if filter.ProviderRaw != ProviderAuto && (filter.Provider == ProviderClaude || filter.Provider == ProviderCodex) {
+		if !config.DataDirExplicit && filter.ProviderRaw != ProviderAuto && (filter.Provider == ProviderClaude || filter.Provider == ProviderCodex) {
 			config.DataDir = defaultDataDirForProvider(filter.Provider)
 		}
 		cache, err := providerCacheForConfig(config, false)
@@ -305,10 +305,13 @@ func parseAnalysisFilter(r *http.Request) (AnalysisFilter, error) {
 			return AnalysisFilter{}, err
 		}
 		rawProvider = opts.Config.Provider
-		if opts.Config.Provider == ProviderCodex && cfg.Provider != ProviderCodex {
-			opts.Config.DataDir = defaultDataDirForProvider(ProviderCodex)
-		} else if opts.Config.Provider == ProviderClaude && cfg.Provider != ProviderClaude {
-			opts.Config.DataDir = defaultDataDirForProvider(ProviderClaude)
+		// 用户显式指定 --data 时，切换 provider 不得覆盖数据目录。
+		if !cfg.DataDirExplicit {
+			if opts.Config.Provider == ProviderCodex && cfg.Provider != ProviderCodex {
+				opts.Config.DataDir = defaultDataDirForProvider(ProviderCodex)
+			} else if opts.Config.Provider == ProviderClaude && cfg.Provider != ProviderClaude {
+				opts.Config.DataDir = defaultDataDirForProvider(ProviderClaude)
+			}
 		}
 		opts.Config.Provider = resolveProvider(opts.Config.Provider, opts.Config.DataDir)
 	}
@@ -568,7 +571,7 @@ func cacheVersionForMeta(filter AnalysisFilter) string {
 	if filter.ProviderSet && filter.Provider != "" {
 		config := cfg
 		config.Provider = filter.Provider
-		if filter.ProviderRaw != ProviderAuto && (filter.Provider == ProviderClaude || filter.Provider == ProviderCodex) {
+		if !config.DataDirExplicit && filter.ProviderRaw != ProviderAuto && (filter.Provider == ProviderClaude || filter.Provider == ProviderCodex) {
 			config.DataDir = defaultDataDirForProvider(filter.Provider)
 		}
 		key := providerCachePoolKey(config)

@@ -601,7 +601,7 @@ func loadDashboardDataWithFilter(filter AnalysisFilter, load dashboardDataLoader
 	if filter.ProviderSet && filter.Provider != "" {
 		config := cfg
 		config.Provider = filter.Provider
-		if filter.ProviderRaw != ProviderAuto && (filter.Provider == ProviderClaude || filter.Provider == ProviderCodex) {
+		if !config.DataDirExplicit && filter.ProviderRaw != ProviderAuto && (filter.Provider == ProviderClaude || filter.Provider == ProviderCodex) {
 			config.DataDir = defaultDataDirForProvider(filter.Provider)
 		}
 		cache, err := providerCacheForConfig(config, false)
