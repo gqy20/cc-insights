@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"runtime"
 	"sort"
@@ -284,14 +283,11 @@ func scanPromptFile(path string, tf TimeFilter, opts cliOptions, agg *promptAggr
 	}
 	defer f.Close()
 
-	decoder := json.NewDecoder(f)
-	for {
+	scanner := newJSONLScanner(f)
+	for scanner.Scan() {
 		var record ProjectRecord
-		if err := decoder.Decode(&record); err != nil {
-			if err == io.EOF {
-				break
-			}
-			continue
+		if err := json.Unmarshal(scanner.Bytes(), &record); err != nil {
+			continue // 跳过损坏/非法 JSON 行
 		}
 		if record.Type != "user" {
 			continue
