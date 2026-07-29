@@ -322,6 +322,9 @@ func scanPromptFile(path string, tf TimeFilter, opts cliOptions, agg *promptAggr
 		}
 		agg.addCleanPrompt(item)
 	}
+	if err := scanner.Err(); err != nil {
+		Warn("Prompt JSONL 文件读取失败", "path", path, "error", err.Error())
+	}
 }
 
 func extractUserPromptText(raw json.RawMessage) (string, bool, bool) {

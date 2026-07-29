@@ -1,10 +1,12 @@
 package main
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"testing/iotest"
 	"time"
 )
 
@@ -14,7 +16,7 @@ import (
 //
 // 背景:流式 json.Decoder 在遇到非法字节时既不返回 EOF 也不前移读取位置,
 // 配合“遇错 continue”的循环会 100% CPU 死循环——实测一条坏行即可让 cache
-// 构建挂死 30 分钟以上。改用逐行 bufio.Scanner + json.Unmarshal 后可安全跳过。
+// 构建挂死 30 分钟以上。改用有上限的逐行读取 + json.Unmarshal 后可安全跳过。
 func TestParseProjectFile_SkipsNULCorruptedLine(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "s.jsonl")
@@ -46,5 +48,32 @@ func TestParseProjectFile_SkipsNULCorruptedLine(t *testing.T) {
 	}
 	if total != 2 {
 		t.Fatalf("有效 assistant 消息数 = %d, want 2(损坏行应被跳过,其余有效行正常解析)", total)
+	}
+}
+
+func TestJSONLScannerSkipsOversizedLineAndContinues(t *testing.T) {
+	input := "{\"id\":1}\n" + strings.Repeat("x", jsonlReadBufferBytes+32) + "\n{\"id\":2}\n"
+	scanner := newJSONLScannerWithLimit(strings.NewReader(input), 16)
+
+	var got []string
+	for scanner.Scan() {
+		got = append(got, string(scanner.Bytes()))
+	}
+	if err := scanner.Err(); err != nil {
+		t.Fatalf("Scan returned error: %v", err)
+	}
+	if len(got) != 2 || got[0] != `{"id":1}` || got[1] != `{"id":2}` {
+		t.Fatalf("lines = %#v, want two valid lines around oversized line", got)
+	}
+}
+
+func TestJSONLScannerReportsReadError(t *testing.T) {
+	wantErr := errors.New("read failed")
+	scanner := newJSONLScanner(iotest.ErrReader(wantErr))
+	if scanner.Scan() {
+		t.Fatal("Scan = true, want false")
+	}
+	if !errors.Is(scanner.Err(), wantErr) {
+		t.Fatalf("Err = %v, want %v", scanner.Err(), wantErr)
 	}
 }

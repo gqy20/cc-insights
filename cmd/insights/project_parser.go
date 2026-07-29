@@ -304,6 +304,10 @@ func parseProjectFileAggregate(filePath string, tf TimeFilter, agg *ProjectAggre
 			pendingTools[content.ID] = call
 		}
 	}
+	if err := scanner.Err(); err != nil {
+		Warn("JSONL 文件读取失败", "path", filePath, "error", err.Error())
+		return
+	}
 
 	if len(pendingTools) > 0 {
 		for _, call := range pendingTools {

@@ -668,7 +668,7 @@ func (cb *CacheBuilder) buildFromHistory(cache *CacheFile) error {
 		cache.TotalMessages++
 	}
 
-	return nil
+	return scanner.Err()
 }
 
 // buildFromProjects 从 projects/*.jsonl 构建缓存
@@ -795,7 +795,7 @@ func (cb *CacheBuilder) parseProjectFile(filePath string, cache *CacheFile, sess
 		}
 	}
 
-	return nil
+	return scanner.Err()
 }
 
 // parseDebugFile 解析单个 debug 日志文件

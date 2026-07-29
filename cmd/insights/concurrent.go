@@ -36,6 +36,7 @@ func ParseHistoryConcurrent(tf TimeFilter) ([]CommandStats, map[string]int, erro
 	batchSize := 1000
 	batches := make(chan []HistoryRecord, runtime.NumCPU())
 	var wg sync.WaitGroup
+	var scanErr error
 
 	// producer: 读取文件并分批
 	wg.Add(1)
@@ -67,6 +68,7 @@ func ParseHistoryConcurrent(tf TimeFilter) ([]CommandStats, map[string]int, erro
 		if len(batch) > 0 {
 			batches <- batch
 		}
+		scanErr = scanner.Err()
 	}()
 
 	// consumers: 并发处理批次
@@ -113,6 +115,9 @@ func ParseHistoryConcurrent(tf TimeFilter) ([]CommandStats, map[string]int, erro
 	}
 
 	wg.Wait()
+	if scanErr != nil {
+		return nil, nil, scanErr
+	}
 
 	// 转换为切片并排序
 	var cmdStats []CommandStats

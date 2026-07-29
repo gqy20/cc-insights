@@ -95,6 +95,10 @@ func parseCodexSessionFileAggregate(filePath string, tf TimeFilter, agg *Project
 			parseCodexEventMessage(record.Payload, &state, timestamp, agg)
 		}
 	}
+	if err := scanner.Err(); err != nil {
+		Warn("Codex JSONL 文件读取失败", "path", filePath, "error", err.Error())
+		return
+	}
 
 	for _, pending := range state.PendingTools {
 		if pending.ResultRecorded {
