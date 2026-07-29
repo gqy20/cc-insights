@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"runtime"
 	"sync"
@@ -93,14 +92,11 @@ func parseProjectFileAggregate(filePath string, tf TimeFilter, agg *ProjectAggre
 	pendingTools := make(map[string]pendingToolCall)
 	sessionActiveSkills := make(map[string][]string)
 	lastMsgTs := make(map[string]time.Time) // sessionID -> 上一条带 timestamp 的 message 行时间，用于算单请求 round-trip
-	decoder := json.NewDecoder(f)
-	for {
+	scanner := newJSONLScanner(f)
+	for scanner.Scan() {
 		var record ProjectRecord
-		if err := decoder.Decode(&record); err != nil {
-			if err == io.EOF {
-				break
-			}
-			continue
+		if err := json.Unmarshal(scanner.Bytes(), &record); err != nil {
+			continue // 跳过损坏/非法 JSON 行
 		}
 
 		timestamp, hasTimestamp := parseProjectRecordTimestamp(record.Timestamp)
@@ -307,6 +303,10 @@ func parseProjectFileAggregate(filePath string, tf TimeFilter, agg *ProjectAggre
 			}
 			pendingTools[content.ID] = call
 		}
+	}
+	if err := scanner.Err(); err != nil {
+		Warn("JSONL 文件读取失败", "path", filePath, "error", err.Error())
+		return
 	}
 
 	if len(pendingTools) > 0 {

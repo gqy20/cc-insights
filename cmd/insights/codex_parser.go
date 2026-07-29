@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -58,14 +57,11 @@ func parseCodexSessionFileAggregate(filePath string, tf TimeFilter, agg *Project
 		PendingTools: make(map[string]*codexPendingTool),
 	}
 
-	decoder := json.NewDecoder(f)
-	for {
+	scanner := newJSONLScanner(f)
+	for scanner.Scan() {
 		var record codexRecord
-		if err := decoder.Decode(&record); err != nil {
-			if err == io.EOF {
-				break
-			}
-			continue
+		if err := json.Unmarshal(scanner.Bytes(), &record); err != nil {
+			continue // 跳过损坏/非法 JSON 行
 		}
 		timestamp, hasTimestamp := parseProjectRecordTimestamp(record.Timestamp)
 
@@ -98,6 +94,10 @@ func parseCodexSessionFileAggregate(filePath string, tf TimeFilter, agg *Project
 		case "event_msg":
 			parseCodexEventMessage(record.Payload, &state, timestamp, agg)
 		}
+	}
+	if err := scanner.Err(); err != nil {
+		Warn("Codex JSONL 文件读取失败", "path", filePath, "error", err.Error())
+		return
 	}
 
 	for _, pending := range state.PendingTools {

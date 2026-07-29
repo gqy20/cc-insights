@@ -642,14 +642,11 @@ func (cb *CacheBuilder) buildFromHistory(cache *CacheFile) error {
 	}
 	defer f.Close()
 
-	decoder := json.NewDecoder(f)
-	for {
+	scanner := newJSONLScanner(f)
+	for scanner.Scan() {
 		var record HistoryRecord
-		if err := decoder.Decode(&record); err != nil {
-			if err == io.EOF {
-				break
-			}
-			continue
+		if err := json.Unmarshal(scanner.Bytes(), &record); err != nil {
+			continue // 跳过损坏/非法 JSON 行
 		}
 
 		// 解析时间戳
@@ -671,7 +668,7 @@ func (cb *CacheBuilder) buildFromHistory(cache *CacheFile) error {
 		cache.TotalMessages++
 	}
 
-	return nil
+	return scanner.Err()
 }
 
 // buildFromProjects 从 projects/*.jsonl 构建缓存
@@ -758,14 +755,11 @@ func (cb *CacheBuilder) parseProjectFile(filePath string, cache *CacheFile, sess
 	}
 	defer f.Close()
 
-	decoder := json.NewDecoder(f)
-	for {
+	scanner := newJSONLScanner(f)
+	for scanner.Scan() {
 		var record ProjectRecord
-		if err := decoder.Decode(&record); err != nil {
-			if err == io.EOF {
-				break
-			}
-			continue
+		if err := json.Unmarshal(scanner.Bytes(), &record); err != nil {
+			continue // 跳过损坏/非法 JSON 行
 		}
 
 		// 解析时间戳
@@ -801,7 +795,7 @@ func (cb *CacheBuilder) parseProjectFile(filePath string, cache *CacheFile, sess
 		}
 	}
 
-	return nil
+	return scanner.Err()
 }
 
 // parseDebugFile 解析单个 debug 日志文件

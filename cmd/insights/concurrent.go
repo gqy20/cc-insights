@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -37,6 +36,7 @@ func ParseHistoryConcurrent(tf TimeFilter) ([]CommandStats, map[string]int, erro
 	batchSize := 1000
 	batches := make(chan []HistoryRecord, runtime.NumCPU())
 	var wg sync.WaitGroup
+	var scanErr error
 
 	// producer: 读取文件并分批
 	wg.Add(1)
@@ -44,19 +44,13 @@ func ParseHistoryConcurrent(tf TimeFilter) ([]CommandStats, map[string]int, erro
 		defer wg.Done()
 		defer close(batches)
 
-		decoder := json.NewDecoder(f)
+		scanner := newJSONLScanner(f)
 		batch := make([]HistoryRecord, 0, batchSize)
 
-		for {
+		for scanner.Scan() {
 			var record HistoryRecord
-			if err := decoder.Decode(&record); err != nil {
-				if err == io.EOF {
-					if len(batch) > 0 {
-						batches <- batch
-					}
-					break
-				}
-				continue
+			if err := json.Unmarshal(scanner.Bytes(), &record); err != nil {
+				continue // 跳过损坏/非法 JSON 行
 			}
 
 			// 时间过滤
@@ -71,6 +65,10 @@ func ParseHistoryConcurrent(tf TimeFilter) ([]CommandStats, map[string]int, erro
 				batch = make([]HistoryRecord, 0, batchSize)
 			}
 		}
+		if len(batch) > 0 {
+			batches <- batch
+		}
+		scanErr = scanner.Err()
 	}()
 
 	// consumers: 并发处理批次
@@ -117,6 +115,9 @@ func ParseHistoryConcurrent(tf TimeFilter) ([]CommandStats, map[string]int, erro
 	}
 
 	wg.Wait()
+	if scanErr != nil {
+		return nil, nil, scanErr
+	}
 
 	// 转换为切片并排序
 	var cmdStats []CommandStats
