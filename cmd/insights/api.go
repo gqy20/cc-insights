@@ -599,11 +599,7 @@ type dashboardDataLoader func(TimeFilter, string) (*DashboardData, string, error
 
 func loadDashboardDataWithFilter(filter AnalysisFilter, load dashboardDataLoader) (*DashboardData, string, error) {
 	if filter.ProviderSet && filter.Provider != "" {
-		config := cfg
-		config.Provider = filter.Provider
-		if !config.DataDirExplicit && filter.ProviderRaw != ProviderAuto && (filter.Provider == ProviderClaude || filter.Provider == ProviderCodex) {
-			config.DataDir = defaultDataDirForProvider(filter.Provider)
-		}
+		config := configForAnalysisFilter(cfg, filter)
 		cache, err := providerCacheForConfig(config, false)
 		if err != nil {
 			return nil, "cache", err
