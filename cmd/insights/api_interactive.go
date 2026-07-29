@@ -255,11 +255,7 @@ func handleTimelineAPI(w http.ResponseWriter, r *http.Request) {
 
 func buildRecommendationDataWithFilter(filter AnalysisFilter) (*DashboardData, string, error) {
 	if filter.ProviderSet && filter.Provider != "" {
-		config := cfg
-		config.Provider = filter.Provider
-		if filter.ProviderRaw != ProviderAuto && (filter.Provider == ProviderClaude || filter.Provider == ProviderCodex) {
-			config.DataDir = defaultDataDirForProvider(filter.Provider)
-		}
+		config := configForAnalysisFilter(cfg, filter)
 		cache, err := providerCacheForConfig(config, false)
 		if err != nil {
 			return nil, "cache", err
@@ -305,12 +301,7 @@ func parseAnalysisFilter(r *http.Request) (AnalysisFilter, error) {
 			return AnalysisFilter{}, err
 		}
 		rawProvider = opts.Config.Provider
-		if opts.Config.Provider == ProviderCodex && cfg.Provider != ProviderCodex {
-			opts.Config.DataDir = defaultDataDirForProvider(ProviderCodex)
-		} else if opts.Config.Provider == ProviderClaude && cfg.Provider != ProviderClaude {
-			opts.Config.DataDir = defaultDataDirForProvider(ProviderClaude)
-		}
-		opts.Config.Provider = resolveProvider(opts.Config.Provider, opts.Config.DataDir)
+		opts.Config = configForRequestedProvider(opts.Config, rawProvider)
 	}
 	tf, normalizedPreset, err := timeFilterFromCLIOptions(opts)
 	if err != nil {
@@ -564,13 +555,20 @@ func (filter AnalysisFilter) metaFilters() map[string]interface{} {
 	return values
 }
 
+func configForAnalysisFilter(config Config, filter AnalysisFilter) Config {
+	if !filter.ProviderSet || filter.Provider == "" {
+		return config
+	}
+	requested := filter.ProviderRaw
+	if requested == "" {
+		requested = filter.Provider
+	}
+	return configForRequestedProvider(config, requested)
+}
+
 func cacheVersionForMeta(filter AnalysisFilter) string {
 	if filter.ProviderSet && filter.Provider != "" {
-		config := cfg
-		config.Provider = filter.Provider
-		if filter.ProviderRaw != ProviderAuto && (filter.Provider == ProviderClaude || filter.Provider == ProviderCodex) {
-			config.DataDir = defaultDataDirForProvider(filter.Provider)
-		}
+		config := configForAnalysisFilter(cfg, filter)
 		key := providerCachePoolKey(config)
 		providerCachePool.RLock()
 		cache := providerCachePool.items[key]

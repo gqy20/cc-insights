@@ -10,7 +10,8 @@
 ## [Unreleased]
 
 ### 修复
-- **损坏 JSONL 行导致解析死循环**：当 `projects/*.jsonl`、`history.jsonl` 或 Codex session 文件中存在被 NUL 字节污染的损坏行(崩溃/截断写入的产物)时,流式 `json.Decoder` 既不返回 EOF 也不前移读取位置,配合“遇错 continue”的循环会陷入 100% CPU 死循环——实测一条坏行即可让缓存构建挂死 30 分钟以上、Web `/api/data` 持续 408 超时。改为逐行 `bufio.Scanner` + `json.Unmarshal`,可安全跳过损坏行并继续解析其余有效行。
+- **Web 忽略 `--data` 参数**：Dashboard 收到带 `provider=claude`/`codex` 的请求时，会无条件把数据目录重置为该 provider 的默认目录（如 `~/.claude`），导致用户通过 `--data` 指定的自定义数据目录被丢弃、预建缓存无法复用、每次请求都全量重扫并触发 60s 超时（HTTP 408）。现新增 `Config.DataDirExplicit` 标记：用户显式传入 `--data` 时，切换 provider 不再覆盖数据目录。
+- **损坏 JSONL 行导致解析死循环**：当 `projects/*.jsonl`、`history.jsonl` 或 Codex session 文件中存在被 NUL 字节污染的损坏行（崩溃/截断写入的产物）时，流式 `json.Decoder` 既不返回 EOF 也不前移读取位置，配合“遇错 continue”的循环会陷入 100% CPU 死循环。现改为有内存上限的逐行读取与 `json.Unmarshal`，可安全跳过损坏行并继续解析其余有效行。
 
 ## [0.2.0] - 2026-07-04
 

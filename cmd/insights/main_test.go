@@ -61,13 +61,16 @@ func TestAPIUsesCachedData(t *testing.T) {
 	originalDataDir := cfg.DataDir
 	originalCacheDir := cfg.CacheDir
 	originalProvider := cfg.Provider
+	originalDataDirExplicit := cfg.DataDirExplicit
 	cfg.DataDir = dataDir
 	cfg.CacheDir = cacheDir
 	cfg.Provider = ProviderClaude
+	cfg.DataDirExplicit = true
 	defer func() {
 		cfg.DataDir = originalDataDir
 		cfg.CacheDir = originalCacheDir
 		cfg.Provider = originalProvider
+		cfg.DataDirExplicit = originalDataDirExplicit
 	}()
 
 	// 创建API请求
@@ -152,15 +155,18 @@ func TestReloadHandlerForcesCacheRefresh(t *testing.T) {
 	originalCacheDir := cfg.CacheDir
 	originalRulesPath := cfg.RulesPath
 	originalProvider := cfg.Provider
+	originalDataDirExplicit := cfg.DataDirExplicit
 	cfg.DataDir = dataDir
 	cfg.CacheDir = cacheDir
 	cfg.RulesPath = ""
 	cfg.Provider = ProviderClaude
+	cfg.DataDirExplicit = true
 	defer func() {
 		cfg.DataDir = originalDataDir
 		cfg.CacheDir = originalCacheDir
 		cfg.RulesPath = originalRulesPath
 		cfg.Provider = originalProvider
+		cfg.DataDirExplicit = originalDataDirExplicit
 	}()
 
 	cache, err := providerCacheForConfig(cfg, false)
@@ -170,6 +176,7 @@ func TestReloadHandlerForcesCacheRefresh(t *testing.T) {
 	if cache == nil {
 		t.Fatal("initial provider cache should not be nil")
 	}
+	initial := cache
 
 	cfg.RulesPath = rulesPath
 	req := httptest.NewRequest(http.MethodPost, "/api/reload?force=1&provider=claude", nil)
@@ -185,5 +192,8 @@ func TestReloadHandlerForcesCacheRefresh(t *testing.T) {
 	providerCachePool.RUnlock()
 	if refreshed == nil {
 		t.Fatal("provider cache should not be nil")
+	}
+	if refreshed == initial {
+		t.Fatal("explicit data directory cache was not refreshed")
 	}
 }
