@@ -27,6 +27,49 @@ func TestParseAnalysisFilter(t *testing.T) {
 	}
 }
 
+func TestConfigForAnalysisFilterPreservesExplicitDataDir(t *testing.T) {
+	dataDir := t.TempDir()
+	config := Config{
+		DataDir:         dataDir,
+		Provider:        ProviderClaude,
+		DataDirExplicit: true,
+	}
+	filter := AnalysisFilter{
+		Provider:    ProviderCodex,
+		ProviderRaw: ProviderCodex,
+		ProviderSet: true,
+	}
+
+	got := configForAnalysisFilter(config, filter)
+	if got.DataDir != dataDir {
+		t.Fatalf("DataDir = %q, want explicit directory %q", got.DataDir, dataDir)
+	}
+	if got.Provider != ProviderCodex {
+		t.Fatalf("Provider = %q, want %q", got.Provider, ProviderCodex)
+	}
+}
+
+func TestConfigForAnalysisFilterUsesProviderDefaultWithoutExplicitDataDir(t *testing.T) {
+	config := Config{
+		DataDir:  defaultDataDirForProvider(ProviderClaude),
+		Provider: ProviderClaude,
+	}
+	filter := AnalysisFilter{
+		Provider:    ProviderCodex,
+		ProviderRaw: ProviderCodex,
+		ProviderSet: true,
+	}
+
+	got := configForAnalysisFilter(config, filter)
+	want := defaultDataDirForProvider(ProviderCodex)
+	if got.DataDir != want {
+		t.Fatalf("DataDir = %q, want provider default %q", got.DataDir, want)
+	}
+	if got.Provider != ProviderCodex {
+		t.Fatalf("Provider = %q, want %q", got.Provider, ProviderCodex)
+	}
+}
+
 func TestFilterDiagnosticFindings(t *testing.T) {
 	items := []diagnosticFinding{
 		{ID: "a", Severity: "high", Targets: []string{"tool"}, Evidence: []diagnosticEvidence{{Label: "项目", Value: "/tmp/demo"}}},

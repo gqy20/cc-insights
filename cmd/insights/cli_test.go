@@ -114,6 +114,9 @@ func TestParseCLIOptionsProviderCodexUsesDefaultCodexDataDir(t *testing.T) {
 	if opts.DataDir != defaultDataDirForProvider(ProviderCodex) {
 		t.Fatalf("DataDir = %q, want %q", opts.DataDir, defaultDataDirForProvider(ProviderCodex))
 	}
+	if opts.DataDirExplicit {
+		t.Fatal("DataDirExplicit = true, want false")
+	}
 }
 
 func TestParseCLIOptionsProviderAutoDetectsCodexDataDir(t *testing.T) {
@@ -127,6 +130,9 @@ func TestParseCLIOptionsProviderAutoDetectsCodexDataDir(t *testing.T) {
 	}
 	if opts.Provider != ProviderCodex {
 		t.Fatalf("Provider = %q, want %q", opts.Provider, ProviderCodex)
+	}
+	if !opts.DataDirExplicit {
+		t.Fatal("DataDirExplicit = false, want true")
 	}
 }
 

@@ -16,6 +16,9 @@ type Config struct {
 	RulesPath   string
 	PricingPath string
 	Provider    Provider
+	// DataDirExplicit 表示用户通过 --data 显式指定了数据目录。
+	// 为真时，Web API 不得在切换 provider 时用该 provider 的默认目录覆盖 DataDir。
+	DataDirExplicit bool
 }
 
 var cfg Config
@@ -130,6 +133,19 @@ func defaultDataDirForProvider(provider Provider) string {
 	default:
 		return filepath.Join(homeDir, ".claude")
 	}
+}
+
+// configForRequestedProvider 根据请求的 provider 派生配置。
+// 用户显式传入 --data 时保留该目录；否则显式 provider 使用各自默认目录。
+func configForRequestedProvider(config Config, requested Provider) Config {
+	if requested == "" {
+		return config
+	}
+	if !config.DataDirExplicit && requested != ProviderAuto && (requested == ProviderClaude || requested == ProviderCodex) {
+		config.DataDir = defaultDataDirForProvider(requested)
+	}
+	config.Provider = resolveProvider(requested, config.DataDir)
+	return config
 }
 
 func providerCacheDir(baseCacheDir string, provider Provider) string {

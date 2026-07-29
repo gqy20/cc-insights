@@ -134,10 +134,7 @@ func reloadHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	config := cfg
 	if filter.ProviderSet && filter.Provider != "" {
-		config.Provider = filter.Provider
-		if filter.ProviderRaw != ProviderAuto && (filter.Provider == ProviderClaude || filter.Provider == ProviderCodex) {
-			config.DataDir = defaultDataDirForProvider(filter.Provider)
-		}
+		config = configForAnalysisFilter(config, filter)
 	}
 	cache, err := providerCacheForConfig(config, force)
 	if err != nil {
