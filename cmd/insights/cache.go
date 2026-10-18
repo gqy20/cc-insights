@@ -18,6 +18,7 @@ const CacheVersion = "4.16"
 type CacheFile struct {
 	Version       string           // 缓存格式版本
 	Provider      string           `json:"provider,omitempty"`
+	DataDir       string           `json:"data_dir,omitempty"` // 构建时的数据目录：换目录后缓存失效
 	LastUpdate    time.Time        // 最后缓存时间戳
 	TimeRange     TimeRange        // 缓存覆盖的时间范围
 	BuildID       string           `json:"build_id,omitempty"`
@@ -74,7 +75,7 @@ type ProjectFileCache struct {
 	// ParsedOffset 上次解析消费到的字节偏移（codex append-only 文件 tail 增量用）
 	ParsedOffset int64 `json:"parsed_offset,omitempty"`
 	// TailState codex 续解析状态快照（claude 为 nil）
-	TailState *CodexTailState `json:"tail_state,omitempty"`
+	TailState *SessionTailState `json:"tail_state,omitempty"`
 }
 
 // ProjectFileAggregate 可序列化的文件级聚合快照
@@ -377,7 +378,11 @@ func (cf *CacheFile) QueryByTimeRange(start, end time.Time) *CacheFile {
 
 	if hasRuntimeAggregate {
 		runtimeAggregate.finalize()
-		result.ModelUsage = copyModelUsageMap(runtimeAggregate.ModelUsage)
+		// runtime 聚合无模型用量时（pi/opencode 无 token 数据），
+		// 保留按日模型计数推导的 ModelUsage，避免 Top 模型丢失。
+		if runtimeModels := copyModelUsageMap(runtimeAggregate.ModelUsage); len(runtimeModels) > 0 {
+			result.ModelUsage = runtimeModels
+		}
 		result.ToolAnalysis = runtimeAggregate.ToolAnalysis
 		result.SkillAnalysis = cloneSkillAnalysis(runtimeAggregate.SkillAnalysis)
 		mergeInstalledSkillAnalysis(result.SkillAnalysis, cf.SkillAnalysis)

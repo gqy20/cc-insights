@@ -52,7 +52,7 @@ func (cb *CacheBuilder) BuildFullCache() error {
 	}
 
 	previous, _ := LoadCacheFile(cb.CachePath)
-	if previous != nil && (previous.Version != CacheVersion || previous.BashRulesHash != rulesHash || previous.Provider != string(provider)) {
+	if previous != nil && (previous.Version != CacheVersion || previous.BashRulesHash != rulesHash || previous.Provider != string(provider) || previous.DataDir != dataDir) {
 		previous = nil
 	}
 
@@ -77,6 +77,7 @@ func (cb *CacheBuilder) BuildFullCache() error {
 	cache := &CacheFile{
 		Version:       CacheVersion,
 		Provider:      string(provider),
+		DataDir:       dataDir,
 		LastUpdate:    time.Now(),
 		TimeRange:     TimeRange{},
 		BuildID:       buildID,
@@ -377,7 +378,12 @@ func (cb *CacheBuilder) buildProjectAggregateIncremental(dataDir string, previou
 	if previous != nil {
 		cachedForParse = previous.ProjectFiles
 	}
-	parsedCaches, err := parseProjectFilesForCache(provider, toParse, cachedForParse)
+	// opencode：session/message 元数据每次重建轻量索引，消息级计数直接计入 aggregate
+	var ocIdx *openCodeIndex
+	if provider == ProviderOpenCode {
+		ocIdx = buildOpenCodeIndexInto(dataDir, aggregate)
+	}
+	parsedCaches, err := parseProjectFilesForCache(provider, toParse, cachedForParse, ocIdx)
 	if err != nil {
 		return nil, nil, 0, 0, err
 	}
@@ -423,12 +429,17 @@ func listLogFileInfos(provider Provider, dataDir string) ([]projectFileInfo, err
 		resolvedDataDir = resolved
 	}
 	rootDir := logRootDir(provider, resolvedDataDir)
+	provider = resolveProvider(provider, resolvedDataDir)
+	ext := ".jsonl"
+	if provider == ProviderOpenCode {
+		ext = ".json"
+	}
 	var files []projectFileInfo
 	err := filepath.WalkDir(rootDir, func(path string, entry os.DirEntry, err error) error {
 		if err != nil {
 			return nil
 		}
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".jsonl") {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ext) {
 			return nil
 		}
 		info, err := entry.Info()
@@ -439,8 +450,12 @@ func listLogFileInfos(provider Provider, dataDir string) ([]projectFileInfo, err
 		if err != nil {
 			rel = path
 		}
+		relSlash := filepath.ToSlash(rel)
+		if !providerPathRelevant(provider, relSlash) {
+			return nil
+		}
 		files = append(files, projectFileInfo{
-			RelPath: filepath.ToSlash(rel),
+			RelPath: relSlash,
 			AbsPath: path,
 			Size:    info.Size(),
 			ModTime: info.ModTime().UnixNano(),
@@ -456,16 +471,32 @@ func listLogFileInfos(provider Provider, dataDir string) ([]projectFileInfo, err
 	return files, nil
 }
 
+// providerPathRelevant 过滤 provider 无关的文件。
+// opencode storage 含 session/、session_diff/、migration/、project/ 等
+// 元数据树：会话与项目信息经由索引读取，只有 message/、part/ 是解析单元。
+func providerPathRelevant(provider Provider, relPath string) bool {
+	switch provider {
+	case ProviderOpenCode:
+		return strings.HasPrefix(relPath, "storage/message/") || strings.HasPrefix(relPath, "storage/part/")
+	default:
+		return true
+	}
+}
+
 func logRootDir(provider Provider, dataDir string) string {
 	switch resolveProvider(provider, dataDir) {
 	case ProviderCodex:
 		return filepath.Join(dataDir, "sessions")
+	case ProviderPi:
+		return filepath.Join(dataDir, "agent", "sessions")
+	case ProviderOpenCode:
+		return filepath.Join(dataDir, "storage")
 	default:
 		return filepath.Join(dataDir, "projects")
 	}
 }
 
-func parseProjectFilesForCache(provider Provider, files []projectFileInfo, cached map[string]*ProjectFileCache) ([]projectFileResult, error) {
+func parseProjectFilesForCache(provider Provider, files []projectFileInfo, cached map[string]*ProjectFileCache, ocIdx *openCodeIndex) ([]projectFileResult, error) {
 	if len(files) == 0 {
 		return nil, nil
 	}
@@ -483,11 +514,33 @@ func parseProjectFilesForCache(provider Provider, files []projectFileInfo, cache
 			defer wg.Done()
 			for info := range jobs {
 				var cache *ProjectFileCache
-				// codex append-only 文件只解析增长尾部：缓存聚合为基数，delta 直接计入
+				if provider == ProviderOpenCode {
+					// opencode：part 文件自含调用+结果，按文件独立解析（文件不可变，天然增量）
+					fileAggregate := newProjectAggregate()
+					parseOpenCodePartFile(info.RelPath, info.AbsPath, ocIdx, fileAggregate)
+					results <- projectFileResult{
+						Info:      info,
+						Aggregate: fileAggregate,
+						Cache: &ProjectFileCache{
+							Path:        info.RelPath,
+							Size:        info.Size,
+							ModTimeUnix: info.ModTime,
+							Aggregate:   aggregateToProjectFileAggregate(fileAggregate),
+						},
+					}
+					continue
+				}
+				// codex/pi append-only session 文件只解析增长尾部：缓存聚合为基数，delta 直接计入
 				if prior := cached[info.RelPath]; prior != nil &&
 					prior.TailState != nil && prior.ParsedOffset == prior.Size && info.Size > prior.Size {
 					base := projectFileAggregateToAggregate(prior.Aggregate)
-					offset, snap := parseCodexSessionFileTail(info.AbsPath, prior.Size, prior.TailState, TimeFilter{}, base)
+					var offset int64
+					var snap *SessionTailState
+					if provider == ProviderPi {
+						offset, snap = parsePiSessionFileTail(info.AbsPath, prior.Size, prior.TailState, TimeFilter{}, base)
+					} else {
+						offset, snap = parseCodexSessionFileTail(info.AbsPath, prior.Size, prior.TailState, TimeFilter{}, base)
+					}
 					if offset != prior.Size {
 						cache = &ProjectFileCache{
 							Path:         info.RelPath,
@@ -535,10 +588,12 @@ func parseProjectFilesForCache(provider Provider, files []projectFileInfo, cache
 	return items, nil
 }
 
-func parseLogFileAggregate(provider Provider, filePath string, tf TimeFilter, fileAggregate *ProjectAggregate) (int64, *CodexTailState) {
+func parseLogFileAggregate(provider Provider, filePath string, tf TimeFilter, fileAggregate *ProjectAggregate) (int64, *SessionTailState) {
 	switch provider {
 	case ProviderCodex:
 		return parseCodexSessionFileAggregateFull(filePath, tf, fileAggregate)
+	case ProviderPi:
+		return parsePiSessionFileAggregateFull(filePath, tf, fileAggregate)
 	default:
 		parseProjectFileAggregate(filePath, tf, fileAggregate)
 		return 0, nil
@@ -547,7 +602,7 @@ func parseLogFileAggregate(provider Provider, filePath string, tf TimeFilter, fi
 
 // parseCodexSessionFileAggregateFull 全量解析 codex session 文件，返回
 // 消费偏移与续解析状态（供下次 tail 增量）。
-func parseCodexSessionFileAggregateFull(filePath string, tf TimeFilter, agg *ProjectAggregate) (int64, *CodexTailState) {
+func parseCodexSessionFileAggregateFull(filePath string, tf TimeFilter, agg *ProjectAggregate) (int64, *SessionTailState) {
 	f, err := os.Open(filePath)
 	if err != nil {
 		return 0, nil
@@ -564,10 +619,10 @@ func parseCodexSessionFileAggregateFull(filePath string, tf TimeFilter, agg *Pro
 	consumed, err := scanCodexRecords(f, &state, tf, agg)
 	if err != nil {
 		Warn("Codex JSONL 文件读取失败", "path", filePath, "error", err.Error())
-		return consumed, snapshotCodexTailState(&state)
+		return consumed, snapshotSessionTailState(&state)
 	}
 	finalizeCodexPendings(agg, &state)
-	return consumed, snapshotCodexTailState(&state)
+	return consumed, snapshotSessionTailState(&state)
 }
 
 // RebuildIfChanged 在数据变化时重建缓存。
@@ -614,6 +669,9 @@ func (cb *CacheBuilder) NeedsRebuild() bool {
 		return true
 	}
 	if cache.Provider != string(resolveProvider(cb.Provider, cb.DataDir)) {
+		return true
+	}
+	if cache.DataDir != "" && cache.DataDir != cb.DataDir {
 		return true
 	}
 	rulesHash, err := currentBashRulesHash()

@@ -318,8 +318,10 @@ func normalizeParsedConfig(config *Config, fs *flag.FlagSet) {
 		})
 	}
 	config.DataDirExplicit = dataProvided
-	if !dataProvided && config.Provider == ProviderCodex {
-		config.DataDir = defaultDataDirForProvider(ProviderCodex)
+	// 各 provider 默认数据目录统一由 configForRequestedProvider 派生，
+	// 避免 codex/pi/opencode 只在某一条路径生效。
+	if !dataProvided && config.Provider != ProviderAuto && config.Provider != "" {
+		config.DataDir = defaultDataDirForProvider(config.Provider)
 	}
 	config.Provider = resolveProvider(config.Provider, config.DataDir)
 }
@@ -372,6 +374,9 @@ func loadReusableCacheSnapshot() (*CacheFile, error) {
 	}
 	if cache.Provider != string(resolveProvider(cfg.Provider, cfg.DataDir)) {
 		return nil, fmt.Errorf("缓存 provider %s != %s", cache.Provider, cfg.Provider)
+	}
+	if cache.DataDir != "" && cache.DataDir != cfg.DataDir {
+		return nil, fmt.Errorf("缓存数据目录 %s != %s", cache.DataDir, cfg.DataDir)
 	}
 	rulesHash, err := currentBashRulesHash()
 	if err != nil {

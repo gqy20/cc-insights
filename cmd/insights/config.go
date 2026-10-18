@@ -26,9 +26,11 @@ var cfg Config
 type Provider string
 
 const (
-	ProviderClaude Provider = "claude"
-	ProviderCodex  Provider = "codex"
-	ProviderAuto   Provider = "auto"
+	ProviderClaude   Provider = "claude"
+	ProviderCodex    Provider = "codex"
+	ProviderOpenCode Provider = "opencode"
+	ProviderPi       Provider = "pi"
+	ProviderAuto     Provider = "auto"
 )
 
 func defaultConfig() Config {
@@ -62,7 +64,7 @@ func registerConfigFlags(fs *flag.FlagSet, target *Config) {
 	fs.StringVar(&target.CacheDir, "cache", target.CacheDir, "缓存目录路径 (默认: ~/.cc-insights/cache/)")
 	fs.StringVar(&target.RulesPath, "rules", target.RulesPath, "Bash 命令分类规则 YAML 路径")
 	fs.StringVar(&target.PricingPath, "pricing", target.PricingPath, "模型定价规则 YAML 路径（默认内置 rules/pricing.yml，可用 ~/.cc-insights/pricing.yml 覆盖）")
-	fs.Var(&target.Provider, "provider", "数据源 provider: claude|codex|auto")
+	fs.Var(&target.Provider, "provider", "数据源 provider: claude|codex|opencode|pi|auto")
 }
 
 // registerServerFlags 注册仅 web 命令使用的服务 flag（监听地址/反向代理）。
@@ -87,11 +89,11 @@ func (p *Provider) String() string {
 func (p *Provider) Set(value string) error {
 	provider := Provider(value)
 	switch provider {
-	case ProviderClaude, ProviderCodex, ProviderAuto:
+	case ProviderClaude, ProviderCodex, ProviderOpenCode, ProviderPi, ProviderAuto:
 		*p = provider
 		return nil
 	default:
-		return fmt.Errorf("未知 provider %q，可选: claude|codex|auto", value)
+		return fmt.Errorf("未知 provider %q，可选: claude|codex|opencode|pi|auto", value)
 	}
 }
 
@@ -99,8 +101,17 @@ func resolveProvider(provider Provider, dataDir string) Provider {
 	if provider != ProviderAuto && provider != "" {
 		return provider
 	}
-	if looksLikeCodexDataDir(dataDir) && !looksLikeClaudeDataDir(dataDir) {
+	if looksLikeClaudeDataDir(dataDir) {
+		return ProviderClaude
+	}
+	if looksLikePiDataDir(dataDir) {
+		return ProviderPi
+	}
+	if looksLikeCodexDataDir(dataDir) {
 		return ProviderCodex
+	}
+	if looksLikeOpenCodeDataDir(dataDir) {
+		return ProviderOpenCode
 	}
 	return ProviderClaude
 }
@@ -125,11 +136,37 @@ func looksLikeCodexDataDir(dataDir string) bool {
 	return false
 }
 
+// looksLikePiDataDir 识别 pi agent 数据目录（~/.pi，含 agent/sessions）。
+func looksLikePiDataDir(dataDir string) bool {
+	if dataDir == "" {
+		return false
+	}
+	if info, err := os.Stat(filepath.Join(dataDir, "agent", "sessions")); err == nil && info.IsDir() {
+		return true
+	}
+	return false
+}
+
+// looksLikeOpenCodeDataDir 识别 opencode 数据目录（~/.local/share/opencode，含 storage）。
+func looksLikeOpenCodeDataDir(dataDir string) bool {
+	if dataDir == "" {
+		return false
+	}
+	if info, err := os.Stat(filepath.Join(dataDir, "storage")); err == nil && info.IsDir() {
+		return true
+	}
+	return false
+}
+
 func defaultDataDirForProvider(provider Provider) string {
 	homeDir, _ := os.UserHomeDir()
 	switch provider {
 	case ProviderCodex:
 		return filepath.Join(homeDir, ".codex")
+	case ProviderOpenCode:
+		return filepath.Join(homeDir, ".local", "share", "opencode")
+	case ProviderPi:
+		return filepath.Join(homeDir, ".pi")
 	default:
 		return filepath.Join(homeDir, ".claude")
 	}
@@ -141,7 +178,7 @@ func configForRequestedProvider(config Config, requested Provider) Config {
 	if requested == "" {
 		return config
 	}
-	if !config.DataDirExplicit && requested != ProviderAuto && (requested == ProviderClaude || requested == ProviderCodex) {
+	if !config.DataDirExplicit && requested != ProviderAuto {
 		config.DataDir = defaultDataDirForProvider(requested)
 	}
 	config.Provider = resolveProvider(requested, config.DataDir)

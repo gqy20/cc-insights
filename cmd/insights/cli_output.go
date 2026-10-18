@@ -794,6 +794,10 @@ func providerTitle(provider string) string {
 	switch Provider(provider) {
 	case ProviderCodex:
 		return "Codex"
+	case ProviderOpenCode:
+		return "OpenCode"
+	case ProviderPi:
+		return "Pi"
 	default:
 		return "Claude Code"
 	}

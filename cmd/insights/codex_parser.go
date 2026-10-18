@@ -114,19 +114,19 @@ func finalizeCodexPendings(agg *ProjectAggregate, state *codexSessionState) {
 
 // --- codex tail 增量：状态快照与续解析 ---
 
-// CodexTailState codex session 文件的续解析状态快照，用于文件增长后
+// SessionTailState codex session 文件的续解析状态快照，用于文件增长后
 // 只解析新增尾部。pendings 含已结算条目（RecordedResult 去重、
 // RecordedMissing 后续真实结果到达时修正计数）。
-type CodexTailState struct {
+type SessionTailState struct {
 	SessionID    string
 	Project      string
 	CurrentModel string
 	StartedUnix  int64
 	ActivePlan   bool
-	Pendings     map[string]codexPendingSnapshot
+	Pendings     map[string]pendingTailSnapshot
 }
 
-type codexPendingSnapshot struct {
+type pendingTailSnapshot struct {
 	Call              pendingToolCall
 	RecordedResult    bool // 结果已入账：tail 中重复结果事件直接忽略
 	RecordedMissing   bool // EOF 按 missing 入账：tail 中真实结果到达时修正
@@ -136,17 +136,17 @@ type codexPendingSnapshot struct {
 	WeakTimestampUnix int64
 }
 
-func snapshotCodexTailState(state *codexSessionState) *CodexTailState {
-	snap := &CodexTailState{
+func snapshotSessionTailState(state *codexSessionState) *SessionTailState {
+	snap := &SessionTailState{
 		SessionID:    state.SessionID,
 		Project:      state.Project,
 		CurrentModel: state.CurrentModel,
 		StartedUnix:  state.StartedAt.Unix(),
 		ActivePlan:   state.ActivePlan,
-		Pendings:     make(map[string]codexPendingSnapshot, len(state.PendingTools)),
+		Pendings:     make(map[string]pendingTailSnapshot, len(state.PendingTools)),
 	}
 	for id, pending := range state.PendingTools {
-		snap.Pendings[id] = codexPendingSnapshot{
+		snap.Pendings[id] = pendingTailSnapshot{
 			Call:              pending.pendingToolCall,
 			RecordedResult:    pending.ResultRecorded,
 			RecordedMissing:   pending.WasMissingRecorded,
@@ -159,7 +159,7 @@ func snapshotCodexTailState(state *codexSessionState) *CodexTailState {
 	return snap
 }
 
-func restoreCodexTailState(snap *CodexTailState) *codexSessionState {
+func restoreSessionTailState(snap *SessionTailState) *codexSessionState {
 	state := &codexSessionState{
 		SessionID:    snap.SessionID,
 		Project:      snap.Project,
@@ -190,7 +190,7 @@ func restoreCodexTailState(snap *CodexTailState) *codexSessionState {
 
 // parseCodexSessionFileTail 从 offset 续解析增长部分到 base（含已缓存数据），
 // 返回新的消费偏移与状态快照。
-func parseCodexSessionFileTail(filePath string, offset int64, snap *CodexTailState, tf TimeFilter, base *ProjectAggregate) (int64, *CodexTailState) {
+func parseCodexSessionFileTail(filePath string, offset int64, snap *SessionTailState, tf TimeFilter, base *ProjectAggregate) (int64, *SessionTailState) {
 	f, err := os.Open(filePath)
 	if err != nil {
 		return offset, snap
@@ -199,13 +199,13 @@ func parseCodexSessionFileTail(filePath string, offset int64, snap *CodexTailSta
 	if _, err := f.Seek(offset, io.SeekStart); err != nil {
 		return offset, snap
 	}
-	state := restoreCodexTailState(snap)
+	state := restoreSessionTailState(snap)
 	consumed, err := scanCodexRecords(f, state, tf, base)
 	if err != nil {
 		Warn("Codex JSONL tail 读取失败", "path", filePath, "error", err.Error())
 	}
 	finalizeCodexPendings(base, state)
-	return offset + consumed, snapshotCodexTailState(state)
+	return offset + consumed, snapshotSessionTailState(state)
 }
 
 func parseCodexSessionMeta(raw json.RawMessage, state *codexSessionState, fallback time.Time) {
@@ -318,11 +318,14 @@ func parseCodexEventMessage(raw json.RawMessage, state *codexSessionState, times
 }
 
 func recordCodexAssistantMessage(agg *ProjectAggregate, state *codexSessionState, timestamp time.Time) {
+	recordAssistantMessage(agg, codexProject(state), codexSessionID(state), codexModel(state), timestamp)
+}
+
+// recordAssistantMessage 各 provider 通用的 assistant 消息计数（日/时/星期/项目/session 维度）。
+func recordAssistantMessage(agg *ProjectAggregate, projectName, sessionID, model string, timestamp time.Time) {
 	if timestamp.IsZero() {
 		return
 	}
-	projectName := codexProject(state)
-	sessionID := codexSessionID(state)
 	dateKey := timestamp.Format("2006-01-02")
 
 	if agg.ProjectStats[projectName] == nil {

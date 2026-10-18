@@ -2,7 +2,7 @@
 
 ## 项目定位
 
-cc-insights 是面向 Claude Code / Codex 的使用诊断工具。它读取本地 code agent 历史数据、项目会话、工具调用、失败样例、Token 消耗、Plan、hook 和 Session 生命周期，把这些数据整理成可解释的证据、判断和改进方向。
+cc-insights 是面向 Claude Code / Codex / OpenCode / pi 的使用诊断工具。它读取本地 code agent 历史数据、项目会话、工具调用、失败样例、Token 消耗、Plan、hook 和 Session 生命周期，把这些数据整理成可解释的证据、判断和改进方向。
 
 本项目的核心目标不是继续堆统计图，也不是为每类问题新增命令，而是帮助用户回答：
 
