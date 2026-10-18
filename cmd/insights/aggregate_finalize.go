@@ -162,7 +162,11 @@ func (agg *ProjectAggregate) finalizeFailureAnalysis() {
 
 	for _, stat := range agg.FailureReasons {
 		statCopy := *stat
-		analysis.TotalFailures += statCopy.Count
+		if isSuspectedFailureReason(statCopy.Reason) {
+			analysis.TotalSuspected += statCopy.Count
+		} else {
+			analysis.TotalFailures += statCopy.Count
+		}
 		analysis.ByReason = append(analysis.ByReason, statCopy)
 	}
 	sort.Slice(analysis.ByReason, func(i, j int) bool {

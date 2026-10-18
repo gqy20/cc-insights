@@ -112,7 +112,7 @@ var cmdWhy = &Command{
 	Short: "失败样例下钻（可过滤）",
 	Long:  "按 reason/category/tool/model/project/session 六维过滤，返回具体的失败样例（含内容预览）与命中统计，-n/--samples 控制样例数。回答「给我看具体的失败长什么样」。",
 	Examples: []string{
-		"cc-insights why -p 7d --reason error_text -n 20 -j",
+		"cc-insights why -p 7d --reason suspect_error_text -n 20 -j",
 		"cc-insights why --tool Bash --model sonnet",
 	},
 	Flags: func(fs *flag.FlagSet, opts *cliOptions) {

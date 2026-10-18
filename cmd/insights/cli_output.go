@@ -22,8 +22,13 @@ func writeTable(value any, w io.Writer) error {
 		writeInsights(w, v.Insights)
 	case cliFailureReport:
 		fmt.Fprintf(w, "%s Failures · %s\n\n", providerTitle(v.Provider), formatRange(v.TimeRange))
-		fmt.Fprintf(w, "工具调用: %s  失败: %s  Missing: %s  失败率: %.1f%%\n\n",
-			formatInt(v.TotalCalls), formatInt(v.TotalFailures), formatInt(v.MissingResults), v.FailureRate)
+		if v.TotalSuspected > 0 {
+			fmt.Fprintf(w, "工具调用: %s  失败: %s  疑似: %s  Missing: %s  失败率: %.1f%%\n\n",
+				formatInt(v.TotalCalls), formatInt(v.TotalFailures), formatInt(v.TotalSuspected), formatInt(v.MissingResults), v.FailureRate)
+		} else {
+			fmt.Fprintf(w, "工具调用: %s  失败: %s  Missing: %s  失败率: %.1f%%\n\n",
+				formatInt(v.TotalCalls), formatInt(v.TotalFailures), formatInt(v.MissingResults), v.FailureRate)
+		}
 		fmt.Fprintln(w, "Top 失败原因:")
 		for _, item := range v.ByReason {
 			fmt.Fprintf(w, "  %-16s %-24s %s\n", item.Category, item.Reason, formatInt(item.Count))
@@ -163,7 +168,11 @@ func writeTable(value any, w io.Writer) error {
 		writeNameCounts(w, "Top 项目", v.Summary.TopProjects)
 		fmt.Fprintln(w, "样例:")
 		for _, sample := range v.Samples {
-			fmt.Fprintf(w, "- %s %s %s/%s %s\n", sample.Timestamp, sample.Tool, sample.Category, sample.Reason, sample.Project)
+			basis := ""
+			if sample.Basis != "" {
+				basis = fmt.Sprintf(" [判定:%s]", sample.Basis)
+			}
+			fmt.Fprintf(w, "- %s %s %s/%s%s %s\n", sample.Timestamp, sample.Tool, sample.Category, sample.Reason, basis, sample.Project)
 			if sample.ContentPreview != "" {
 				fmt.Fprintf(w, "  %s\n", sample.ContentPreview)
 			}

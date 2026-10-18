@@ -388,10 +388,13 @@ func recordCodexMCPToolCallEnd(raw json.RawMessage, state *codexSessionState, ti
 		return
 	}
 	pending := ensureCodexPendingForResult(state, payload.CallID, "mcp__unknown__unknown", timestamp)
-	failed := codexResultHasError(payload.Result)
 	classification := toolFailureClassification{}
-	if failed {
+	if codexResultExplicitError(payload.Result) {
 		classification = newFailureClassification("api_failure", "mcp", "mcp_error")
+		classification.Basis = "field"
+	} else if codexResultHasError(payload.Result) {
+		// 仅命中裸 "error" 子串：字段名含 error（值可能为 null）也会中招，降级为疑似
+		classification = newSuspectedFailureClassification("api_failure", "mcp", "mcp_error", "substring")
 	}
 	recordCodexToolResult(agg, pending, classification, toolResultPreview(payload.Result), timestamp, 0)
 	delete(state.PendingTools, payload.CallID)
@@ -828,7 +831,13 @@ func codexWeakClassification(pending *codexPendingTool) toolFailureClassificatio
 	if pending == nil || !pending.WeakFailed {
 		return toolFailureClassification{}
 	}
-	return newFailureClassification("error_text", failureCategoryForTool(pending.Tool), "error_text")
+	// 弱结果只有输出文本可判：关键词命中是未确认信号，降级为疑似，
+	// 避免读日志/grep error 的正常调用虚高失败率。
+	basis := "regex_text"
+	if codexExitCodeExpr.MatchString(pending.WeakPreview) {
+		basis = "exit_code_text"
+	}
+	return newSuspectedFailureClassification("error_text", failureCategoryForTool(pending.Tool), "error_text", basis)
 }
 
 func codexOutputFailed(text string) bool {
@@ -843,6 +852,12 @@ func codexOutputFailed(text string) bool {
 func codexResultHasError(raw json.RawMessage) bool {
 	lower := strings.ToLower(string(raw))
 	return strings.Contains(lower, `"error"`) || strings.Contains(lower, `"is_error":true`) || strings.Contains(lower, `"success":false`)
+}
+
+// codexResultExplicitError 仅识别结构化的失败字段：is_error/success:false。
+func codexResultExplicitError(raw json.RawMessage) bool {
+	lower := strings.ToLower(string(raw))
+	return strings.Contains(lower, `"is_error":true`) || strings.Contains(lower, `"success":false`)
 }
 
 func rawCodexString(raw json.RawMessage) string {

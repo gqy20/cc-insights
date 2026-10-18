@@ -498,15 +498,19 @@ type ToolFailureSample struct {
 	SessionID      string `json:"session_id"`
 	Timestamp      string `json:"timestamp"`
 	ContentPreview string `json:"content_preview"`
+	Basis          string `json:"basis,omitempty"`
 }
 
 // FailureAnalysisData 失败原因细分分析结果
 type FailureAnalysisData struct {
-	TotalFailures int                      `json:"total_failures"`
-	ByReason      []FailureReasonStat      `json:"by_reason"`
-	ByToolReason  []FailureToolReasonStat  `json:"by_tool_reason"`
-	ByModelReason []FailureModelReasonStat `json:"by_model_reason"`
-	Samples       []ToolFailureSample      `json:"samples"`
+	TotalFailures int `json:"total_failures"`
+	// TotalSuspected 疑似失败数（suspect_ 前缀原因合计）：仅文本/子串命中，
+	// 未被结构化信号确认，不计入 TotalFailures 与失败率。
+	TotalSuspected int                      `json:"total_suspected"`
+	ByReason       []FailureReasonStat      `json:"by_reason"`
+	ByToolReason   []FailureToolReasonStat  `json:"by_tool_reason"`
+	ByModelReason  []FailureModelReasonStat `json:"by_model_reason"`
+	Samples        []ToolFailureSample      `json:"samples"`
 }
 
 // FailureReasonStat 按失败原因聚合

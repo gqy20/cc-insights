@@ -8,7 +8,9 @@ import (
 	"time"
 )
 
-const CacheVersion = "4.14"
+// CacheVersion 缓存格式/分析语义版本：分类规则等分析语义变更时必须升级，
+// 否则旧二进制构建的缓存会被新代码当作有效数据复用。
+const CacheVersion = "4.15"
 
 // CacheFile 缓存文件结构
 type CacheFile struct {

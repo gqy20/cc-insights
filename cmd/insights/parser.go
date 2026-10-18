@@ -24,7 +24,17 @@ type toolFailureClassification struct {
 	Category string
 	Reason   string
 	Failed   bool
+	// Suspected 疑似失败：仅凭输出文本/子串命中推断，未经 exit_code、
+	// is_error、success:false 等结构化信号确认。不计入失败率，
+	// 原因带 suspect_ 前缀，可在 err/why 中单独下钻。
+	Suspected bool
+	// Basis 判定依据（exit_code / regex_text / exit_code_text / field / substring），
+	// 随失败样例输出，用于解释"为什么算失败"。
+	Basis string
 }
+
+// suspectedReasonPrefix 疑似失败原因统一前缀
+const suspectedReasonPrefix = "suspect_"
 
 func parseToolResults(record ProjectRecord, timestamp time.Time, projectName string, pendingTools map[string]pendingToolCall, agg *ProjectAggregate) {
 	var msg struct {
@@ -110,6 +120,36 @@ func addToolCallLocked(agg *ProjectAggregate, tool string, model string) {
 func addToolResultLocked(agg *ProjectAggregate, call pendingToolCall, classification toolFailureClassification, preview string, timestamp time.Time, durationMs int64, resultSize int) {
 	stat := ensureToolStat(agg, call.Tool)
 	modelStat := ensureToolModelStat(agg, call.Tool, call.Model)
+	if classification.Suspected {
+		// 疑似失败：按成功记账（保持 成功+失败=调用数），但保留
+		// suspect_ 原因统计与失败样例，供 err/why 单独下钻。
+		stat.SuccessCount++
+		modelStat.SuccessCount++
+		if call.Tool == "Skill" {
+			recordSkillToolResultLocked(agg, call, false, false)
+		}
+		recordSkillSessionToolResultLocked(agg, call, false, false)
+		addAgentToolResultLocked(agg, call, false, false)
+		addSessionToolResultLocked(agg, call, false, false)
+		addCommandOrFileResultLocked(agg, call, false, false)
+		recordFailureAnalysisLocked(agg, call, classification)
+		if len(agg.FailureSamples) < maxFailureSamples {
+			agg.FailureSamples = append(agg.FailureSamples, ToolFailureSample{
+				Tool:           call.Tool,
+				Model:          call.Model,
+				Kind:           classification.Kind,
+				Category:       classification.Category,
+				Reason:         classification.Reason,
+				Project:        call.Project,
+				SessionID:      call.SessionID,
+				Timestamp:      timestamp.Format(time.RFC3339),
+				ContentPreview: preview,
+				Basis:          classification.Basis,
+			})
+		}
+		recordToolPerformanceLocked(agg, call, durationMs, resultSize, false, false)
+		return
+	}
 	if classification.Failed {
 		stat.FailureCount++
 		modelStat.FailureCount++
@@ -138,6 +178,7 @@ func addToolResultLocked(agg *ProjectAggregate, call pendingToolCall, classifica
 				SessionID:      call.SessionID,
 				Timestamp:      timestamp.Format(time.RFC3339),
 				ContentPreview: preview,
+				Basis:          classification.Basis,
 			})
 		}
 		// M5: record performance for error result
@@ -821,7 +862,9 @@ func classifyToolResult(tool string, content AssistantContent) toolFailureClassi
 	case strings.Contains(lower, "exit code") || strings.Contains(lower, "command failed"):
 		return newFailureClassification("command_failed", "bash", "command_failed")
 	case toolFailureExpr.MatchString(text) && allowGenericFailureText(tool):
-		return newFailureClassification("error_text", failureCategoryForTool(tool), "error_text")
+		// 输出文本命中失败关键词：未确认的失败信号，降级为疑似，避免
+		// 读日志/grep error 之类的正常调用虚高失败率。
+		return newSuspectedFailureClassification("error_text", failureCategoryForTool(tool), "error_text", "regex_text")
 	default:
 		return toolFailureClassification{}
 	}
@@ -890,6 +933,20 @@ func newFailureClassification(kind, category, reason string) toolFailureClassifi
 		Reason:   reason,
 		Failed:   true,
 	}
+}
+
+// newSuspectedFailureClassification 构造疑似失败分类：reason 加 suspect_ 前缀，
+// 不计入失败率，仅供 err/why 下钻。
+func newSuspectedFailureClassification(kind, category, reason, basis string) toolFailureClassification {
+	c := newFailureClassification(kind, category, suspectedReasonPrefix+reason)
+	c.Suspected = true
+	c.Basis = basis
+	return c
+}
+
+// isSuspectedFailureReason 判断失败原因是否为疑似分类
+func isSuspectedFailureReason(reason string) bool {
+	return strings.HasPrefix(reason, suspectedReasonPrefix)
 }
 
 func classifyDetailedFailure(tool string, lower string) (string, string, bool) {

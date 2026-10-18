@@ -57,6 +57,7 @@ type cliFailureReport struct {
 	TimeRange      TimeRangeInfo           `json:"time_range"`
 	TotalCalls     int                     `json:"total_calls"`
 	TotalFailures  int                     `json:"total_failures"`
+	TotalSuspected int                     `json:"total_suspected"`
 	MissingResults int                     `json:"missing_results"`
 	FailureRate    float64                 `json:"failure_rate"`
 	ByReason       []FailureReasonStat     `json:"by_reason"`
@@ -481,8 +482,12 @@ func buildCLIFailureReport(data *DashboardData, limit int) cliFailureReport {
 	}
 	if data.FailureAnalysis != nil {
 		report.TotalFailures = data.FailureAnalysis.TotalFailures
+		report.TotalSuspected = data.FailureAnalysis.TotalSuspected
 		report.ByReason = limitSlice(data.FailureAnalysis.ByReason, limit)
 		report.ByToolReason = limitSlice(data.FailureAnalysis.ByToolReason, limit)
+	}
+	if report.TotalSuspected > 0 {
+		report.Insights = append(report.Insights, fmt.Sprintf("另有疑似失败 %s 次（仅文本/子串命中，未计入失败率），用 why --reason suspect_error_text 下钻。", formatInt(report.TotalSuspected)))
 	}
 	if len(report.ByReason) > 0 {
 		top := report.ByReason[0]
