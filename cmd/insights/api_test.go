@@ -704,7 +704,7 @@ func TestQueryByTimeRange_FilterGlobalStats(t *testing.T) {
 		Version:            CacheVersion,
 		LastUpdate:         time.Now(),
 		DailyStats:         make(map[string]*DayAggregate),
-		HourlyStats:        [24]*HourAggregate{},
+		HourlyStats:        [24]HourAggregate{},
 		ProjectStats:       make(map[string]*ProjectStatItem),
 		ModelUsage:         make(map[string]*ModelUsageItem),
 		RuntimeToolSignals: make(map[string]int),

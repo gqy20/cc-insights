@@ -143,7 +143,7 @@ func (cb *CacheBuilder) BuildFullCache() error {
 	for i := 0; i < 24; i++ {
 		count := aggregate.HourlyCounts[i]
 		if count > 0 {
-			cache.HourlyStats[i] = &HourAggregate{
+			cache.HourlyStats[i] = HourAggregate{
 				Hour:         i,
 				MessageCount: count,
 				SessionCount: 0,
@@ -153,7 +153,7 @@ func (cb *CacheBuilder) BuildFullCache() error {
 
 	// 填充 WeekdayStats
 	for i := 0; i < 7; i++ {
-		cache.WeekdayStats[i] = &aggregate.WeekdayStats.WeekdayData[i]
+		cache.WeekdayStats[i] = aggregate.WeekdayStats.WeekdayData[i]
 	}
 
 	// 填充 DailyStats

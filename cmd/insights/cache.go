@@ -1,7 +1,8 @@
 package main
 
 import (
-	"encoding/json"
+	"bufio"
+	"encoding/gob"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,7 +11,8 @@ import (
 
 // CacheVersion 缓存格式/分析语义版本：分类规则等分析语义变更时必须升级，
 // 否则旧二进制构建的缓存会被新代码当作有效数据复用。
-const CacheVersion = "4.15"
+// 4.16 起缓存用 gob 序列化（旧 JSON 缓存解码失败会自动全量重建）。
+const CacheVersion = "4.16"
 
 // CacheFile 缓存文件结构
 type CacheFile struct {
@@ -23,15 +25,15 @@ type CacheFile struct {
 	BuildStats    *CacheBuildStats `json:"build_stats,omitempty"`
 
 	// 预聚合数据
-	DailyStats  map[string]*DayAggregate // "2026-01-08" -> 当天所有统计
-	HourlyStats [24]*HourAggregate       // 每小时统计
+	DailyStats map[string]*DayAggregate // "2026-01-08" -> 当天所有统计
+	// HourlyStats/WeekdayStats 用值数组：gob 无法编码指针数组中的 nil 元素
+	HourlyStats [24]HourAggregate // 每小时统计（零值=无数据）
 
 	// 全局统计
 	TotalMessages       int // 总消息数
 	TotalSessions       int // 总会话数
 	ProjectStats        map[string]*ProjectStatItem
 	ModelUsage          map[string]*ModelUsageItem
-	WeekdayStats        [7]*WeekdayItem
 	RuntimeToolSignals  map[string]int
 	ToolStats           map[string]*ToolStatItem
 	ToolAnalysis        *ToolAnalysisData
@@ -45,6 +47,7 @@ type CacheFile struct {
 	FileAnalysis        *FileAnalysisData
 	TaskPlanAnalysis    *TaskPlanAnalysisData                      `json:"task_plan_analysis,omitempty"`
 	ToolPerformance     *ToolPerformanceData                       `json:"tool_performance,omitempty"`
+	WeekdayStats        [7]WeekdayItem                             // 零值=无数据（gob 不支持指针数组 nil 元素）
 	ProjectFiles        map[string]*ProjectFileCache               `json:"project_file_caches,omitempty"`
 	DailyRuntime        map[string]ProjectFileAggregate            `json:"daily_runtime,omitempty"`
 	DailyProjectRuntime map[string]map[string]ProjectFileAggregate `json:"daily_project_runtime,omitempty"`
@@ -185,7 +188,7 @@ func (tr TimeRange) Contains(t time.Time) bool {
 	return true
 }
 
-// Save 保存缓存到文件
+// Save 保存缓存到文件（gob 序列化：机器读写，无需跨语言可读性）
 func (cf *CacheFile) Save(path string) error {
 	// 确保目录存在
 	dir := filepath.Dir(path)
@@ -193,14 +196,24 @@ func (cf *CacheFile) Save(path string) error {
 		return fmt.Errorf("创建缓存目录失败: %w", err)
 	}
 
-	// 序列化为紧凑 JSON。缓存偏向机器读写，避免 pretty print 放大文件级聚合缓存体积。
-	data, err := json.Marshal(cf)
+	tmpPath := path + ".tmp"
+	f, err := os.Create(tmpPath)
 	if err != nil {
+		return fmt.Errorf("写入缓存临时文件失败: %w", err)
+	}
+	w := bufio.NewWriterSize(f, 1<<20)
+	if err := gob.NewEncoder(w).Encode(cf); err != nil {
+		f.Close()
+		_ = os.Remove(tmpPath)
 		return fmt.Errorf("序列化缓存失败: %w", err)
 	}
-
-	tmpPath := path + ".tmp"
-	if err := os.WriteFile(tmpPath, data, 0644); err != nil {
+	if err := w.Flush(); err != nil {
+		f.Close()
+		_ = os.Remove(tmpPath)
+		return fmt.Errorf("写入缓存临时文件失败: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		_ = os.Remove(tmpPath)
 		return fmt.Errorf("写入缓存临时文件失败: %w", err)
 	}
 	if err := os.Rename(tmpPath, path); err != nil {
@@ -225,15 +238,14 @@ func LoadCacheFile(path string) (*CacheFile, error) {
 		return nil, fmt.Errorf("缓存文件不存在: %s", path)
 	}
 
-	// 读取文件
-	data, err := os.ReadFile(path)
+	f, err := os.Open(path)
 	if err != nil {
 		return nil, fmt.Errorf("读取缓存文件失败: %w", err)
 	}
+	defer f.Close()
 
-	// 反序列化
 	var cache CacheFile
-	if err := json.Unmarshal(data, &cache); err != nil {
+	if err := gob.NewDecoder(bufio.NewReaderSize(f, 1<<20)).Decode(&cache); err != nil {
 		return nil, fmt.Errorf("解析缓存文件失败: %w", err)
 	}
 
@@ -260,7 +272,7 @@ func (cf *CacheFile) QueryByTimeRange(start, end time.Time) *CacheFile {
 		BashRulesHash:       cf.BashRulesHash,
 		BuildStats:          cloneCacheBuildStats(cf.BuildStats),
 		DailyStats:          make(map[string]*DayAggregate),
-		HourlyStats:         [24]*HourAggregate{},
+		HourlyStats:         [24]HourAggregate{},
 		ProjectStats:        make(map[string]*ProjectStatItem),
 		ModelUsage:          make(map[string]*ModelUsageItem),
 		RuntimeToolSignals:  make(map[string]int),
@@ -297,14 +309,14 @@ func (cf *CacheFile) QueryByTimeRange(start, end time.Time) *CacheFile {
 				if count == 0 {
 					continue
 				}
-				if result.HourlyStats[hour] == nil {
-					result.HourlyStats[hour] = &HourAggregate{Hour: hour}
+				if result.HourlyStats[hour].Hour == 0 && result.HourlyStats[hour].MessageCount == 0 {
+					result.HourlyStats[hour].Hour = hour
 				}
 				result.HourlyStats[hour].MessageCount += count
 			}
 			weekday := (int(dateParsed.Weekday()) + 6) % 7
-			if result.WeekdayStats[weekday] == nil {
-				result.WeekdayStats[weekday] = &WeekdayItem{
+			if result.WeekdayStats[weekday].WeekdayName == "" {
+				result.WeekdayStats[weekday] = WeekdayItem{
 					Weekday:     weekday,
 					WeekdayName: weekdayName(weekday),
 				}

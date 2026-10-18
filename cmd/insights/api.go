@@ -174,9 +174,7 @@ func buildDataFromCache(cache *CacheFile, tf TimeFilter, preset string) (*Dashbo
 		WeekdayData: make([]WeekdayItem, 7),
 	}
 	for i, ws := range cached.WeekdayStats {
-		if ws != nil {
-			weekdayStats.WeekdayData[i] = *ws
-		}
+		weekdayStats.WeekdayData[i] = ws
 	}
 
 	modelUsage := modelUsageItemsFromCache(cached)
@@ -385,11 +383,7 @@ func hourlyAndWorkHoursFromCache(cache *CacheFile) (map[string]int, *WorkHoursSt
 	peakHour := -1
 	peakHourCount := 0
 	for hour := 0; hour < 24; hour++ {
-		count := 0
-		hasHourlyAggregate := cache.HourlyStats[hour] != nil
-		if hasHourlyAggregate {
-			count = cache.HourlyStats[hour].MessageCount
-		}
+		count := cache.HourlyStats[hour].MessageCount
 
 		isWorkHour := hour >= 9 && hour <= 18
 		hourlyData = append(hourlyData, HourlyItem{
@@ -403,9 +397,7 @@ func hourlyAndWorkHoursFromCache(cache *CacheFile) (map[string]int, *WorkHoursSt
 		} else {
 			offHoursCount += count
 		}
-		if hasHourlyAggregate {
-			hourlyCountsMap[fmt.Sprintf("%02d", hour)] = count
-		}
+		hourlyCountsMap[fmt.Sprintf("%02d", hour)] = count
 		if count > peakHourCount {
 			peakHourCount = count
 			peakHour = hour

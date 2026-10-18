@@ -132,18 +132,14 @@ func TestCacheBuilderBuildFullCacheDailyProjectAndModelCounts(t *testing.T) {
 	}
 	hourlyTotal := 0
 	for _, hourly := range result.HourlyStats {
-		if hourly != nil {
-			hourlyTotal += hourly.MessageCount
-		}
+		hourlyTotal += hourly.MessageCount
 	}
 	if hourlyTotal != result.TotalMessages {
 		t.Fatalf("Hourly total=%d, want %d", hourlyTotal, result.TotalMessages)
 	}
 	weekdayTotal := 0
 	for _, weekday := range result.WeekdayStats {
-		if weekday != nil {
-			weekdayTotal += weekday.MessageCount
-		}
+		weekdayTotal += weekday.MessageCount
 	}
 	if weekdayTotal != result.TotalMessages {
 		t.Fatalf("Weekday total=%d, want %d", weekdayTotal, result.TotalMessages)
