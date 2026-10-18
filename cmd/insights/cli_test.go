@@ -25,6 +25,10 @@ func TestResolveCLICommand(t *testing.T) {
 		{name: "sessions", args: []string{"ses", "-p", "7d"}, wantName: "ses", wantArgs: []string{"-p", "7d"}},
 		{name: "web", args: []string{"web", "--addr", ":8932"}, wantName: "web", wantArgs: []string{"--addr", ":8932"}},
 		{name: "unknown long form", args: []string{"failures", "-j"}, wantName: "failures", wantArgs: []string{"-j"}},
+		{name: "global flag before command", args: []string{"--provider", "codex", "err", "-p", "30d"}, wantName: "err", wantArgs: []string{"--provider", "codex", "-p", "30d"}},
+		{name: "global flag with value before command", args: []string{"--data", "/tmp/x", "ses", "-n", "5"}, wantName: "ses", wantArgs: []string{"--data", "/tmp/x", "-n", "5"}},
+		{name: "global flag only", args: []string{"--provider", "codex"}, wantName: "sum", wantArgs: []string{"--provider", "codex"}},
+		{name: "unknown flag before unknown word", args: []string{"--nope", "bogus"}, wantName: "sum", wantArgs: []string{"--nope", "bogus"}},
 	}
 
 	for _, tt := range tests {

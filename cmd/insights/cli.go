@@ -237,10 +237,28 @@ func isHelpRequest(arg string) bool {
 }
 
 func resolveCLICommand(args []string) resolvedCommand {
-	if len(args) == 0 || strings.HasPrefix(args[0], "-") {
+	if len(args) == 0 || isHelpRequest(args[0]) {
 		return resolvedCommand{Name: "sum", Args: args}
 	}
-	return resolvedCommand{Name: args[0], Args: args[1:]}
+	// 全局 flag 允许出现在命令之前（如 `--provider codex err`）：
+	// 用全局 flag 集合消费前缀 flag，剩余第一个非 flag 词作为命令名。
+	if !strings.HasPrefix(args[0], "-") {
+		return resolvedCommand{Name: args[0], Args: args[1:]}
+	}
+	fs := flag.NewFlagSet("resolve", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	registerConfigFlags(fs, &Config{})
+	if err := fs.Parse(args); err != nil {
+		return resolvedCommand{Name: "sum", Args: args}
+	}
+	remaining := fs.Args()
+	if len(remaining) == 0 || lookupCommand(remaining[0]) == nil {
+		return resolvedCommand{Name: "sum", Args: args}
+	}
+	prefixLen := len(args) - len(remaining)
+	// 已消费的全局 flag 前缀保留，交给命令自身的 flag 集重新解析
+	merged := append(append([]string{}, args[:prefixLen]...), remaining[1:]...)
+	return resolvedCommand{Name: remaining[0], Args: merged}
 }
 
 func parseCLIOptions(cmd *Command, args []string) (cliOptions, error) {
@@ -361,6 +379,13 @@ func loadReusableCacheSnapshot() (*CacheFile, error) {
 	}
 	if cache.BashRulesHash != rulesHash {
 		return nil, fmt.Errorf("Bash 规则已变更")
+	}
+	// 数据有更新时快照即为过期，避免 err/why 等轻量路径在活跃
+	// session 期间静默输出旧数据（刷新走文件级增量，代价可控）。
+	cb := &CacheBuilder{Provider: cfg.Provider, DataDir: cfg.DataDir, CachePath: cachePath}
+	lastDataMod, err := cb.GetLastDataModified()
+	if err == nil && lastDataMod.After(cache.LastUpdate) {
+		return nil, fmt.Errorf("数据已更新于 %s，快照过期", lastDataMod.Format("2006-01-02 15:04:05"))
 	}
 	return cache, nil
 }
