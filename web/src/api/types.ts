@@ -340,7 +340,7 @@ export interface RuntimeToolSignal {
 
 export interface DashboardData {
   timestamp?: string
-  provider?: 'claude' | 'codex' | string
+  provider?: 'claude' | 'codex' | 'opencode' | 'pi' | 'all' | 'opencode' | 'pi' | 'all' | string
   time_range?: TimeRange
   daily_trend: DailyTrend
   commands?: CommandStat[]
@@ -383,7 +383,7 @@ export interface TimelineData {
 // 前端 filter（驱动所有 Query，见 hooks/useFilters.ts）
 export interface Filters {
   preset: string
-  provider?: 'claude' | 'codex'
+  provider?: 'claude' | 'codex' | 'opencode' | 'pi' | 'all'
   start?: string
   end?: string
   project?: string

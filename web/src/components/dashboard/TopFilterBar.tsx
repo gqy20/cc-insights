@@ -29,6 +29,9 @@ export function TopFilterBar() {
       >
         <option value="claude">Claude Code</option>
         <option value="codex">Codex</option>
+        <option value="opencode">OpenCode</option>
+        <option value="pi">Pi</option>
+        <option value="all">全渠道合并</option>
       </select>
 
       <input

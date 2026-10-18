@@ -2,7 +2,7 @@ import { useSyncExternalStore, useCallback } from 'react'
 import type { Filters } from '@/api/types'
 import { PRESETS } from '@/api/types'
 
-const PROVIDERS = ['claude', 'codex'] as const
+const PROVIDERS = ['claude', 'codex', 'opencode', 'pi', 'all'] as const
 
 // 全局 filter 单源：读写 window.location.search，无 react-router。
 // preset 变化 → Query key 变化 → 自动重取（见 api/hooks.ts）。
