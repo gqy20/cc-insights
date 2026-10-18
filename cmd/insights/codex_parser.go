@@ -253,6 +253,7 @@ func parseCodexResponseItem(raw json.RawMessage, state *codexSessionState, times
 		Arguments json.RawMessage `json:"arguments"`
 		Input     json.RawMessage `json:"input"`
 		CallID    string          `json:"call_id"`
+		Status    string          `json:"status"`
 		Output    json.RawMessage `json:"output"`
 	}
 	if json.Unmarshal(raw, &payload) != nil {
@@ -271,6 +272,16 @@ func parseCodexResponseItem(raw json.RawMessage, state *codexSessionState, times
 		recordCodexToolCall(agg, state, payload.Name, payload.CallID, input, timestamp)
 		if payload.Name == "update_plan" {
 			recordCodexUpdatePlanEvent(agg, state, input, timestamp)
+		}
+		// 新版 custom_tool_call 自带 status：failed/error 是结构化失败信号
+		//（当前样本全部 completed，输出仍走弱文本路径）
+		if payload.Status == "failed" || payload.Status == "error" {
+			if pending := state.PendingTools[payload.CallID]; pending != nil && !pending.ResultRecorded {
+				classification := newFailureClassification("tool_error", failureCategoryForTool(payload.Name), "status_failed")
+				classification.Basis = "status"
+				recordCodexToolResult(agg, pending, classification, "tool call status: "+payload.Status, timestamp, 0)
+				delete(state.PendingTools, payload.CallID)
+			}
 		}
 	case "web_search_call":
 		recordCodexToolCall(agg, state, "web_search", payload.CallID, nil, timestamp)
