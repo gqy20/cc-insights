@@ -213,6 +213,10 @@ func diagnosticsCachePath(cachePath string) string {
 }
 
 func refreshCacheForConfig(config Config, force bool) (*CacheFile, error) {
+	// 跨渠道合并视图：逐 provider 加载/刷新后内存合并，不落盘
+	if resolveProvider(config.Provider, config.DataDir) == ProviderAll {
+		return loadMergedAllProvidersCache()
+	}
 	if err := os.MkdirAll(config.CacheDir, 0755); err != nil {
 		return nil, fmt.Errorf("创建缓存目录失败: %w", err)
 	}

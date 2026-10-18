@@ -378,9 +378,14 @@ func (cf *CacheFile) QueryByTimeRange(start, end time.Time) *CacheFile {
 
 	if hasRuntimeAggregate {
 		runtimeAggregate.finalize()
-		// runtime 聚合无模型用量时（pi/opencode 无 token 数据），
-		// 保留按日模型计数推导的 ModelUsage，避免 Top 模型丢失。
+		// runtime 聚合的模型用量优先（带 token 明细），并集补充仅按日计数
+		// 出现的渠道模型（pi/opencode 无 runtime 计数），避免混合渠道丢模型。
 		if runtimeModels := copyModelUsageMap(runtimeAggregate.ModelUsage); len(runtimeModels) > 0 {
+			for model, mu := range result.ModelUsage {
+				if _, ok := runtimeModels[model]; !ok {
+					runtimeModels[model] = mu
+				}
+			}
 			result.ModelUsage = runtimeModels
 		}
 		result.ToolAnalysis = runtimeAggregate.ToolAnalysis

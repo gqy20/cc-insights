@@ -320,7 +320,7 @@ func normalizeParsedConfig(config *Config, fs *flag.FlagSet) {
 	config.DataDirExplicit = dataProvided
 	// 各 provider 默认数据目录统一由 configForRequestedProvider 派生，
 	// 避免 codex/pi/opencode 只在某一条路径生效。
-	if !dataProvided && config.Provider != ProviderAuto && config.Provider != "" {
+	if !dataProvided && config.Provider != ProviderAuto && config.Provider != ProviderAll && config.Provider != "" {
 		config.DataDir = defaultDataDirForProvider(config.Provider)
 	}
 	config.Provider = resolveProvider(config.Provider, config.DataDir)

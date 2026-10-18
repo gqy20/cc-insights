@@ -30,6 +30,7 @@ const (
 	ProviderCodex    Provider = "codex"
 	ProviderOpenCode Provider = "opencode"
 	ProviderPi       Provider = "pi"
+	ProviderAll      Provider = "all" // 合并所有可用渠道
 	ProviderAuto     Provider = "auto"
 )
 
@@ -64,7 +65,7 @@ func registerConfigFlags(fs *flag.FlagSet, target *Config) {
 	fs.StringVar(&target.CacheDir, "cache", target.CacheDir, "缓存目录路径 (默认: ~/.cc-insights/cache/)")
 	fs.StringVar(&target.RulesPath, "rules", target.RulesPath, "Bash 命令分类规则 YAML 路径")
 	fs.StringVar(&target.PricingPath, "pricing", target.PricingPath, "模型定价规则 YAML 路径（默认内置 rules/pricing.yml，可用 ~/.cc-insights/pricing.yml 覆盖）")
-	fs.Var(&target.Provider, "provider", "数据源 provider: claude|codex|opencode|pi|auto")
+	fs.Var(&target.Provider, "provider", "数据源 provider: claude|codex|opencode|pi|all|auto（all 为跨渠道合并视图）")
 }
 
 // registerServerFlags 注册仅 web 命令使用的服务 flag（监听地址/反向代理）。
@@ -89,7 +90,7 @@ func (p *Provider) String() string {
 func (p *Provider) Set(value string) error {
 	provider := Provider(value)
 	switch provider {
-	case ProviderClaude, ProviderCodex, ProviderOpenCode, ProviderPi, ProviderAuto:
+	case ProviderClaude, ProviderCodex, ProviderOpenCode, ProviderPi, ProviderAll, ProviderAuto:
 		*p = provider
 		return nil
 	default:
@@ -178,7 +179,7 @@ func configForRequestedProvider(config Config, requested Provider) Config {
 	if requested == "" {
 		return config
 	}
-	if !config.DataDirExplicit && requested != ProviderAuto {
+	if !config.DataDirExplicit && requested != ProviderAuto && requested != ProviderAll {
 		config.DataDir = defaultDataDirForProvider(requested)
 	}
 	config.Provider = resolveProvider(requested, config.DataDir)
