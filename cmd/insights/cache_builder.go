@@ -373,7 +373,11 @@ func (cb *CacheBuilder) buildProjectAggregateIncremental(dataDir string, previou
 		toParse = append(toParse, info)
 	}
 
-	parsedCaches, err := parseProjectFilesForCache(provider, toParse)
+	var cachedForParse map[string]*ProjectFileCache
+	if previous != nil {
+		cachedForParse = previous.ProjectFiles
+	}
+	parsedCaches, err := parseProjectFilesForCache(provider, toParse, cachedForParse)
 	if err != nil {
 		return nil, nil, 0, 0, err
 	}
@@ -461,7 +465,7 @@ func logRootDir(provider Provider, dataDir string) string {
 	}
 }
 
-func parseProjectFilesForCache(provider Provider, files []projectFileInfo) ([]projectFileResult, error) {
+func parseProjectFilesForCache(provider Provider, files []projectFileInfo, cached map[string]*ProjectFileCache) ([]projectFileResult, error) {
 	if len(files) == 0 {
 		return nil, nil
 	}
@@ -478,16 +482,37 @@ func parseProjectFilesForCache(provider Provider, files []projectFileInfo) ([]pr
 		go func() {
 			defer wg.Done()
 			for info := range jobs {
+				var cache *ProjectFileCache
+				// codex append-only 文件只解析增长尾部：缓存聚合为基数，delta 直接计入
+				if prior := cached[info.RelPath]; prior != nil &&
+					prior.TailState != nil && prior.ParsedOffset == prior.Size && info.Size > prior.Size {
+					base := projectFileAggregateToAggregate(prior.Aggregate)
+					offset, snap := parseCodexSessionFileTail(info.AbsPath, prior.Size, prior.TailState, TimeFilter{}, base)
+					if offset != prior.Size {
+						cache = &ProjectFileCache{
+							Path:         info.RelPath,
+							Size:         info.Size,
+							ModTimeUnix:  info.ModTime,
+							Aggregate:    aggregateToProjectFileAggregate(base),
+							ParsedOffset: offset,
+							TailState:    snap,
+						}
+						results <- projectFileResult{Info: info, Aggregate: base, Cache: cache}
+						continue
+					}
+				}
 				fileAggregate := newProjectAggregate()
-				parseLogFileAggregate(provider, info.AbsPath, TimeFilter{}, fileAggregate)
+				consumed, tailState := parseLogFileAggregate(provider, info.AbsPath, TimeFilter{}, fileAggregate)
 				results <- projectFileResult{
 					Info:      info,
 					Aggregate: fileAggregate,
 					Cache: &ProjectFileCache{
-						Path:        info.RelPath,
-						Size:        info.Size,
-						ModTimeUnix: info.ModTime,
-						Aggregate:   aggregateToProjectFileAggregate(fileAggregate),
+						Path:         info.RelPath,
+						Size:         info.Size,
+						ModTimeUnix:  info.ModTime,
+						Aggregate:    aggregateToProjectFileAggregate(fileAggregate),
+						ParsedOffset: consumed,
+						TailState:    tailState,
 					},
 				}
 			}
@@ -510,13 +535,39 @@ func parseProjectFilesForCache(provider Provider, files []projectFileInfo) ([]pr
 	return items, nil
 }
 
-func parseLogFileAggregate(provider Provider, filePath string, tf TimeFilter, fileAggregate *ProjectAggregate) {
+func parseLogFileAggregate(provider Provider, filePath string, tf TimeFilter, fileAggregate *ProjectAggregate) (int64, *CodexTailState) {
 	switch provider {
 	case ProviderCodex:
-		parseCodexSessionFileAggregate(filePath, tf, fileAggregate)
+		return parseCodexSessionFileAggregateFull(filePath, tf, fileAggregate)
 	default:
 		parseProjectFileAggregate(filePath, tf, fileAggregate)
+		return 0, nil
 	}
+}
+
+// parseCodexSessionFileAggregateFull 全量解析 codex session 文件，返回
+// 消费偏移与续解析状态（供下次 tail 增量）。
+func parseCodexSessionFileAggregateFull(filePath string, tf TimeFilter, agg *ProjectAggregate) (int64, *CodexTailState) {
+	f, err := os.Open(filePath)
+	if err != nil {
+		return 0, nil
+	}
+	defer f.Close()
+
+	state := codexSessionState{
+		SessionID:    filePath,
+		Project:      "Unknown",
+		CurrentModel: "unknown",
+		PendingTools: make(map[string]*codexPendingTool),
+	}
+
+	consumed, err := scanCodexRecords(f, &state, tf, agg)
+	if err != nil {
+		Warn("Codex JSONL 文件读取失败", "path", filePath, "error", err.Error())
+		return consumed, snapshotCodexTailState(&state)
+	}
+	finalizeCodexPendings(agg, &state)
+	return consumed, snapshotCodexTailState(&state)
 }
 
 // RebuildIfChanged 在数据变化时重建缓存。

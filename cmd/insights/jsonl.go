@@ -17,6 +17,7 @@ type jsonlScanner struct {
 	line         []byte
 	maxLineBytes int
 	err          error
+	consumed     int64 // 已消费的原始字节数（含行结束符），供 append-only 文件增量续解析
 }
 
 // newJSONLScanner 返回按行读取 JSONL 的 scanner。
@@ -49,6 +50,9 @@ func (s *jsonlScanner) Scan() bool {
 	overLimit := false
 	for {
 		fragment, err := s.reader.ReadSlice('\n')
+		// 无论 fragment 是否被采纳（超限丢弃），字节都已从 reader 消费，
+		// 必须计入 consumed，保证 append-only 文件的增量偏移不错位。
+		s.consumed += int64(len(fragment))
 		if !overLimit {
 			if len(fragment) > s.maxLineBytes-len(s.line) {
 				overLimit = true
@@ -65,7 +69,7 @@ func (s *jsonlScanner) Scan() bool {
 				s.line = s.line[:0]
 				continue
 			}
-			s.trimLineEnding()
+			s.finishLine()
 			return true
 		case errors.Is(err, bufio.ErrBufferFull):
 			continue
@@ -73,7 +77,7 @@ func (s *jsonlScanner) Scan() bool {
 			if overLimit || len(s.line) == 0 {
 				return false
 			}
-			s.trimLineEnding()
+			s.finishLine()
 			return true
 		default:
 			s.err = err
@@ -88,6 +92,16 @@ func (s *jsonlScanner) Bytes() []byte {
 
 func (s *jsonlScanner) Err() error {
 	return s.err
+}
+
+// Consumed 返回已消费的原始字节数（含行结束符）。EOF 时无换行的末行
+// 也计入：追加写入后从该偏移续读，最多损失"写了一半的最后一行"这一条记录。
+func (s *jsonlScanner) Consumed() int64 {
+	return s.consumed
+}
+
+func (s *jsonlScanner) finishLine() {
+	s.trimLineEnding()
 }
 
 func (s *jsonlScanner) trimLineEnding() {

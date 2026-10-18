@@ -71,6 +71,10 @@ type ProjectFileCache struct {
 	Size        int64                `json:"size"`
 	ModTimeUnix int64                `json:"mod_time_unix"`
 	Aggregate   ProjectFileAggregate `json:"aggregate"`
+	// ParsedOffset 上次解析消费到的字节偏移（codex append-only 文件 tail 增量用）
+	ParsedOffset int64 `json:"parsed_offset,omitempty"`
+	// TailState codex 续解析状态快照（claude 为 nil）
+	TailState *CodexTailState `json:"tail_state,omitempty"`
 }
 
 // ProjectFileAggregate 可序列化的文件级聚合快照

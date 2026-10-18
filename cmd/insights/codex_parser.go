@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -29,11 +30,12 @@ type codexSessionState struct {
 
 type codexPendingTool struct {
 	pendingToolCall
-	ResultRecorded bool
-	WeakResultSeen bool
-	WeakFailed     bool
-	WeakPreview    string
-	WeakTimestamp  time.Time
+	ResultRecorded     bool
+	WeakResultSeen     bool
+	WeakFailed         bool
+	WeakPreview        string
+	WeakTimestamp      time.Time
+	WasMissingRecorded bool // EOF 按 missing 入账后置位：真实结果晚到时修正计数
 }
 
 type codexPatchChange struct {
@@ -43,20 +45,14 @@ type codexPatchChange struct {
 	Content     string `json:"content"`
 }
 
+// parseCodexSessionFileAggregate 全量解析入口（兼容旧签名）。
 func parseCodexSessionFileAggregate(filePath string, tf TimeFilter, agg *ProjectAggregate) {
-	f, err := os.Open(filePath)
-	if err != nil {
-		return
-	}
-	defer f.Close()
+	parseCodexSessionFileAggregateFull(filePath, tf, agg)
+}
 
-	state := codexSessionState{
-		SessionID:    filePath,
-		Project:      "Unknown",
-		CurrentModel: "unknown",
-		PendingTools: make(map[string]*codexPendingTool),
-	}
-
+// scanCodexRecords 从当前位置逐行解析到 EOF，返回消费的字节数与读取错误。
+// 全量解析与 tail 增量共用此核心。
+func scanCodexRecords(f *os.File, state *codexSessionState, tf TimeFilter, agg *ProjectAggregate) (int64, error) {
 	scanner := newJSONLScanner(f)
 	for scanner.Scan() {
 		var record codexRecord
@@ -67,9 +63,9 @@ func parseCodexSessionFileAggregate(filePath string, tf TimeFilter, agg *Project
 
 		switch record.Type {
 		case "session_meta":
-			parseCodexSessionMeta(record.Payload, &state, timestamp)
+			parseCodexSessionMeta(record.Payload, state, timestamp)
 		case "turn_context":
-			parseCodexTurnContext(record.Payload, &state)
+			parseCodexTurnContext(record.Payload, state)
 		}
 
 		if hasTimestamp && !tf.Contains(timestamp) {
@@ -86,20 +82,23 @@ func parseCodexSessionFileAggregate(filePath string, tf TimeFilter, agg *Project
 
 		switch record.Type {
 		case "session_meta":
-			recordCodexSessionSeen(agg, &state, timestamp)
+			recordCodexSessionSeen(agg, state, timestamp)
 		case "turn_context":
-			recordCodexSessionSeen(agg, &state, timestamp)
+			recordCodexSessionSeen(agg, state, timestamp)
 		case "response_item":
-			parseCodexResponseItem(record.Payload, &state, timestamp, agg)
+			parseCodexResponseItem(record.Payload, state, timestamp, agg)
 		case "event_msg":
-			parseCodexEventMessage(record.Payload, &state, timestamp, agg)
+			parseCodexEventMessage(record.Payload, state, timestamp, agg)
 		}
 	}
 	if err := scanner.Err(); err != nil {
-		Warn("Codex JSONL 文件读取失败", "path", filePath, "error", err.Error())
-		return
+		return scanner.Consumed(), err
 	}
+	return scanner.Consumed(), nil
+}
 
+// finalizeCodexPendings EOF 时结算未闭合的工具调用：弱结果优先，否则记 missing。
+func finalizeCodexPendings(agg *ProjectAggregate, state *codexSessionState) {
 	for _, pending := range state.PendingTools {
 		if pending.ResultRecorded {
 			continue
@@ -109,7 +108,104 @@ func parseCodexSessionFileAggregate(filePath string, tf TimeFilter, agg *Project
 			continue
 		}
 		recordCodexMissingTool(agg, pending.pendingToolCall)
+		pending.WasMissingRecorded = true
 	}
+}
+
+// --- codex tail 增量：状态快照与续解析 ---
+
+// CodexTailState codex session 文件的续解析状态快照，用于文件增长后
+// 只解析新增尾部。pendings 含已结算条目（RecordedResult 去重、
+// RecordedMissing 后续真实结果到达时修正计数）。
+type CodexTailState struct {
+	SessionID    string
+	Project      string
+	CurrentModel string
+	StartedUnix  int64
+	ActivePlan   bool
+	Pendings     map[string]codexPendingSnapshot
+}
+
+type codexPendingSnapshot struct {
+	Call              pendingToolCall
+	RecordedResult    bool // 结果已入账：tail 中重复结果事件直接忽略
+	RecordedMissing   bool // EOF 按 missing 入账：tail 中真实结果到达时修正
+	WeakResultSeen    bool
+	WeakFailed        bool
+	WeakPreview       string
+	WeakTimestampUnix int64
+}
+
+func snapshotCodexTailState(state *codexSessionState) *CodexTailState {
+	snap := &CodexTailState{
+		SessionID:    state.SessionID,
+		Project:      state.Project,
+		CurrentModel: state.CurrentModel,
+		StartedUnix:  state.StartedAt.Unix(),
+		ActivePlan:   state.ActivePlan,
+		Pendings:     make(map[string]codexPendingSnapshot, len(state.PendingTools)),
+	}
+	for id, pending := range state.PendingTools {
+		snap.Pendings[id] = codexPendingSnapshot{
+			Call:              pending.pendingToolCall,
+			RecordedResult:    pending.ResultRecorded,
+			RecordedMissing:   pending.WasMissingRecorded,
+			WeakResultSeen:    pending.WeakResultSeen,
+			WeakFailed:        pending.WeakFailed,
+			WeakPreview:       pending.WeakPreview,
+			WeakTimestampUnix: pending.WeakTimestamp.Unix(),
+		}
+	}
+	return snap
+}
+
+func restoreCodexTailState(snap *CodexTailState) *codexSessionState {
+	state := &codexSessionState{
+		SessionID:    snap.SessionID,
+		Project:      snap.Project,
+		CurrentModel: snap.CurrentModel,
+		StartedAt:    time.Unix(snap.StartedUnix, 0),
+		ActivePlan:   snap.ActivePlan,
+		PendingTools: make(map[string]*codexPendingTool, len(snap.Pendings)),
+	}
+	for id, p := range snap.Pendings {
+		pending := &codexPendingTool{
+			pendingToolCall:    p.Call,
+			ResultRecorded:     p.RecordedResult,
+			WasMissingRecorded: p.RecordedMissing,
+			WeakResultSeen:     p.WeakResultSeen,
+			WeakFailed:         p.WeakFailed,
+			WeakPreview:        p.WeakPreview,
+			WeakTimestamp:      time.Unix(p.WeakTimestampUnix, 0),
+		}
+		// 弱结果已在 EOF 入账：置 ResultRecorded 让 tail 中的重复结果事件忽略
+		// ponytail: 全量重扫时真实结果会覆盖弱结果，这里保守去重，仅边界调用有轻微偏差
+		if !pending.ResultRecorded && pending.WeakResultSeen && pending.WeakTimestamp.Unix() != 0 {
+			pending.ResultRecorded = true
+		}
+		state.PendingTools[id] = pending
+	}
+	return state
+}
+
+// parseCodexSessionFileTail 从 offset 续解析增长部分到 base（含已缓存数据），
+// 返回新的消费偏移与状态快照。
+func parseCodexSessionFileTail(filePath string, offset int64, snap *CodexTailState, tf TimeFilter, base *ProjectAggregate) (int64, *CodexTailState) {
+	f, err := os.Open(filePath)
+	if err != nil {
+		return offset, snap
+	}
+	defer f.Close()
+	if _, err := f.Seek(offset, io.SeekStart); err != nil {
+		return offset, snap
+	}
+	state := restoreCodexTailState(snap)
+	consumed, err := scanCodexRecords(f, state, tf, base)
+	if err != nil {
+		Warn("Codex JSONL tail 读取失败", "path", filePath, "error", err.Error())
+	}
+	finalizeCodexPendings(base, state)
+	return offset + consumed, snapshotCodexTailState(state)
 }
 
 func parseCodexSessionMeta(raw json.RawMessage, state *codexSessionState, fallback time.Time) {
@@ -546,7 +642,27 @@ func recordCodexToolResult(agg *ProjectAggregate, pending *codexPendingTool, cla
 	pending.ResultRecorded = true
 	resultSize := len(preview)
 	for _, target := range codexAggregatesForCall(agg, pending.pendingToolCall) {
+		if pending.WasMissingRecorded {
+			// tail 增量：上一轮 EOF 已按 missing 入账，真实结果晚到时修正
+			undoCodexMissingLocked(target, pending.pendingToolCall)
+		}
 		addToolResultLocked(target, pending.pendingToolCall, classification, preview, timestamp, durationMs, resultSize)
+	}
+}
+
+// undoCodexMissingLocked 撤销 addMissingToolResultLocked 的核心计数。
+// ponytail: 只修正 ToolStats/ToolModelStats 的 MissingResultCount，
+// session/agent/skill/perf 子树的少量偏差保留（每次刷新最多受边界
+// 处未闭合调用数影响，通常 0~2 个）；如需精确可做完整逆记账。
+func undoCodexMissingLocked(agg *ProjectAggregate, call pendingToolCall) {
+	if stat := agg.ToolStats[call.Tool]; stat != nil && stat.MissingResultCount > 0 {
+		stat.MissingResultCount--
+	}
+	if call.Model != "" {
+		key := call.Model + "\x00" + call.Tool
+		if stat := agg.ToolModelStats[key]; stat != nil && stat.MissingResultCount > 0 {
+			stat.MissingResultCount--
+		}
 	}
 }
 
