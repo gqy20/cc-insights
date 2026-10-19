@@ -37,6 +37,22 @@ func TestDailyDigestRowsAndFile(t *testing.T) {
 	if row.TZ == "" || row.ExportedAt == "" {
 		t.Fatalf("tz/exported_at missing: %+v", row)
 	}
+	// v2 维度：质量/时段/项目
+	if row.V != 2 {
+		t.Fatalf("schema v=%d, want 2", row.V)
+	}
+	if row.Failures != 1 || row.Missing != 1 {
+		t.Fatalf("failures=%d missing=%d, want 1/1 (exit_code_1 + 无结果 read)", row.Failures, row.Missing)
+	}
+	if row.Reasons["bash/exit_code_1"] != 1 {
+		t.Fatalf("reasons=%v, want bash/exit_code_1", row.Reasons)
+	}
+	if row.Hourly[10] != 3 {
+		t.Fatalf("hourly[10]=%d, want 3 messages", row.Hourly[10])
+	}
+	if row.Projects["/tmp/pi-project"].Messages != 3 {
+		t.Fatalf("projects=%v, want /tmp/pi-project messages=3", row.Projects)
+	}
 
 	// 原子写 + 可逐行解析
 	out := filepath.Join(dir, "digest.jsonl")

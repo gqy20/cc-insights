@@ -19,21 +19,37 @@ import (
 //     再按 (provider, date) 求和，重复导出天然幂等
 //   - schema 只加字段不改名，语义变更升 v
 
-const dailyDigestSchemaVersion = 1
+const dailyDigestSchemaVersion = 2
 
-// dailyDigestRow 每日×渠道消耗行
+// dailyDigestRow 每日×渠道消耗行。
+// v2 新增：failures/suspected/missing、failure_reasons、hourly、projects。
 type dailyDigestRow struct {
-	V          int                       `json:"v"`
-	Device     string                    `json:"device"`
-	Provider   string                    `json:"provider"`
-	Date       string                    `json:"date"`
-	TZ         string                    `json:"tz"`
-	Messages   int                       `json:"messages"`
-	Sessions   int                       `json:"sessions"`
-	ToolCalls  int                       `json:"tool_calls"`
-	Tokens     int                       `json:"tokens"`
-	Models     map[string]dailyModelStat `json:"models,omitempty"`
-	ExportedAt string                    `json:"exported_at"`
+	V         int                       `json:"v"`
+	Device    string                    `json:"device"`
+	Provider  string                    `json:"provider"`
+	Date      string                    `json:"date"`
+	TZ        string                    `json:"tz"`
+	Messages  int                       `json:"messages"`
+	Sessions  int                       `json:"sessions"`
+	ToolCalls int                       `json:"tool_calls"`
+	Tokens    int                       `json:"tokens"`
+	Models    map[string]dailyModelStat `json:"models,omitempty"`
+	// 质量：确认失败 / 疑似（仅文本命中，不计入失败率）/ 无结果
+	Failures  int `json:"failures"`
+	Suspected int `json:"suspected"`
+	Missing   int `json:"missing"`
+	// 失败原因分布：category/reason -> 次数（不含 suspect_ 前缀项）
+	Reasons map[string]int `json:"failure_reasons,omitempty"`
+	// 活跃时段：0-23 时消息数
+	Hourly [24]int `json:"hourly"`
+	// 项目分布：当天各项目消息数与 token
+	Projects   map[string]dailyProjectStat `json:"projects,omitempty"`
+	ExportedAt string                      `json:"exported_at"`
+}
+
+type dailyProjectStat struct {
+	Messages int `json:"messages"`
+	Tokens   int `json:"tokens"`
 }
 
 type dailyModelStat struct {
@@ -96,6 +112,43 @@ func buildDailyDigestRows(device string) ([]dailyDigestRow, error) {
 			}
 			for _, tokens := range day.ModelTokens {
 				row.Tokens += tokens
+			}
+			row.Hourly = day.HourlyCounts
+			if len(day.ProjectCounts) > 0 {
+				row.Projects = make(map[string]dailyProjectStat, len(day.ProjectCounts))
+				for project, messages := range day.ProjectCounts {
+					row.Projects[project] = dailyProjectStat{Messages: messages}
+				}
+			}
+			// 质量：日级 runtime 快照的失败/疑似/missing 与原因分布
+			if runtime, ok := cache.DailyRuntime[date]; ok {
+				for _, toolStat := range runtime.ToolStats {
+					row.Failures += toolStat.FailureCount
+					row.Missing += toolStat.MissingResultCount
+				}
+				for _, stat := range runtime.FailureReasons {
+					if isSuspectedFailureReason(stat.Reason) {
+						row.Suspected += stat.Count
+						continue
+					}
+					if row.Reasons == nil {
+						row.Reasons = make(map[string]int)
+					}
+					row.Reasons[stat.Category+"/"+stat.Reason] += stat.Count
+				}
+			}
+			// 各项目当日 token（日级项目 runtime 的模型用量求和）
+			if projects, ok := cache.DailyProjectRuntime[date]; ok && len(row.Projects) > 0 {
+				for project, snapshot := range projects {
+					if _, tracked := row.Projects[project]; !tracked {
+						continue
+					}
+					stat := row.Projects[project]
+					for _, usage := range snapshot.ModelUsage {
+						stat.Tokens += usage.Tokens
+					}
+					row.Projects[project] = stat
+				}
 			}
 			rows = append(rows, row)
 		}
