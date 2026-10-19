@@ -98,7 +98,8 @@ func TestAPIUsesCachedData(t *testing.T) {
 	}
 }
 
-// TestAPIFallbackWhenNoCache 测试无缓存时的降级处理
+// TestAPIFallbackWhenNoCache 测试无缓存时的降级处理：
+// 缓存按需构建，数据目录缺失时构建空缓存并返回 200，而不是报错。
 func TestAPIFallbackWhenNoCache(t *testing.T) {
 	// Arrange
 	tmpDir := t.TempDir()
@@ -108,12 +109,18 @@ func TestAPIFallbackWhenNoCache(t *testing.T) {
 	originalDataDir := cfg.DataDir
 	originalCacheDir := cfg.CacheDir
 	originalProvider := cfg.Provider
+	originalDataDirExplicit := cfg.DataDirExplicit
 	cfg.DataDir = dataDir
 	cfg.Provider = ProviderClaude
+	// 无 provider 参数时请求会回落到 cfg.Provider 并按需构建缓存，
+	// 必须隔离缓存目录并固定 DataDir，避免读写真实 ~/.cc-insights。
+	cfg.CacheDir = t.TempDir()
+	cfg.DataDirExplicit = true
 	defer func() {
 		cfg.DataDir = originalDataDir
 		cfg.CacheDir = originalCacheDir
 		cfg.Provider = originalProvider
+		cfg.DataDirExplicit = originalDataDirExplicit
 	}()
 
 	// 创建API请求

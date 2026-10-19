@@ -30,6 +30,7 @@ const (
 	ProviderCodex    Provider = "codex"
 	ProviderOpenCode Provider = "opencode"
 	ProviderPi       Provider = "pi"
+	ProviderZcode    Provider = "zcode"
 	ProviderAll      Provider = "all" // 合并所有可用渠道
 	ProviderAuto     Provider = "auto"
 )
@@ -65,7 +66,7 @@ func registerConfigFlags(fs *flag.FlagSet, target *Config) {
 	fs.StringVar(&target.CacheDir, "cache", target.CacheDir, "缓存目录路径 (默认: ~/.cc-insights/cache/)")
 	fs.StringVar(&target.RulesPath, "rules", target.RulesPath, "Bash 命令分类规则 YAML 路径")
 	fs.StringVar(&target.PricingPath, "pricing", target.PricingPath, "模型定价规则 YAML 路径（默认内置 rules/pricing.yml，可用 ~/.cc-insights/pricing.yml 覆盖）")
-	fs.Var(&target.Provider, "provider", "数据源 provider: claude|codex|opencode|pi|all|auto（all 为跨渠道合并视图）")
+	fs.Var(&target.Provider, "provider", "数据源 provider: claude|codex|opencode|pi|zcode|all|auto（all 为跨渠道合并视图）")
 }
 
 // registerServerFlags 注册仅 web 命令使用的服务 flag（监听地址/反向代理）。
@@ -90,11 +91,11 @@ func (p *Provider) String() string {
 func (p *Provider) Set(value string) error {
 	provider := Provider(value)
 	switch provider {
-	case ProviderClaude, ProviderCodex, ProviderOpenCode, ProviderPi, ProviderAll, ProviderAuto:
+	case ProviderClaude, ProviderCodex, ProviderOpenCode, ProviderPi, ProviderZcode, ProviderAll, ProviderAuto:
 		*p = provider
 		return nil
 	default:
-		return fmt.Errorf("未知 provider %q，可选: claude|codex|opencode|pi|auto", value)
+		return fmt.Errorf("未知 provider %q，可选: claude|codex|opencode|pi|zcode|auto", value)
 	}
 }
 
@@ -113,6 +114,9 @@ func resolveProvider(provider Provider, dataDir string) Provider {
 	}
 	if looksLikeOpenCodeDataDir(dataDir) {
 		return ProviderOpenCode
+	}
+	if looksLikeZCodeDataDir(dataDir) {
+		return ProviderZcode
 	}
 	return ProviderClaude
 }
@@ -159,6 +163,17 @@ func looksLikeOpenCodeDataDir(dataDir string) bool {
 	return false
 }
 
+// looksLikeZCodeDataDir 识别 zcode agent 数据目录（~/.zcode，含 cli/db/db.sqlite）。
+func looksLikeZCodeDataDir(dataDir string) bool {
+	if dataDir == "" {
+		return false
+	}
+	if info, err := os.Stat(filepath.Join(dataDir, "cli", "db", "db.sqlite")); err == nil && !info.IsDir() {
+		return true
+	}
+	return false
+}
+
 func defaultDataDirForProvider(provider Provider) string {
 	homeDir, _ := os.UserHomeDir()
 	switch provider {
@@ -168,6 +183,8 @@ func defaultDataDirForProvider(provider Provider) string {
 		return filepath.Join(homeDir, ".local", "share", "opencode")
 	case ProviderPi:
 		return filepath.Join(homeDir, ".pi")
+	case ProviderZcode:
+		return filepath.Join(homeDir, ".zcode")
 	default:
 		return filepath.Join(homeDir, ".claude")
 	}

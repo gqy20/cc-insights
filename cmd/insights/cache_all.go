@@ -9,7 +9,7 @@ import (
 // CacheFile，不落盘。QueryByTimeRange 的 runtime 聚合路径会从
 // DailyStats + DailyRuntime* 重建完整分析层，因此合并只需这三组字段。
 
-var allMergeProviderList = []Provider{ProviderClaude, ProviderCodex, ProviderOpenCode, ProviderPi}
+var allMergeProviderList = []Provider{ProviderClaude, ProviderCodex, ProviderOpenCode, ProviderPi, ProviderZcode}
 
 // loadMergedAllProvidersCache 加载所有可用 provider 的缓存并合并。
 func loadMergedAllProvidersCache() (*CacheFile, error) {
@@ -35,7 +35,7 @@ func loadMergedAllProvidersCache() (*CacheFile, error) {
 		included = append(included, string(provider))
 	}
 	if merged == nil {
-		return nil, fmt.Errorf("未发现任何可用数据源（claude/codex/opencode/pi）")
+		return nil, fmt.Errorf("未发现任何可用数据源（claude/codex/opencode/pi/zcode）")
 	}
 	merged.Provider = string(ProviderAll)
 	merged.BuildID = "all:" + fmt.Sprint(included)

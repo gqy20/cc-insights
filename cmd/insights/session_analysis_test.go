@@ -8,6 +8,26 @@ import (
 	"time"
 )
 
+func TestFinalizeSessionAnalysisTotalSessionsUncapped(t *testing.T) {
+	// >100 个会话时 Sessions 列表截到 Top-100，TotalSessions 必须保留真实总数。
+	agg := newProjectAggregate()
+	for i := 0; i < 150; i++ {
+		ensureSessionStat(agg, "sess-"+strconv.Itoa(i), "/repo")
+	}
+	agg.finalizeSessionAnalysis()
+
+	analysis := agg.SessionAnalysis
+	if analysis == nil {
+		t.Fatal("SessionAnalysis should not be nil")
+	}
+	if analysis.TotalSessions != 150 {
+		t.Fatalf("TotalSessions = %d, want 150", analysis.TotalSessions)
+	}
+	if len(analysis.Sessions) != 100 {
+		t.Fatalf("len(Sessions) = %d, want capped 100", len(analysis.Sessions))
+	}
+}
+
 func TestParseProjectsConcurrentOnce_SessionAnalysis(t *testing.T) {
 	tmpDir := t.TempDir()
 	dataDir := filepath.Join(tmpDir, "data")

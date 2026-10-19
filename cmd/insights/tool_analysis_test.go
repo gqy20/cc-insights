@@ -1,12 +1,23 @@
 package main
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 )
+
+// jsonString 把字符串转为合法 JSON 字符串字面量（含引号）。
+// Windows 路径含反斜杠，直接拼进 JSON 会形成非法转义序列导致整行解析失败。
+func jsonString(s string) string {
+	b, err := json.Marshal(s)
+	if err != nil {
+		return `""`
+	}
+	return string(b)
+}
 
 func TestParseProjectsConcurrentOnce_ToolAnalysis(t *testing.T) {
 	tmpDir := t.TempDir()
@@ -255,23 +266,23 @@ func toolUseRecordWithInput(cwd, sessionID string, ts time.Time, callID, tool, m
 	if agentID != "" {
 		agentField = `,"agentId":"` + agentID + `"`
 	}
-	return `{"type":"assistant","cwd":"` + cwd + `","sessionId":"` + sessionID + `","isSidechain":` + sidechain + agentField + `,"timestamp":"` + ts.Format(time.RFC3339Nano) + `","message":{"model":"` + model + `","content":[{"type":"tool_use","id":"` + callID + `","name":"` + tool + `","input":` + input + `}],"usage":{"input_tokens":1,"output_tokens":1}}}`
+	return `{"type":"assistant","cwd":` + jsonString(cwd) + `,"sessionId":"` + sessionID + `","isSidechain":` + sidechain + agentField + `,"timestamp":"` + ts.Format(time.RFC3339Nano) + `","message":{"model":"` + model + `","content":[{"type":"tool_use","id":"` + callID + `","name":"` + tool + `","input":` + input + `}],"usage":{"input_tokens":1,"output_tokens":1}}}`
 }
 
 func toolResultRecord(cwd, sessionID string, ts time.Time, callID, content string) string {
-	return `{"type":"user","cwd":"` + cwd + `","sessionId":"` + sessionID + `","timestamp":"` + ts.Format(time.RFC3339Nano) + `","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"` + callID + `","content":"` + content + `"}]}}`
+	return `{"type":"user","cwd":` + jsonString(cwd) + `,"sessionId":"` + sessionID + `","timestamp":"` + ts.Format(time.RFC3339Nano) + `","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"` + callID + `","content":"` + content + `"}]}}`
 }
 
 func toolErrorResultRecord(cwd, sessionID string, ts time.Time, callID, content string) string {
-	return `{"type":"user","cwd":"` + cwd + `","sessionId":"` + sessionID + `","timestamp":"` + ts.Format(time.RFC3339Nano) + `","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"` + callID + `","is_error":true,"content":"` + content + `"}]}}`
+	return `{"type":"user","cwd":` + jsonString(cwd) + `,"sessionId":"` + sessionID + `","timestamp":"` + ts.Format(time.RFC3339Nano) + `","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"` + callID + `","is_error":true,"content":"` + content + `"}]}}`
 }
 
 func attachmentRecord(cwd, sessionID string, ts time.Time, attachment string) string {
-	return `{"type":"attachment","cwd":"` + cwd + `","sessionId":"` + sessionID + `","timestamp":"` + ts.Format(time.RFC3339Nano) + `","attachment":` + attachment + `}`
+	return `{"type":"attachment","cwd":` + jsonString(cwd) + `,"sessionId":"` + sessionID + `","timestamp":"` + ts.Format(time.RFC3339Nano) + `","attachment":` + attachment + `}`
 }
 
 func permissionModeRecord(cwd, sessionID string, ts time.Time, mode string) string {
-	return `{"type":"permission-mode","cwd":"` + cwd + `","sessionId":"` + sessionID + `","timestamp":"` + ts.Format(time.RFC3339Nano) + `","permissionMode":"` + mode + `"}`
+	return `{"type":"permission-mode","cwd":` + jsonString(cwd) + `,"sessionId":"` + sessionID + `","timestamp":"` + ts.Format(time.RFC3339Nano) + `","permissionMode":"` + mode + `"}`
 }
 
 func permissionModeRecordWithoutTimestamp(sessionID string, mode string) string {

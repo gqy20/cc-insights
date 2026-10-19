@@ -851,12 +851,27 @@ func projectFileAggregateToAggregate(src ProjectFileAggregate) *ProjectAggregate
 		out.ProjectStats[key] = &statCopy
 	}
 	out.WeekdayData = src.WeekdayData
-	out.DailyActivity = copyIntMap(src.DailyActivity)
-	out.DailySessions = slicesMapToBoolSets(src.DailySessions)
-	out.DailyProjectCounts = copyNestedIntMap(src.DailyProjectCounts)
-	out.DailyModelCounts = copyNestedIntMap(src.DailyModelCounts)
-	out.DailyModelTokens = copyNestedIntMap(src.DailyModelTokens)
-	out.DailyHourlyCounts = copyDailyHourlyCounts(src.DailyHourlyCounts)
+	// copyIntMap 对空 map 返回 nil：直接赋值会把 newProjectAggregate 初始化好的
+	// map 置 nil，mergeProjectAggregate 对 nil map 赋值会 panic（跨 provider 合并
+	// 日期快照时，一边有数据一边为空即触发）。因此仅在 src 非空时覆盖。
+	if len(src.DailyActivity) > 0 {
+		out.DailyActivity = copyIntMap(src.DailyActivity)
+	}
+	if len(src.DailySessions) > 0 {
+		out.DailySessions = slicesMapToBoolSets(src.DailySessions)
+	}
+	if len(src.DailyProjectCounts) > 0 {
+		out.DailyProjectCounts = copyNestedIntMap(src.DailyProjectCounts)
+	}
+	if len(src.DailyModelCounts) > 0 {
+		out.DailyModelCounts = copyNestedIntMap(src.DailyModelCounts)
+	}
+	if len(src.DailyModelTokens) > 0 {
+		out.DailyModelTokens = copyNestedIntMap(src.DailyModelTokens)
+	}
+	if len(src.DailyHourlyCounts) > 0 {
+		out.DailyHourlyCounts = copyDailyHourlyCounts(src.DailyHourlyCounts)
+	}
 	for date, runtimeSnapshot := range src.DailyRuntime {
 		out.DailyRuntime[date] = projectFileAggregateToAggregate(runtimeSnapshot)
 	}
@@ -924,8 +939,12 @@ func projectFileAggregateToAggregate(src ProjectFileAggregate) *ProjectAggregate
 		statCopy := stat
 		out.SessionStatsMap[key] = &statCopy
 	}
-	out.SessionQueueOps = copyIntMap(src.SessionQueueOps)
-	out.EventTypes = copyIntMap(src.EventTypes)
+	if len(src.SessionQueueOps) > 0 {
+		out.SessionQueueOps = copyIntMap(src.SessionQueueOps)
+	}
+	if len(src.EventTypes) > 0 {
+		out.EventTypes = copyIntMap(src.EventTypes)
+	}
 	for key, stat := range src.HookStats {
 		statCopy := stat
 		out.HookStats[key] = &statCopy

@@ -16,10 +16,24 @@ import (
 
 const codexHookLogDBName = "logs_2.sqlite"
 
+// sqliteReadOnlyURI 构造跨平台合法的 sqlite 只读 file URI。
+// Windows 路径（C:\Users\...）需先转为带前导斜杠的正斜杠形式，
+// 否则渲染成 file:C:%5CUsers... 这类非法 URI，sqlite 驱动会拒绝。
+func sqliteReadOnlyURI(dbPath string) string {
+	uriPath := filepath.ToSlash(dbPath)
+	if !strings.HasPrefix(uriPath, "/") {
+		uriPath = "/" + uriPath
+	}
+	dbURL := url.URL{Scheme: "file", Path: uriPath, RawQuery: "mode=ro&_busy_timeout=1000"}
+	return dbURL.String()
+}
+
 var (
 	codexHookThreadRe = regexp.MustCompile(`thread_id=([0-9a-fA-F-]+)`)
 	codexHookTurnRe   = regexp.MustCompile(`turn\.id=([0-9a-fA-F-]+)`)
-	codexHookCWDRe    = regexp.MustCompile(`cwd=([^}:]+)`)
+	// cwd= 位于 {...} 内，排除 } 即可；再排除 : 会把 Windows 盘符路径
+	// （cwd=C:\Users\...）截断成 "C"，导致项目归因错误。
+	codexHookCWDRe    = regexp.MustCompile(`cwd=([^}]+)`)
 )
 
 type codexHookLogRow struct {
@@ -39,8 +53,9 @@ func recordCodexSQLiteHooksLocked(agg *ProjectAggregate, dataDir string, tf Time
 		return err
 	}
 
-	dbURL := url.URL{Scheme: "file", Path: dbPath, RawQuery: "mode=ro&_busy_timeout=1000"}
-	db, err := sql.Open("sqlite", dbURL.String())
+	// Windows 路径（C:\Users\...）需先转为带前导斜杠的正斜杠形式，
+	// 否则渲染成 file:C:%5CUsers... 这类非法 URI，sqlite 驱动会拒绝。
+	db, err := sql.Open("sqlite", sqliteReadOnlyURI(dbPath))
 	if err != nil {
 		return err
 	}

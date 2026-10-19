@@ -798,6 +798,8 @@ func providerTitle(provider string) string {
 		return "OpenCode"
 	case ProviderPi:
 		return "Pi"
+	case ProviderZcode:
+		return "ZCode"
 	case ProviderAll:
 		return "All Agents"
 	default:

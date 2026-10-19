@@ -2,7 +2,7 @@ import { useSyncExternalStore, useCallback } from 'react'
 import type { Filters } from '@/api/types'
 import { PRESETS } from '@/api/types'
 
-const PROVIDERS = ['claude', 'codex', 'opencode', 'pi', 'all'] as const
+const PROVIDERS = ['claude', 'codex', 'opencode', 'pi', 'zcode', 'all'] as const
 
 // 全局 filter 单源：读写 window.location.search，无 react-router。
 // preset 变化 → Query key 变化 → 自动重取（见 api/hooks.ts）。
@@ -12,7 +12,12 @@ function readFromURL(): Filters {
   const raw = p.get('preset')
   const preset = raw && (PRESETS as readonly string[]).includes(raw) ? raw : '30d'
   const rawProvider = p.get('provider')
-  const provider = rawProvider && (PROVIDERS as readonly string[]).includes(rawProvider) ? rawProvider as Filters['provider'] : 'claude'
+  // URL 无 provider 时保持 undefined：请求不带该参数，由服务端启动配置
+  // （cc-insights web --provider <x>）决定生效渠道，而不是强制回退 claude。
+  const provider =
+    rawProvider && (PROVIDERS as readonly string[]).includes(rawProvider)
+      ? (rawProvider as Filters['provider'])
+      : undefined
   return {
     preset,
     provider,

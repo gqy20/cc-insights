@@ -396,6 +396,8 @@ func (agg *ProjectAggregate) finalizeSessionAnalysis() {
 	sort.Slice(analysis.Titles, func(i, j int) bool {
 		return analysis.Titles[i].Count > analysis.Titles[j].Count
 	})
+	// 截断前记录真实总数，避免 len(Sessions) 在 >100 个会话时失真。
+	analysis.TotalSessions = len(analysis.Sessions)
 	limitSessionAnalysis(analysis)
 	agg.SessionAnalysis = analysis
 }

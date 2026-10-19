@@ -27,6 +27,47 @@ func TestParseAnalysisFilter(t *testing.T) {
 	}
 }
 
+func TestParseAnalysisFilterFallsBackToStartupProvider(t *testing.T) {
+	orig := cfg
+	defer func() { cfg = orig }()
+	cfg = Config{DataDir: t.TempDir(), Provider: ProviderAll}
+
+	// 不带 provider 查询参数：应回落到启动配置（--provider all），
+	// 让 `cc-insights web --provider <x>` 对无参数请求同样生效并走缓存路径。
+	req := httptest.NewRequest("GET", "/api/overview", nil)
+	filter, err := parseAnalysisFilter(req)
+	if err != nil {
+		t.Fatalf("parseAnalysisFilter returned error: %v", err)
+	}
+	if !filter.ProviderSet {
+		t.Fatal("ProviderSet=false, want true when startup provider applies")
+	}
+	if filter.Provider != ProviderAll {
+		t.Fatalf("Provider=%q, want %q", filter.Provider, ProviderAll)
+	}
+	if filter.ProviderRaw != ProviderAll {
+		t.Fatalf("ProviderRaw=%q, want %q", filter.ProviderRaw, ProviderAll)
+	}
+}
+
+func TestParseAnalysisFilterQueryOverridesStartupProvider(t *testing.T) {
+	orig := cfg
+	defer func() { cfg = orig }()
+	cfg = Config{DataDir: t.TempDir(), Provider: ProviderAll}
+
+	req := httptest.NewRequest("GET", "/api/overview?provider=codex", nil)
+	filter, err := parseAnalysisFilter(req)
+	if err != nil {
+		t.Fatalf("parseAnalysisFilter returned error: %v", err)
+	}
+	if filter.Provider != ProviderCodex {
+		t.Fatalf("Provider=%q, want %q", filter.Provider, ProviderCodex)
+	}
+	if filter.ProviderRaw != ProviderCodex {
+		t.Fatalf("ProviderRaw=%q, want %q", filter.ProviderRaw, ProviderCodex)
+	}
+}
+
 func TestConfigForAnalysisFilterPreservesExplicitDataDir(t *testing.T) {
 	dataDir := t.TempDir()
 	config := Config{
@@ -117,6 +158,20 @@ func TestBuildOverviewDataUsesSessionAnalysisCount(t *testing.T) {
 	overview := buildOverviewData(data, cliRecommendationReport{}, AnalysisFilter{})
 	if overview.Summary.Sessions != 2 {
 		t.Fatalf("overview sessions=%d, want session_analysis count 2", overview.Summary.Sessions)
+	}
+}
+
+func TestBuildOverviewDataUsesUncappedSessionTotal(t *testing.T) {
+	// Sessions 列表被截到 Top-100 时，总览应显示未截断的 TotalSessions。
+	data := &DashboardData{
+		SessionAnalysis: &SessionAnalysisData{
+			Sessions:      make([]SessionAnalysisItem, 100),
+			TotalSessions: 150,
+		},
+	}
+	overview := buildOverviewData(data, cliRecommendationReport{}, AnalysisFilter{})
+	if overview.Summary.Sessions != 150 {
+		t.Fatalf("overview sessions=%d, want uncapped 150", overview.Summary.Sessions)
 	}
 }
 

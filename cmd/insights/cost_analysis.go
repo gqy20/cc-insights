@@ -137,6 +137,7 @@ func mergeCostModelStat(dst *CostModelStat, src *CostModelStat) {
 	dst.ServerToolUseRequests += src.ServerToolUseRequests
 	dst.TotalTokens += src.TotalTokens
 	dst.TotalRoundTripMs += src.TotalRoundTripMs
+	dst.TotalTTFTMs += src.TotalTTFTMs
 }
 
 func mergeCostProjectStat(dst *CostProjectStat, src *CostProjectStat) {
@@ -185,6 +186,9 @@ func (agg *ProjectAggregate) finalizeCostAnalysis() {
 			if statCopy.TotalRoundTripMs > 0 {
 				statCopy.AvgRoundTripMs = float64(statCopy.TotalRoundTripMs) / float64(statCopy.RequestCount)
 				statCopy.OutputTokensPerSec = float64(statCopy.OutputTokens) / (float64(statCopy.TotalRoundTripMs) / 1000.0)
+			}
+			if statCopy.TotalTTFTMs > 0 {
+				statCopy.AvgTTFTMs = float64(statCopy.TotalTTFTMs) / float64(statCopy.RequestCount)
 			}
 		}
 		inputTotal := statCopy.InputTokens + statCopy.CacheReadTokens + statCopy.CacheCreationTokens

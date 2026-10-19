@@ -439,7 +439,11 @@ func buildCLISummary(data *DashboardData) cliSummary {
 		totalMessages = data.ProjectStats.TotalMessages
 	}
 	if data.SessionAnalysis != nil {
-		totalSessions = len(data.SessionAnalysis.Sessions)
+		// Sessions 列表被截到 Top-100，优先用未截断的真实总数。
+		totalSessions = data.SessionAnalysis.TotalSessions
+		if totalSessions == 0 {
+			totalSessions = len(data.SessionAnalysis.Sessions)
+		}
 	} else if data.Sessions != nil {
 		totalSessions = data.Sessions.TotalSessions
 	} else if data.ProjectStats != nil {

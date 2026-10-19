@@ -432,6 +432,11 @@ func (cb *CacheBuilder) buildProjectAggregateIncremental(dataDir string, previou
 			aggregate.TaskPlanAnalysis.Tasks = *taskAnalysis
 		}
 	}
+	if provider == ProviderZcode {
+		if err := recordZCodeTasksFromDataDir(dataDir, aggregate); err != nil {
+			Warn("zcode todo 扫描失败", "error", err.Error())
+		}
+	}
 
 	return aggregate, projectFiles, reused, len(parsedCaches), nil
 }
@@ -450,6 +455,9 @@ func listLogFileInfos(provider Provider, dataDir string) ([]projectFileInfo, err
 	ext := ".jsonl"
 	if provider == ProviderOpenCode {
 		ext = ".json"
+	}
+	if provider == ProviderZcode {
+		ext = ".sqlite"
 	}
 	var files []projectFileInfo
 	err := filepath.WalkDir(rootDir, func(path string, entry os.DirEntry, err error) error {
@@ -485,6 +493,10 @@ func listLogFileInfos(provider Provider, dataDir string) ([]projectFileInfo, err
 	sort.Slice(files, func(i, j int) bool {
 		return files[i].RelPath < files[j].RelPath
 	})
+	if provider == ProviderZcode {
+		// 活跃 sqlite 库的写入先落 WAL：合并 -wal/-shm 统计作为变更信号。
+		files = zcodeDataFileInfos(files)
+	}
 	return files, nil
 }
 
@@ -508,6 +520,8 @@ func logRootDir(provider Provider, dataDir string) string {
 		return filepath.Join(dataDir, "agent", "sessions")
 	case ProviderOpenCode:
 		return filepath.Join(dataDir, "storage")
+	case ProviderZcode:
+		return filepath.Join(dataDir, "cli", "db")
 	default:
 		return filepath.Join(dataDir, "projects")
 	}
@@ -611,6 +625,11 @@ func parseLogFileAggregate(provider Provider, filePath string, tf TimeFilter, fi
 		return parseCodexSessionFileAggregateFull(filePath, tf, fileAggregate)
 	case ProviderPi:
 		return parsePiSessionFileAggregateFull(filePath, tf, fileAggregate)
+	case ProviderZcode:
+		if err := parseZCodeDBAggregate(filePath, tf, fileAggregate); err != nil {
+			Warn("zcode db 解析失败", "path", filePath, "error", err.Error())
+		}
+		return 0, nil
 	default:
 		parseProjectFileAggregate(filePath, tf, fileAggregate)
 		return 0, nil

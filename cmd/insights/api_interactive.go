@@ -296,6 +296,12 @@ func parseAnalysisFilter(r *http.Request) (AnalysisFilter, error) {
 		Reason:   strings.TrimSpace(q.Get("reason")),
 	}
 	rawProvider := Provider("")
+	// 无 provider 查询参数时回落到启动配置：--provider 已在 CLI 解析时归一化
+	// （normalizeParsedConfig），因此这里拿到的是具体 provider，可让
+	// `cc-insights web --provider <x>` 对不带参数的请求同样生效并走缓存路径。
+	if provider == "" && cfg.Provider != "" && cfg.Provider != ProviderAuto {
+		provider = string(cfg.Provider)
+	}
 	if provider != "" {
 		if err := opts.Config.Provider.Set(provider); err != nil {
 			return AnalysisFilter{}, err
@@ -362,7 +368,11 @@ func buildOverviewData(data *DashboardData, diagnostics cliRecommendationReport,
 		summary.Projects = len(data.ProjectStats.Projects)
 	}
 	if data.SessionAnalysis != nil {
-		summary.Sessions = len(data.SessionAnalysis.Sessions)
+		// Sessions 列表被截到 Top-100，优先用未截断的真实总数。
+		summary.Sessions = data.SessionAnalysis.TotalSessions
+		if summary.Sessions == 0 {
+			summary.Sessions = len(data.SessionAnalysis.Sessions)
+		}
 	} else if data.Sessions != nil {
 		summary.Sessions = data.Sessions.TotalSessions
 	}

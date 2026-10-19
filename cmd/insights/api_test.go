@@ -116,8 +116,18 @@ func TestGracefulDegradation_PartialFailureAPI(t *testing.T) {
 	// 不创建 debug/ 和 stats-cache.json
 
 	origDataDir := cfg.DataDir
+	origCacheDir := cfg.CacheDir
+	origDataDirExplicit := cfg.DataDirExplicit
 	cfg.DataDir = tmpDir
-	defer func() { cfg.DataDir = origDataDir }()
+	// 无 provider 参数的请求会回落到 cfg.Provider 并走缓存路径，
+	// 测试必须隔离缓存目录并显式固定 DataDir，避免读写真实 ~/.cc-insights。
+	cfg.CacheDir = t.TempDir()
+	cfg.DataDirExplicit = true
+	defer func() {
+		cfg.DataDir = origDataDir
+		cfg.CacheDir = origCacheDir
+		cfg.DataDirExplicit = origDataDirExplicit
+	}()
 
 	// Act: 发起 API 请求
 	req := httptest.NewRequest("GET", "/api/data?preset=all", nil)
@@ -662,8 +672,17 @@ func TestHTTPTimeout_ProtectSlowRequests(t *testing.T) {
 	os.WriteFile(projPath, []byte(`{"type":"assistant","message":{"role":"assistant","model":"m-1","content":[{"type":"text","text":"hi"}],"usage":{"input_tokens":5,"output_tokens":10}},"timestamp":"2024-11-15T00:00:00Z","cwd":"/tmp","sessionId":"s1"}`+"\n"), 0644)
 
 	origDataDir := cfg.DataDir
+	origCacheDir := cfg.CacheDir
+	origDataDirExplicit := cfg.DataDirExplicit
 	cfg.DataDir = tmpDir
-	defer func() { cfg.DataDir = origDataDir }()
+	// 同 TestGracefulDegradation_PartialFailureAPI：缓存目录/DataDir 必须隔离。
+	cfg.CacheDir = t.TempDir()
+	cfg.DataDirExplicit = true
+	defer func() {
+		cfg.DataDir = origDataDir
+		cfg.CacheDir = origCacheDir
+		cfg.DataDirExplicit = origDataDirExplicit
+	}()
 
 	// Act: 发起 API 请求（正常数据应在合理时间内返回）
 	req := httptest.NewRequest("GET", "/api/data?preset=all", nil)

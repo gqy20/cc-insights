@@ -23,7 +23,7 @@ export function TopFilterBar() {
   return (
     <div className="flex flex-wrap items-center gap-2">
       <select
-        value={filters.provider ?? 'claude'}
+        value={filters.provider ?? cq.data?.provider ?? 'claude'}
         onChange={(e) => setFilters({ provider: (e.target.value || undefined) as Filters['provider'] })}
         className={fieldClass}
       >
@@ -31,6 +31,7 @@ export function TopFilterBar() {
         <option value="codex">Codex</option>
         <option value="opencode">OpenCode</option>
         <option value="pi">Pi</option>
+        <option value="zcode">ZCode</option>
         <option value="all">全渠道合并</option>
       </select>
 

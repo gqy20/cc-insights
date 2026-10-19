@@ -118,7 +118,11 @@ provider 说明：
 |----------|--------------|----------|------|
 | `claude` | `~/.claude` | `projects/**/*.jsonl`、`debug/`、`tasks/` | 默认值，保留 Claude Code 的 hooks、tasks、skills 等完整诊断信号 |
 | `codex` | `~/.codex` | `sessions/**/*.jsonl`、`logs_2.sqlite` | 支持 session、项目、模型 token、工具调用、命令、失败、Plan 步骤、hook trace 和 GPT/Codex 成本估算 |
-| `auto` | 按 `--data` 目录检测 | `projects/` 或 `sessions/` | 适合显式传入数据目录时自动识别 |
+| `opencode` | `~/.local/share/opencode` | `storage/message/*.json`、`storage/part/*.json` | opencode 会话与工具调用 |
+| `pi` | `~/.pi` | `agent/sessions/**/*.jsonl` | pi agent 会话、工具调用与结构化失败 |
+| `zcode` | `~/.zcode` | `cli/db/db.sqlite`（只读） | ZCode 等本地 agent：message/part/model_usage 三表给出消息、项目、模型 token、请求时长吞吐、工具调用、Bash 命令族与结构化失败 |
+| `all` | 各渠道默认目录 | 上述全部合并 | 跨渠道合并视图，不落盘 |
+| `auto` | 按 `--data` 目录检测 | 按目录特征识别 | 适合显式传入数据目录时自动识别 |
 
 可用 `--data` 指定任意目录：
 

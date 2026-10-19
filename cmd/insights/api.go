@@ -693,7 +693,10 @@ func emptyProjectAggregate() *ProjectAggregate {
 func safeParseHistoryConcurrent(tf TimeFilter) ([]CommandStats, map[string]int, error) {
 	cmdStats, hourlyCounts, err := ParseHistoryConcurrent(tf)
 	if err != nil {
-		Warn("ParseHistoryConcurrent 失败，使用空结果", "error", err.Error())
+		// history.jsonl 是 claude 专属的可选文件：codex/zcode 等渠道没有该文件属正常情况。
+		if !os.IsNotExist(err) {
+			Warn("ParseHistoryConcurrent 失败，使用空结果", "error", err.Error())
+		}
 		return []CommandStats{}, make(map[string]int), nil
 	}
 	return cmdStats, hourlyCounts, nil

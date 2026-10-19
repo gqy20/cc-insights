@@ -96,6 +96,14 @@ create table logs (
 	}
 }
 
+func TestCodexHookCWDReCapturesWindowsDrivePath(t *testing.T) {
+	// Windows 盘符路径含冒号，正则不能因排除 : 而截断成 "C"。
+	body := "session_loop{thread_id=thread-1}:submission_dispatch{cwd=C:\\Users\\dev\\project-win}:turn{turn.id=turn-1}"
+	if got := codexHookRegexpValue(codexHookCWDRe, body); got != `C:\Users\dev\project-win` {
+		t.Fatalf("cwd capture = %q, want full drive path", got)
+	}
+}
+
 func insertCodexHookLog(t *testing.T, db *sql.DB, ts, tsNanos int64, target, threadID, body string) {
 	t.Helper()
 	_, err := db.Exec(`

@@ -229,6 +229,7 @@ function providerLabel(provider: string): string {
   if (provider === 'claude') return 'Claude Code'
   if (provider === 'opencode') return 'OpenCode'
   if (provider === 'pi') return 'Pi'
+  if (provider === 'zcode') return 'ZCode'
   if (provider === 'all') return '全渠道合并'
   return provider
 }

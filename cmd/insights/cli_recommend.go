@@ -1061,6 +1061,38 @@ func buildPerformanceDiagnostics(data *DashboardData) []diagnosticFinding {
 				Confidence: "medium",
 			})
 		}
+		// 首 token 延迟（TTFT）：仅有该数据的渠道（zcode model_usage）触发。
+		// 与吞吐互补：TTFT 高 + 吞吐正常 → 排队/限流；TTFT 高 + 吞吐低 → 模型档位问题。
+		var slowestTTFT *CostModelStat
+		for i := range data.CostAnalysis.ByModel {
+			m := &data.CostAnalysis.ByModel[i]
+			if m.AvgTTFTMs <= 0 || m.RequestCount < 30 {
+				continue
+			}
+			if slowestTTFT == nil || m.AvgTTFTMs > slowestTTFT.AvgTTFTMs {
+				slowestTTFT = m
+			}
+		}
+		if slowestTTFT != nil && slowestTTFT.AvgTTFTMs > 5000 {
+			findings = append(findings, diagnosticFinding{
+				ID:       "performance.ttft.high." + sanitizeID(slowestTTFT.Model),
+				Category: "performance",
+				Severity: severityFromThroughput(slowestTTFT.AvgTTFTMs / 1000.0),
+				Title:    "模型首 token 延迟偏高",
+				Summary:  fmt.Sprintf("%s 平均首 token 延迟 %s（%d 次请求）。", slowestTTFT.Model, formatDurationMs(int64(slowestTTFT.AvgTTFTMs)), slowestTTFT.RequestCount),
+				Evidence: []diagnosticEvidence{
+					{Label: "模型", Value: slowestTTFT.Model},
+					{Label: "平均首 token 延迟", Value: formatDurationMs(int64(slowestTTFT.AvgTTFTMs))},
+					{Label: "请求数", Value: formatInt(slowestTTFT.RequestCount)},
+				},
+				Interpretation: "TTFT = 请求发出到首个 token 返回的耗时。偏高通常是排队、限流或大上下文预填，与生成吞吐相互独立。",
+				NextSteps: []string{
+					"结合吞吐诊断区分：TTFT 高且吞吐正常 → 排队/限流；两者都低 → 模型档位问题。",
+					"检查该时段是否有并发会话或限流事件（err/why 下钻 rate_limit）。",
+				},
+				Confidence: "medium",
+			})
+		}
 	}
 	return findings
 }

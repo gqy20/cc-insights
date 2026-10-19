@@ -298,7 +298,10 @@ type EventSample struct {
 
 // SessionAnalysisData session 生命周期分析结果
 type SessionAnalysisData struct {
-	Sessions        []SessionAnalysisItem `json:"sessions"`
+	Sessions []SessionAnalysisItem `json:"sessions"`
+	// TotalSessions 是未截断的真实会话总数：Sessions 列表被 limitSessionAnalysis
+	// 截到 Top-100，超过 100 个会话时 len(Sessions) 不再等于总数。
+	TotalSessions   int                   `json:"total_sessions,omitempty"`
 	TopFailures     []SessionAnalysisItem `json:"top_failures"`
 	LongRunning     []SessionAnalysisItem `json:"long_running"`
 	Outcomes        []SessionOutcomeStat  `json:"outcomes"`
@@ -588,8 +591,11 @@ type CostModelStat struct {
 	CacheCreationCostUSD  float64 `json:"cache_creation_cost_usd,omitempty"`
 	CostUSD               float64 `json:"cost_usd,omitempty"`
 	// 单请求 round-trip 累计耗时（ms），用于派生 AvgRoundTripMs / OutputTokensPerSec。
-	TotalRoundTripMs   int64   `json:"total_round_trip_ms,omitempty"`
-	AvgRoundTripMs     float64 `json:"avg_round_trip_ms,omitempty"`
+	TotalRoundTripMs int64 `json:"total_round_trip_ms,omitempty"`
+	// 首 token 延迟累计（ms，zcode model_usage.time_to_first_token_ms），派生 AvgTTFTMs。
+	TotalTTFTMs      int64   `json:"total_ttft_ms,omitempty"`
+	AvgRoundTripMs   float64 `json:"avg_round_trip_ms,omitempty"`
+	AvgTTFTMs        float64 `json:"avg_ttft_ms,omitempty"`
 	OutputTokensPerSec float64 `json:"output_tokens_per_sec,omitempty"`
 }
 
