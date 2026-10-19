@@ -12,7 +12,7 @@ import (
 // CacheVersion 缓存格式/分析语义版本：分类规则等分析语义变更时必须升级，
 // 否则旧二进制构建的缓存会被新代码当作有效数据复用。
 // 4.16 起缓存用 gob 序列化（旧 JSON 缓存解码失败会自动全量重建）。
-const CacheVersion = "4.16"
+const CacheVersion = "4.17"
 
 // CacheFile 缓存文件结构
 type CacheFile struct {

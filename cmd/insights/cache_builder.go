@@ -163,11 +163,18 @@ func (cb *CacheBuilder) BuildFullCache() error {
 		if sessionStats != nil && sessionStats.DailySessionMap != nil {
 			sessionCount = sessionStats.DailySessionMap[day.Date]
 		}
+		// 当日工具调用数：从日级 runtime 快照的工具统计求和
+		toolCallCount := 0
+		if runtimeSnapshot, ok := aggregate.DailyRuntime[day.Date]; ok {
+			for _, toolStat := range runtimeSnapshot.ToolStats {
+				toolCallCount += toolStat.CallCount
+			}
+		}
 		cache.DailyStats[day.Date] = &DayAggregate{
 			Date:          day.Date,
 			MessageCount:  day.MessageCount,
 			SessionCount:  sessionCount,
-			ToolCallCount: 0,
+			ToolCallCount: toolCallCount,
 			HourlyCounts:  aggregate.DailyHourlyCounts[day.Date],
 			ProjectCounts: copyIntMap(aggregate.DailyProjectCounts[day.Date]),
 			ModelCounts:   copyIntMap(aggregate.DailyModelCounts[day.Date]),

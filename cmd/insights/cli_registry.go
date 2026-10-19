@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"time"
 )
 
@@ -76,9 +77,22 @@ var cmdSum = &Command{
 	Name:     "sum",
 	Short:    "全局使用概览",
 	Long:     "汇总时间范围内的消息数、会话数、命令数、工具调用、Token 消耗、失败率以及主要项目/模型，作为整体用法的入口快照。",
-	Examples: []string{"cc-insights", "cc-insights sum -p 30d -j"},
-	Flags:    registerCommonAnalysisFlags,
+	Examples: []string{"cc-insights", "cc-insights sum -p 30d -j", "cc-insights sum --daily --provider all --out digest.jsonl --watch 5m"},
+	Flags: func(fs *flag.FlagSet, opts *cliOptions) {
+		registerCommonAnalysisFlags(fs, opts)
+		fs.BoolVar(&opts.Daily, "daily", false, "输出每日×渠道消耗 JSONL（跨设备交换格式，token 为源数据）")
+		fs.StringVar(&opts.Device, "device", "", "daily 导出的设备名（默认 hostname），多设备合并时区分来源")
+		fs.StringVar(&opts.Out, "out", "", "daily 导出文件路径（默认 stdout；原子写，配合 --watch 供其他项目实时读取）")
+		fs.DurationVar(&opts.Watch, "watch", 0, "周期刷新间隔（如 5m/30s；增量缓存下每次刷新秒级，0=单次导出）")
+	},
 	Run: func(opts cliOptions) error {
+		if opts.Daily {
+			if err := InitLogger(filepath.Join(filepath.Dir(cfg.CacheDir), "logs")); err != nil {
+				return fmt.Errorf("日志初始化失败: %w", err)
+			}
+			defer CloseLogger()
+			return runDailyDigest(opts)
+		}
 		tf, preset, err := timeFilterFromCLIOptions(opts)
 		if err != nil {
 			return err
