@@ -129,7 +129,7 @@ func buildOpenCodeIndexInto(dataDir string, agg *ProjectAggregate) *openCodeInde
 		if m.role == "assistant" {
 			ts := msToTime(m.createdMs)
 			recordAssistantMessage(agg, idx.projectFor(m.sessionID), m.sessionID, model, ts)
-			recordPiModelUsage(agg, model, ts)
+			recordPiModelUsage(agg, model, ts, nil)
 		}
 	}
 

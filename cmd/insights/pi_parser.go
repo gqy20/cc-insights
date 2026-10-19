@@ -30,6 +30,19 @@ type piMessage struct {
 	ToolName   string      `json:"toolName"`
 	IsError    bool        `json:"isError"`
 	Content    []piContent `json:"content"`
+	Provider   string      `json:"provider"`
+	Model      string      `json:"model"`
+	Usage      *piUsage    `json:"usage"`
+}
+
+// piUsage pi assistant 消息自带的 token 用量（api 系统各异，字段已归一）。
+type piUsage struct {
+	Input       int `json:"input"`
+	Output      int `json:"output"`
+	CacheRead   int `json:"cacheRead"`
+	CacheWrite  int `json:"cacheWrite"`
+	TotalTokens int `json:"totalTokens"`
+	Reasoning   int `json:"reasoning"`
 }
 
 type piContent struct {
@@ -136,7 +149,18 @@ func recordPiMessage(agg *ProjectAggregate, state *piState, record *piRecord, ti
 	switch msg.Role {
 	case "assistant":
 		recordCodexAssistantMessage(agg, state, timestamp)
-		recordPiModelUsage(agg, codexModel(state), timestamp)
+		// 消息自带 model/provider 时优先，口径与 model_change 一致（provider/model）
+		model := ""
+		if msg.Model != "" {
+			model = msg.Model
+			if msg.Provider != "" {
+				model = msg.Provider + "/" + msg.Model
+			}
+		}
+		if model == "" {
+			model = codexModel(state)
+		}
+		recordPiTokenUsage(agg, state, model, msg, timestamp)
 		for i := range msg.Content {
 			if msg.Content[i].Type == "toolCall" {
 				recordPiToolCall(agg, state, &msg.Content[i], timestamp)
@@ -149,7 +173,7 @@ func recordPiMessage(agg *ProjectAggregate, state *piState, record *piRecord, ti
 	}
 }
 
-func recordPiModelUsage(agg *ProjectAggregate, model string, timestamp time.Time) {
+func recordPiModelUsage(agg *ProjectAggregate, model string, timestamp time.Time, usage *piUsage) {
 	if model == "" || model == "unknown" {
 		return
 	}
@@ -166,6 +190,64 @@ func recordPiModelUsage(agg *ProjectAggregate, model string, timestamp time.Time
 			agg.DailyModelCounts[dateKey] = make(map[string]int)
 		}
 		agg.DailyModelCounts[dateKey][model]++
+	}
+	if usage == nil {
+		return
+	}
+	total := usage.TotalTokens
+	if total == 0 && (usage.Input > 0 || usage.Output > 0) {
+		total = usage.Input + usage.Output + usage.CacheRead + usage.CacheWrite
+	}
+	mu := agg.ModelUsage[model]
+	mu.Tokens += total
+	mu.InputTokens += usage.Input
+	mu.OutputTokens += usage.Output
+	mu.CachedInputTokens += usage.CacheRead
+	mu.ReasoningOutputTokens += usage.Reasoning
+	if !timestamp.IsZero() {
+		dateKey := timestamp.Format("2006-01-02")
+		if agg.DailyModelTokens[dateKey] == nil {
+			agg.DailyModelTokens[dateKey] = make(map[string]int)
+		}
+		agg.DailyModelTokens[dateKey][model] += total
+	}
+}
+
+// recordPiTokenUsage 把 assistant 消息自带的 usage 记入模型/成本/会话/上下文
+// 四类统计，路由到全局与日级 runtime 聚合（与 codex token_count 事件同构）。
+func recordPiTokenUsage(agg *ProjectAggregate, state *piState, model string, msg *piMessage, timestamp time.Time) {
+	u := msg.Usage
+	if u == nil {
+		// 无 usage 时仍记模型次数与日级计数（digest 依赖）
+		recordPiModelUsage(agg, model, timestamp, nil)
+		return
+	}
+	total := u.TotalTokens
+	if total == 0 && (u.Input > 0 || u.Output > 0) {
+		total = u.Input + u.Output + u.CacheRead + u.CacheWrite
+	}
+	outputTokens := u.Output + u.Reasoning
+	projectName := codexProject(state)
+	sessionID := codexSessionID(state)
+	if !timestamp.IsZero() {
+		dateKey := timestamp.Format("2006-01-02")
+		if agg.DailyModelCounts[dateKey] == nil {
+			agg.DailyModelCounts[dateKey] = make(map[string]int)
+		}
+		agg.DailyModelCounts[dateKey][model]++
+		if agg.DailyModelTokens[dateKey] == nil {
+			agg.DailyModelTokens[dateKey] = make(map[string]int)
+		}
+		agg.DailyModelTokens[dateKey][model] += total
+	}
+	for _, target := range codexAggregatesForCall(agg, pendingToolCall{
+		Project: projectName, SessionID: sessionID, Model: model, Timestamp: timestamp,
+	}) {
+		recordModelUsageLocked(target, model, total)
+		recordModelTokenBreakdownLocked(target, model, u.Input, u.CacheRead, u.Output, u.Reasoning)
+		recordCodexCostUsageLocked(target, sessionID, projectName, model, u.Input, u.CacheRead, outputTokens, total)
+		recordCodexSessionTokenUsage(target, sessionID, projectName, model, timestamp, u.Input, outputTokens, total)
+		recordCodexContextTokenUsage(target, u.Input, u.CacheRead, u.Reasoning, total)
 	}
 }
 

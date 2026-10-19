@@ -9,7 +9,7 @@ import (
 const piFixture = `{"type":"session","version":3,"id":"sess-pi-1","timestamp":"2026-07-03T10:00:00.000Z","cwd":"/tmp/pi-project"}
 {"type":"model_change","id":"m1","parentId":null,"timestamp":"2026-07-03T10:00:00.100Z","provider":"glm","modelId":"glm-5v-turbo"}
 {"type":"message","id":"u1","parentId":"m1","timestamp":"2026-07-03T10:00:01.000Z","message":{"role":"user","content":[{"type":"text","text":"列出目录"}],"timestamp":1770013201000}}
-{"type":"message","id":"a1","parentId":"u1","timestamp":"2026-07-03T10:00:02.000Z","message":{"role":"assistant","content":[{"type":"thinking","thinking":"思考"},{"type":"toolCall","id":"call-bash-1","name":"bash","arguments":{"command":"ls -la"}}]}}
+{"type":"message","id":"a1","parentId":"u1","timestamp":"2026-07-03T10:00:02.000Z","message":{"role":"assistant","provider":"glm","model":"glm-5v-turbo","usage":{"input":100,"output":50,"cacheRead":10,"totalTokens":160,"reasoning":5},"content":[{"type":"thinking","thinking":"思考"},{"type":"toolCall","id":"call-bash-1","name":"bash","arguments":{"command":"ls -la"}}]}}
 {"type":"message","id":"a1r","parentId":"a1","timestamp":"2026-07-03T10:00:03.000Z","message":{"role":"toolResult","toolCallId":"call-bash-1","toolName":"bash","isError":false,"content":[{"type":"text","text":"file1\nfile2"}]}}
 {"type":"message","id":"a2","parentId":"a1r","timestamp":"2026-07-03T10:00:04.000Z","message":{"role":"assistant","content":[{"type":"toolCall","id":"call-bash-2","name":"bash","arguments":{"command":"false"}}]}}
 {"type":"message","id":"a2r","parentId":"a2","timestamp":"2026-07-03T10:00:05.000Z","message":{"role":"toolResult","toolCallId":"call-bash-2","toolName":"bash","isError":true,"content":[{"type":"text","text":"Process exited with code 1"}]}}
@@ -45,6 +45,11 @@ func TestParsePiSessionFileAggregate(t *testing.T) {
 	}
 	if m := agg.ModelUsage["glm/glm-5v-turbo"]; m == nil || m.Count != 3 {
 		t.Fatalf("ModelUsage=%+v, want count=3", m)
+	} else if m.Tokens != 160 || m.InputTokens != 100 || m.OutputTokens != 50 || m.CachedInputTokens != 10 || m.ReasoningOutputTokens != 5 {
+		t.Fatalf("usage accounting = %+v, want tokens=160 in=100 out=50 cache=10 reasoning=5", m)
+	}
+	if agg.DailyModelTokens["2026-07-03"]["glm/glm-5v-turbo"] != 160 {
+		t.Fatalf("DailyModelTokens=%v, want 160", agg.DailyModelTokens)
 	}
 	bash := agg.ToolStats["Bash"]
 	if bash == nil || bash.CallCount != 2 || bash.SuccessCount != 1 || bash.FailureCount != 1 {
