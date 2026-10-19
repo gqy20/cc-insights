@@ -64,6 +64,12 @@ func (cb *CacheBuilder) BuildFullCache() error {
 		Info("项目文件处理完成", "reused", reused, "parsed", parsed)
 	}
 
+	// 数据护栏：重建结果为空但旧缓存有数据时拒绝落盘，
+	// 防御并发/异常路径把好缓存清成空缓存（要清空请删除缓存文件或 force）。
+	if aggregate.EmptyMessages() && previous != nil && previous.TotalMessages > 0 {
+		return fmt.Errorf("重建结果为空（0 消息）但旧缓存有 %d 条，拒绝覆盖；如确需清空请手动删除缓存文件", previous.TotalMessages)
+	}
+
 	// 从已解析的 aggregate 中提取会话统计（无需重新遍历 projects 文件）
 	sessionStats, _ := extractSessionStatsFromAggregate(aggregate)
 

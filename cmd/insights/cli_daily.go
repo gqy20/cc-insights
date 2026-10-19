@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 )
 
@@ -57,7 +58,8 @@ func digestDeviceName(override string) string {
 // 其余渠道出单渠道行。
 func buildDailyDigestRows(device string) ([]dailyDigestRow, error) {
 	providers := []Provider{resolveProvider(cfg.Provider, cfg.DataDir)}
-	if providers[0] == ProviderAll {
+	isAll := providers[0] == ProviderAll
+	if isAll {
 		if cfg.DataDirExplicit {
 			return nil, fmt.Errorf("--provider all 不支持自定义 --data（各渠道使用各自默认数据目录）")
 		}
@@ -71,7 +73,7 @@ func buildDailyDigestRows(device string) ([]dailyDigestRow, error) {
 	for _, provider := range providers {
 		sub := cfg
 		sub.Provider = provider
-		if providers[0] == ProviderAll {
+		if isAll {
 			sub.DataDir = defaultDataDirForProvider(provider)
 			sub.DataDirExplicit = false
 		}
@@ -143,18 +145,27 @@ func runDailyDigest(opts cliOptions) error {
 		if err != nil {
 			return err
 		}
-		if opts.Out != "" {
-			if err := writeDailyDigestFile(opts.Out, rows); err != nil {
-				return err
+		out := opts.Out
+		if out == "" {
+			// 默认落 cc-insights 目录，其他项目从固定位置读取
+			out = filepath.Join(filepath.Dir(cfg.CacheDir), "digest", "daily-"+sanitizeFileName(device)+".jsonl")
+		}
+		if out == "-" {
+			enc := json.NewEncoder(os.Stdout)
+			for _, row := range rows {
+				if err := enc.Encode(row); err != nil {
+					return err
+				}
 			}
-			Info("daily digest 已写入", "path", opts.Out, "rows", len(rows), "device", device)
 			return nil
 		}
-		enc := json.NewEncoder(os.Stdout)
-		for _, row := range rows {
-			if err := enc.Encode(row); err != nil {
-				return err
-			}
+		if err := writeDailyDigestFile(out, rows); err != nil {
+			return err
+		}
+		Info("daily digest 已写入", "path", out, "rows", len(rows), "device", device)
+		if opts.Watch <= 0 {
+			// 单次模式向 stdout 报告位置，方便脚本/人取用
+			fmt.Fprintf(os.Stderr, "daily digest: %s (%d rows, device=%s)\n", out, len(rows), device)
 		}
 		return nil
 	}
@@ -175,4 +186,21 @@ func runDailyDigest(opts cliOptions) error {
 		}
 	}
 	return nil
+}
+
+// sanitizeFileName 设备名可能含 / 等字符，文件名需归一。
+func sanitizeFileName(name string) string {
+	var b strings.Builder
+	for _, r := range name {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '-', r == '_', r == '.':
+			b.WriteRune(r)
+		default:
+			b.WriteByte('-')
+		}
+	}
+	if b.Len() == 0 {
+		return "unknown-device"
+	}
+	return b.String()
 }

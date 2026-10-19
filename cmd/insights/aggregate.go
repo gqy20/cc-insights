@@ -1396,3 +1396,8 @@ func serializeReminderAgg(agg *ReminderAgg) *ReminderAgg {
 func deserializeReminderAgg(agg *ReminderAgg) *ReminderAgg {
 	return serializeReminderAgg(agg)
 }
+
+// EmptyMessages 快速判断聚合是否有消息数据（数据护栏用）。
+func (agg *ProjectAggregate) EmptyMessages() bool {
+	return len(agg.DailyActivity) == 0
+}
