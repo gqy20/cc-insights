@@ -85,7 +85,39 @@ func mergeCacheFiles(dst, src *CacheFile) *CacheFile {
 	mergeDailyRuntime(dst.DailyRuntime, src.DailyRuntime)
 	mergeDailyProjectRuntime(dst.DailyProjectRuntime, src.DailyProjectRuntime)
 	mergeDailySessionRuntime(dst.DailySessionRuntime, src.DailySessionRuntime)
+	// 会话标题是时间不变量：合并各方标题（按 sessionID 去重），供 QueryByTimeRange
+	// 重建会话列表后回填（合并缓存无 ProjectFiles，标题只能经此传递）。
+	mergeCacheSessionTitles(dst, src.SessionAnalysis)
 	return dst
+}
+
+// mergeCacheSessionTitles 把 src 的会话标题并入 dst.SessionAnalysis（仅保留 ID/标题字段）。
+func mergeCacheSessionTitles(dst *CacheFile, src *SessionAnalysisData) {
+	if src == nil {
+		return
+	}
+	for _, s := range src.Sessions {
+		if s.Title == "" {
+			continue
+		}
+		if dst.SessionAnalysis == nil {
+			dst.SessionAnalysis = &SessionAnalysisData{}
+		}
+		found := false
+		for i := range dst.SessionAnalysis.Sessions {
+			if dst.SessionAnalysis.Sessions[i].SessionID == s.SessionID {
+				found = true
+				break
+			}
+		}
+		if !found {
+			dst.SessionAnalysis.Sessions = append(dst.SessionAnalysis.Sessions, SessionAnalysisItem{
+				SessionID:   s.SessionID,
+				Title:       s.Title,
+				TitleSource: s.TitleSource,
+			})
+		}
+	}
 }
 
 // mergeDailyRuntime 按 date 合并 runtime 快照：转 ProjectAggregate 合并后回写。

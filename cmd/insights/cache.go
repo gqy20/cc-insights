@@ -12,7 +12,8 @@ import (
 // CacheVersion 缓存格式/分析语义版本：分类规则等分析语义变更时必须升级，
 // 否则旧二进制构建的缓存会被新代码当作有效数据复用。
 // 4.16 起缓存用 gob 序列化（旧 JSON 缓存解码失败会自动全量重建）。
-const CacheVersion = "4.17"
+// 4.18 起按天快照序列化 TaskAgg（todo/任务按天归因，时间过滤查询可重建）。
+const CacheVersion = "4.18"
 
 // CacheFile 缓存文件结构
 type CacheFile struct {
@@ -138,6 +139,7 @@ type ProjectFileAggregate struct {
 	FileDiffStats           map[string]FileDiffAgg                     `json:"file_diff_stats,omitempty"`
 	PlanModeAgg             *SerializedPlanModeAgg                     `json:"plan_mode_agg,omitempty"`
 	PlanStepAgg             *PlanStepAgg                               `json:"plan_step_agg,omitempty"`
+	TaskAgg                 *TaskAgg                                   `json:"task_agg,omitempty"`
 	GoalStatusAgg           *GoalStatusAgg                             `json:"goal_status_agg,omitempty"`
 	ReminderAgg             *ReminderAgg                               `json:"reminder_agg,omitempty"`
 	ToolPerfStats           map[string]ToolPerfAgg                     `json:"tool_perf_stats,omitempty"`
@@ -397,6 +399,8 @@ func (cf *CacheFile) QueryByTimeRange(start, end time.Time) *CacheFile {
 		result.CommandAnalysis = runtimeAggregate.CommandAnalysis
 		result.CostAnalysis = runtimeAggregate.CostAnalysis
 		result.SessionAnalysis = runtimeAggregate.SessionAnalysis
+		// 标题是时间不变量，按天快照不携带：从缓存存储的会话数据按 sessionID 回填。
+		mergeStoredSessionTitles(result.SessionAnalysis, cf)
 		result.FileAnalysis = runtimeAggregate.FileAnalysis
 		result.TaskPlanAnalysis = runtimeAggregate.TaskPlanAnalysis
 		result.ToolPerformance = runtimeAggregate.ToolPerformance
@@ -447,6 +451,61 @@ func cloneSessionAnalysis(source *SessionAnalysisData) *SessionAnalysisData {
 	copyValue.QueueOperations = append([]QueueOperationStat(nil), source.QueueOperations...)
 	copyValue.Titles = append([]SessionTitleStat(nil), source.Titles...)
 	return &copyValue
+}
+
+type sessionTitleRef struct {
+	Title  string
+	Source string
+}
+
+// mergeStoredSessionTitles 把缓存存储的会话标题按 sessionID 回填到重建结果。
+// 标题是时间不变量（不参与时间过滤），但解析器只把它记在顶层 SessionStatsMap，
+// 按天快照不携带——没有这步回填，任何时间过滤查询的会话列表都没有标题。
+func mergeStoredSessionTitles(target *SessionAnalysisData, cf *CacheFile) {
+	if target == nil || len(target.Sessions) == 0 || cf == nil {
+		return
+	}
+	titles := storedSessionTitles(cf)
+	if len(titles) == 0 {
+		return
+	}
+	for i := range target.Sessions {
+		stat := &target.Sessions[i]
+		if stat.TitleSource != "" {
+			continue
+		}
+		if ref, ok := titles[stat.SessionID]; ok {
+			stat.Title = ref.Title
+			stat.TitleSource = ref.Source
+		}
+	}
+}
+
+// storedSessionTitles 汇集缓存中的会话标题索引：
+// SessionAnalysis（Top-100）+ 各文件缓存的 SessionStats（完整覆盖）。
+func storedSessionTitles(cf *CacheFile) map[string]sessionTitleRef {
+	titles := make(map[string]sessionTitleRef)
+	if cf.SessionAnalysis != nil {
+		for _, s := range cf.SessionAnalysis.Sessions {
+			if s.Title != "" {
+				titles[s.SessionID] = sessionTitleRef{Title: s.Title, Source: s.TitleSource}
+			}
+		}
+	}
+	for _, file := range cf.ProjectFiles {
+		if file == nil || file.Aggregate.SessionStats == nil {
+			continue
+		}
+		for id, stat := range file.Aggregate.SessionStats {
+			if stat.Title == "" {
+				continue
+			}
+			if _, exists := titles[id]; !exists {
+				titles[id] = sessionTitleRef{Title: stat.Title, Source: stat.TitleSource}
+			}
+		}
+	}
+	return titles
 }
 
 func cloneToolAnalysis(source *ToolAnalysisData) *ToolAnalysisData {

@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"time"
 )
@@ -116,6 +115,9 @@ func parseZCodeDBAggregate(dbPath string, tf TimeFilter, agg *ProjectAggregate) 
 		return err
 	}
 	if err := recordZCodeCompactions(db, sessions, tf, agg); err != nil {
+		return err
+	}
+	if err := recordZCodeTodos(db, sessions, tf, agg); err != nil {
 		return err
 	}
 	return recordZCodeModelUsage(db, sessions, tf, agg)
@@ -513,120 +515,34 @@ func recordZCodeRequestDurationLocked(agg *ProjectAggregate, sessionID, project,
 	}
 }
 
-// buildZCodeTaskAnalysis 从 todo 表构建任务分析（子代理 session 的 todo 归并到主会话）。
-func buildZCodeTaskAnalysis(db *sql.DB, sessions map[string]*zcodeSessionInfo, tf TimeFilter) (*TaskAnalysisData, error) {
+
+// recordZCodeTodos 把 todo 表按 time_created 归因写入 TaskAgg（顶层 + 按天快照），
+// 子代理 session 的 todo 归并到主会话。时间过滤查询经按天快照重建 TaskPlanAnalysis。
+func recordZCodeTodos(db *sql.DB, sessions map[string]*zcodeSessionInfo, tf TimeFilter, agg *ProjectAggregate) error {
 	rows, err := db.Query(`select session_id, coalesce(status, ''), coalesce(time_created, 0) from todo`)
 	if err != nil {
-		return nil, err
+		// 表缺失属旧版本 zcode：无任务信号，跳过。
+		return nil
 	}
 	defer rows.Close()
-
-	statusCounts := map[string]int{}
-	sessionTasks := map[string]map[string]int{}
 	for rows.Next() {
 		var sessionID, status string
 		var tsMs int64
 		if err := rows.Scan(&sessionID, &status, &tsMs); err != nil {
-			return nil, err
+			return err
 		}
 		if status == "" {
-			status = "unknown"
+			status = "pending"
 		}
-		if !tf.Contains(time.UnixMilli(tsMs)) {
+		ts := time.UnixMilli(tsMs)
+		if !tf.Contains(ts) {
 			continue
 		}
-		statusCounts[status]++
 		rootID := resolveZCodeRootSession(sessions, sessionID)
-		if sessionTasks[rootID] == nil {
-			sessionTasks[rootID] = map[string]int{}
-		}
-		sessionTasks[rootID][status]++
+		recordTaskAggLocked(agg, rootID, status)
+		recordTaskAggLocked(ensureDailyRuntimeAggregate(agg, ts.Format("2006-01-02")), rootID, status)
 	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-
-	analysis := &TaskAnalysisData{}
-	total := 0
-	for _, count := range statusCounts {
-		total += count
-	}
-	if total == 0 {
-		return analysis, nil
-	}
-	analysis.TotalTasks = total
-	for status, count := range statusCounts {
-		analysis.StatusDistribution = append(analysis.StatusDistribution, TaskStatusItem{
-			Status: status,
-			Count:  count,
-			Rate:   float64(count) / float64(total) * 100,
-		})
-	}
-	sort.Slice(analysis.StatusDistribution, func(i, j int) bool {
-		return analysis.StatusDistribution[i].Count > analysis.StatusDistribution[j].Count
-	})
-	analysis.TotalSessions = len(sessionTasks)
-	items := make([]SessionTaskItem, 0, len(sessionTasks))
-	completedTotal := 0
-	for rootID, byStatus := range sessionTasks {
-		item := SessionTaskItem{SessionID: rootID}
-		for status, count := range byStatus {
-			item.TotalTasks += count
-			switch status {
-			case "completed":
-				item.CompletedCount += count
-				completedTotal += count
-			case "pending":
-				item.PendingCount += count
-			case "in_progress":
-				item.InProgressCount += count
-			}
-		}
-		if item.TotalTasks > 0 {
-			item.CompletionRate = float64(item.CompletedCount) / float64(item.TotalTasks) * 100
-		}
-		items = append(items, item)
-	}
-	sort.Slice(items, func(i, j int) bool {
-		return items[i].TotalTasks > items[j].TotalTasks
-	})
-	if len(items) > 30 {
-		items = items[:30]
-	}
-	analysis.SessionTaskCounts = items
-	analysis.AvgTasksPerSession = float64(total) / float64(len(sessionTasks))
-	analysis.CompletionRate = float64(completedTotal) / float64(total) * 100
-	return analysis, nil
-}
-
-// recordZCodeTasksFromDataDir 从 todo 表构建任务分析并挂到 aggregate。
-// TaskPlanAnalysis 不参与 mergeProjectAggregate，须在合并后赋值（与 claude tasks/ 同路径）。
-func recordZCodeTasksFromDataDir(dataDir string, aggregate *ProjectAggregate) error {
-	dbPath := zcodeDBPathForDataDir(dataDir)
-	if _, err := os.Stat(dbPath); err != nil {
-		return nil
-	}
-	db, err := sql.Open("sqlite", sqliteReadOnlyURI(dbPath))
-	if err != nil {
-		return err
-	}
-	defer db.Close()
-	sessions, err := loadZCodeSessions(db)
-	if err != nil {
-		return err
-	}
-	analysis, err := buildZCodeTaskAnalysis(db, sessions, TimeFilter{})
-	if err != nil {
-		return err
-	}
-	if analysis.TotalTasks == 0 {
-		return nil
-	}
-	if aggregate.TaskPlanAnalysis == nil {
-		aggregate.TaskPlanAnalysis = &TaskPlanAnalysisData{}
-	}
-	aggregate.TaskPlanAnalysis.Tasks = *analysis
-	return nil
+	return rows.Err()
 }
 
 // zcodeDataFileInfos 把 db.sqlite 条目的 size/mtime 合并 -wal/-shm 统计：

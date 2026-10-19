@@ -188,7 +188,11 @@ func buildDataFromCache(cache *CacheFile, tf TimeFilter, preset string) (*Dashbo
 	failureAnalysis := cloneFailureAnalysis(cached.FailureAnalysis)
 	sessionAnalysis := cloneSessionAnalysis(cached.SessionAnalysis)
 	if sessionAnalysis != nil {
-		sessionStats.TotalSessions = len(sessionAnalysis.Sessions)
+		// Sessions 列表被截到 Top-100，优先用未截断的真实总数。
+		sessionStats.TotalSessions = sessionAnalysis.TotalSessions
+		if sessionStats.TotalSessions == 0 {
+			sessionStats.TotalSessions = len(sessionAnalysis.Sessions)
+		}
 	}
 	fileAnalysis := cloneFileAnalysis(cached.FileAnalysis)
 	taskPlanAnalysis := cloneTaskPlanAnalysis(cached.TaskPlanAnalysis)

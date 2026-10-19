@@ -16,6 +16,88 @@ func ParseTasksConcurrent(tf TimeFilter) (*TaskAnalysisData, error) {
 	return ParseTasksConcurrentFromDir(tf, cfg.DataDir)
 }
 
+// recordTaskAggLocked 把单条任务计入中间聚合（status 计数 + 按 session 归并）。
+// claude tasks/ 与 zcode todo 共用；目标可为顶层或按天 runtime 子聚合。
+func recordTaskAggLocked(agg *ProjectAggregate, sessionID, status string) {
+	if agg.TaskAgg == nil {
+		agg.TaskAgg = &TaskAgg{StatusCounts: make(map[string]int), SessionTasks: make(map[string]*SessionTaskAgg)}
+	}
+	if agg.TaskAgg.StatusCounts == nil {
+		agg.TaskAgg.StatusCounts = make(map[string]int)
+	}
+	if agg.TaskAgg.SessionTasks == nil {
+		agg.TaskAgg.SessionTasks = make(map[string]*SessionTaskAgg)
+	}
+	agg.TaskAgg.TotalTasks++
+	agg.TaskAgg.StatusCounts[status]++
+	sa := agg.TaskAgg.SessionTasks[sessionID]
+	if sa == nil {
+		sa = &SessionTaskAgg{SessionID: sessionID, StatusCountsLocal: make(map[string]int)}
+		agg.TaskAgg.SessionTasks[sessionID] = sa
+	}
+	sa.TotalTasks++
+	switch status {
+	case "completed":
+		sa.CompletedCount++
+	case "in_progress":
+		sa.InProgressCount++
+	default:
+		// claude 语义：unknown 一律归 pending 桶。
+		sa.PendingCount++
+	}
+	if sa.StatusCountsLocal == nil {
+		sa.StatusCountsLocal = make(map[string]int)
+	}
+	sa.StatusCountsLocal[status]++
+}
+
+// recordClaudeTasksIntoAgg 扫描 tasks/ 目录并把任务统计写入 agg.TaskAgg，
+// 同时按任务文件 mtime 归因到按天 runtime 快照（时间过滤查询的重建原料）。
+// 替代旧的"合并后直接赋值 TaskPlanAnalysis.Tasks"路径——那条路径的数据
+// 进不了按天快照，任何时间过滤查询都会丢失。
+func recordClaudeTasksIntoAgg(dataDir string, agg *ProjectAggregate) error {
+	tasksDir := filepath.Join(dataDir, "tasks")
+	entries, err := os.ReadDir(tasksDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("reading tasks directory: %w", err)
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		sessionDir := filepath.Join(tasksDir, entry.Name())
+		sessionID := entry.Name()
+		files, err := os.ReadDir(sessionDir)
+		if err != nil {
+			continue
+		}
+		for _, file := range files {
+			if file.IsDir() || !strings.HasSuffix(file.Name(), ".json") {
+				continue
+			}
+			info, err := file.Info()
+			if err != nil {
+				continue
+			}
+			task, err := parseTaskJSONFile(filepath.Join(sessionDir, file.Name()))
+			if err != nil {
+				continue
+			}
+			status := task.Status
+			if status == "" {
+				status = "pending"
+			}
+			recordTaskAggLocked(agg, sessionID, status)
+			dateKey := info.ModTime().Format("2006-01-02")
+			recordTaskAggLocked(ensureDailyRuntimeAggregate(agg, dateKey), sessionID, status)
+		}
+	}
+	return nil
+}
+
 // ParseTasksConcurrentFromDir scans tasks directory under specified dataDir
 func ParseTasksConcurrentFromDir(tf TimeFilter, dataDir string) (*TaskAnalysisData, error) {
 	tasksDir := filepath.Join(dataDir, "tasks")

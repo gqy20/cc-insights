@@ -211,8 +211,23 @@ export interface CostByModel {
   cache_creation_cost_usd?: number
   cost_usd?: number
 }
+export interface ContextAnalysisData {
+  token_events?: number
+  context_compactions?: number
+  max_input_tokens?: number
+  max_total_tokens?: number
+  cache_hit_rate?: number
+  reasoning_output_ratio?: number
+  avg_input_tokens?: number
+  avg_reasoning_tokens?: number
+  total_cached_input_tokens?: number
+  total_reasoning_tokens?: number
+  [key: string]: unknown
+}
+
 export interface CostAnalysisData {
   currency?: string
+  context?: ContextAnalysisData
   totals?: Record<string, number>
   by_model?: CostByModel[]
   by_project?: CostByModel[]

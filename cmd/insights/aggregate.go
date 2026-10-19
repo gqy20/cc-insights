@@ -182,6 +182,7 @@ func mergeProjectAggregate(dst, src *ProjectAggregate) {
 		mergeCostAgentStat(dstStat, stat)
 	}
 	mergeContextStats(dst, src.ContextStats)
+	mergeTaskAgg(dst, src.TaskAgg)
 	for tool, stat := range src.ToolStats {
 		dstStat := ensureToolStat(dst, tool)
 		dstStat.CallCount += stat.CallCount
@@ -683,6 +684,7 @@ func aggregateToProjectFileAggregateWithDaily(src *ProjectAggregate, includeDail
 		FileDiffStats:           make(map[string]FileDiffAgg, len(src.FileDiffStats)),
 		PlanModeAgg:             serializePlanModeAgg(src.PlanModeAgg),
 		PlanStepAgg:             clonePlanStepAgg(src.PlanStepAgg),
+		TaskAgg:                 cloneTaskAgg(src.TaskAgg),
 		GoalStatusAgg:           serializeGoalStatusAgg(src.GoalStatusAgg),
 		ReminderAgg:             serializeReminderAgg(src.ReminderAgg),
 		ToolPerfStats:           make(map[string]ToolPerfAgg, len(src.ToolPerfStats)),
@@ -913,6 +915,7 @@ func projectFileAggregateToAggregate(src ProjectFileAggregate) *ProjectAggregate
 		out.CostAgentStats[key] = &statCopy
 	}
 	out.ContextStats = cloneContextAnalysis(src.ContextStats)
+	out.TaskAgg = cloneTaskAgg(src.TaskAgg)
 	out.BudgetTimeline = append([]BudgetTimelineItem(nil), src.BudgetTimeline...)
 	for key, stat := range src.ToolStats {
 		statCopy := stat
@@ -1280,6 +1283,52 @@ func mergeContextStats(dst *ProjectAggregate, src *ContextAnalysisData) {
 	}
 	dst.ContextStats.TotalCachedInputTokens += src.TotalCachedInputTokens
 	dst.ContextStats.TotalReasoningTokens += src.TotalReasoningTokens
+}
+
+// mergeTaskAgg 合并任务中间聚合（只读 src，写 dst），跨文件/跨天合并用。
+func mergeTaskAgg(dst *ProjectAggregate, src *TaskAgg) {
+	if src == nil {
+		return
+	}
+	if dst.TaskAgg == nil {
+		dst.TaskAgg = &TaskAgg{StatusCounts: make(map[string]int), SessionTasks: make(map[string]*SessionTaskAgg)}
+	}
+	dst.TaskAgg.TotalTasks += src.TotalTasks
+	for status, count := range src.StatusCounts {
+		dst.TaskAgg.StatusCounts[status] += count
+	}
+	for sessionID, sa := range src.SessionTasks {
+		dstSA := dst.TaskAgg.SessionTasks[sessionID]
+		if dstSA == nil {
+			dstSA = &SessionTaskAgg{SessionID: sessionID, StatusCountsLocal: make(map[string]int)}
+			dst.TaskAgg.SessionTasks[sessionID] = dstSA
+		}
+		dstSA.TotalTasks += sa.TotalTasks
+		dstSA.CompletedCount += sa.CompletedCount
+		dstSA.PendingCount += sa.PendingCount
+		dstSA.InProgressCount += sa.InProgressCount
+		for status, count := range sa.StatusCountsLocal {
+			dstSA.StatusCountsLocal[status] += count
+		}
+	}
+}
+
+// cloneTaskAgg 深拷贝任务中间聚合（含内部 map），避免序列化/还原共享底层 map。
+func cloneTaskAgg(src *TaskAgg) *TaskAgg {
+	if src == nil {
+		return nil
+	}
+	out := &TaskAgg{
+		TotalTasks:   src.TotalTasks,
+		StatusCounts: copyIntMap(src.StatusCounts),
+		SessionTasks: make(map[string]*SessionTaskAgg, len(src.SessionTasks)),
+	}
+	for sessionID, sa := range src.SessionTasks {
+		saCopy := *sa
+		saCopy.StatusCountsLocal = copyIntMap(sa.StatusCountsLocal)
+		out.SessionTasks[sessionID] = &saCopy
+	}
+	return out
 }
 
 func cloneContextAnalysis(src *ContextAnalysisData) *ContextAnalysisData {

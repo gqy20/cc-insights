@@ -219,22 +219,15 @@ func TestParseZCodeDBAggregate(t *testing.T) {
 	}
 }
 
-func TestRecordZCodeTasksFromDataDir(t *testing.T) {
-	dataDir := t.TempDir()
+func TestParseZCodeDBAggregateTaskPlan(t *testing.T) {
 	dbPath := createZCodeFixtureDB(t)
-	// createZCodeFixtureDB 建在独立 TempDir 下：把 db 放回 dataDir 布局。
-	target := zcodeDBPathForDataDir(dataDir)
-	if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil {
-		t.Fatalf("mkdir: %v", err)
-	}
-	if err := os.Rename(dbPath, target); err != nil {
-		t.Fatalf("rename: %v", err)
-	}
 
 	agg := newProjectAggregate()
-	if err := recordZCodeTasksFromDataDir(dataDir, agg); err != nil {
-		t.Fatalf("recordZCodeTasksFromDataDir: %v", err)
+	if err := parseZCodeDBAggregate(dbPath, TimeFilter{}, agg); err != nil {
+		t.Fatalf("parseZCodeDBAggregate: %v", err)
 	}
+	agg.finalize()
+
 	tasks := agg.TaskPlanAnalysis.Tasks
 	if tasks.TotalTasks != 3 {
 		t.Fatalf("total tasks = %d, want 3", tasks.TotalTasks)
@@ -245,10 +238,21 @@ func TestRecordZCodeTasksFromDataDir(t *testing.T) {
 	if tasks.CompletionRate < 66.6 || tasks.CompletionRate > 66.7 {
 		t.Fatalf("completion rate = %.1f, want 66.7", tasks.CompletionRate)
 	}
-	// fixture db 同时作为解析入口：part/message 也应可读（同一文件双入口不冲突）。
-	agg2 := newProjectAggregate()
-	if err := parseZCodeDBAggregate(target, TimeFilter{}, agg2); err != nil {
-		t.Fatalf("parseZCodeDBAggregate on moved db: %v", err)
+	// 按天快照携带 TaskAgg：时间过滤查询经快照重建 TaskPlanAnalysis 的原料。
+	daily := agg.DailyRuntime["2026-06-15"]
+	if daily.TaskAgg == nil || daily.TaskAgg.TotalTasks != 3 {
+		t.Fatalf("daily TaskAgg = %#v, want 3 tasks on 2026-06-15", daily.TaskAgg)
+	}
+	// 序列化-还原 roundtrip 后 TaskAgg 存活（缓存增量/合并的原料）。
+	restored := projectFileAggregateToAggregate(aggregateToProjectFileAggregate(agg))
+	if restored.TaskAgg == nil || restored.TaskAgg.TotalTasks != 3 {
+		t.Fatalf("restored TaskAgg = %#v, want 3 tasks", restored.TaskAgg)
+	}
+	// 合并进目标聚合（mergeProjectAggregate 路径）。
+	dst := newProjectAggregate()
+	mergeProjectAggregate(dst, restored)
+	if dst.TaskAgg == nil || dst.TaskAgg.TotalTasks != 3 || dst.TaskAgg.StatusCounts["completed"] != 2 {
+		t.Fatalf("merged TaskAgg = %#v, want 3 tasks / 2 completed", dst.TaskAgg)
 	}
 }
 

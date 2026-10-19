@@ -17,6 +17,7 @@ import { FileAnalysisChart } from '@/components/charts/FileAnalysisChart'
 import { ToolModelFailureChart } from '@/components/charts/ToolModelFailureChart'
 import { ToolPerformanceChart } from '@/components/charts/ToolPerformanceChart'
 import { CostAnalysisChart } from '@/components/charts/CostAnalysisChart'
+import { ContextStatsChart } from '@/components/charts/ContextStatsChart'
 import { SessionChart } from '@/components/charts/SessionChart'
 import { SessionAnalysisChart } from '@/components/charts/SessionAnalysisChart'
 import { AgentChart } from '@/components/charts/AgentChart'
@@ -188,6 +189,7 @@ function App() {
           <div className="xl:col-span-2">
             <CostAnalysisChart data={dashboard.data?.cost_analysis} loading={dashboard.isLoading} />
           </div>
+          <ContextStatsChart data={dashboard.data?.cost_analysis?.context} loading={dashboard.isLoading} />
         </section>
 
         <h2 className="mt-8 text-lg font-semibold font-serif tracking-tight">运行时</h2>

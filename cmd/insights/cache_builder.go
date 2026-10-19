@@ -417,26 +417,15 @@ func (cb *CacheBuilder) buildProjectAggregateIncremental(dataDir string, previou
 		}
 	}
 
-	aggregate.finalize()
-
-	// task_plan_analysis (M4): 扫描 tasks/ 目录
+	// task_plan_analysis (M4)：任务统计写入 TaskAgg（含按天快照），
+	// finalize 统一生成 TaskPlanAnalysis.Tasks；时间过滤查询经按天快照重建。
 	if provider == ProviderClaude {
-		taskAnalysis, taskErr := ParseTasksConcurrentFromDir(TimeFilter{}, dataDir)
-		if taskErr != nil {
-			Warn("tasks/ 目录扫描失败", "error", taskErr.Error())
-		}
-		if taskAnalysis != nil && aggregate.TaskPlanAnalysis == nil {
-			aggregate.TaskPlanAnalysis = &TaskPlanAnalysisData{}
-		}
-		if taskAnalysis != nil {
-			aggregate.TaskPlanAnalysis.Tasks = *taskAnalysis
+		if err := recordClaudeTasksIntoAgg(dataDir, aggregate); err != nil {
+			Warn("tasks/ 目录扫描失败", "error", err.Error())
 		}
 	}
-	if provider == ProviderZcode {
-		if err := recordZCodeTasksFromDataDir(dataDir, aggregate); err != nil {
-			Warn("zcode todo 扫描失败", "error", err.Error())
-		}
-	}
+
+	aggregate.finalize()
 
 	return aggregate, projectFiles, reused, len(parsedCaches), nil
 }
