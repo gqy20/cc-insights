@@ -826,7 +826,18 @@ func buildFailureDiagnostics(data *DashboardData) []diagnosticFinding {
 	}
 	var findings []diagnosticFinding
 	if len(data.FailureAnalysis.ByReason) > 0 && data.FailureAnalysis.TotalFailures > 0 {
-		top := data.FailureAnalysis.ByReason[0]
+		// 只在确认失败中挑集中原因：suspect_ 前缀项不计入（否则占比
+		// 分母是不含疑似的 TotalFailures，会出现 >100% 的口径错乱）
+		var top FailureReasonStat
+		for _, stat := range data.FailureAnalysis.ByReason {
+			if !isSuspectedFailureReason(stat.Reason) {
+				top = stat
+				break
+			}
+		}
+		if top.Count == 0 {
+			return findings
+		}
 		ratio := float64(top.Count) / float64(data.FailureAnalysis.TotalFailures) * 100
 		if top.Count >= 10 && ratio >= 25 {
 			findings = append(findings, diagnosticFinding{
@@ -850,7 +861,14 @@ func buildFailureDiagnostics(data *DashboardData) []diagnosticFinding {
 		}
 	}
 	if len(data.FailureAnalysis.ByToolReason) > 0 {
-		top := data.FailureAnalysis.ByToolReason[0]
+		// 与"失败原因集中"同口径：只看确认失败，跳过 suspect_ 前缀项
+		var top FailureToolReasonStat
+		for _, stat := range data.FailureAnalysis.ByToolReason {
+			if !isSuspectedFailureReason(stat.Reason) {
+				top = stat
+				break
+			}
+		}
 		if top.Count >= 10 {
 			findings = append(findings, diagnosticFinding{
 				ID:       "failure.tool_reason.top." + sanitizeID(top.Tool+"."+top.Reason),
