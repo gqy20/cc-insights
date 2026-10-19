@@ -134,6 +134,7 @@ func writeOpenCodeFixture(t *testing.T, dataDir string) {
 	os.WriteFile(filepath.Join(msgDir, "msg_oc_a1.json"), []byte(`{"id":"msg_oc_a1","sessionID":"ses_oc1","role":"assistant","agent":"build","time":{"created":1770013201000}}`), 0644)
 	os.WriteFile(filepath.Join(partDir, "prt_1.json"), []byte(`{"id":"prt_1","sessionID":"ses_oc1","messageID":"msg_oc_a1","type":"tool","tool":"bash","callID":"oc_call_1","state":{"status":"completed","input":"{\"command\":\"ls\"}","output":"a\nb","time":{"start":1770013202000,"end":1770013202500}}}`), 0644)
 	os.WriteFile(filepath.Join(partDir, "prt_2.json"), []byte(`{"id":"prt_2","sessionID":"ses_oc1","messageID":"msg_oc_a1","type":"tool","tool":"read","callID":"oc_call_2","state":{"status":"error","error":"File not found: /tmp/missing.md","time":{"start":1770013203000,"end":1770013203100}}}`), 0644)
+	os.WriteFile(filepath.Join(partDir, "prt_3.json"), []byte(`{"id":"prt_3","sessionID":"ses_oc1","messageID":"msg_oc_a1","type":"step-finish","reason":"stop","cost":0,"tokens":{"input":200,"output":80,"reasoning":10,"cache":{"read":30,"write":50}}}`), 0644)
 }
 
 func TestParseOpenCodeStorage(t *testing.T) {
@@ -183,6 +184,10 @@ func TestParseOpenCodeStorage(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("FailureReasons=%+v, want file/not_found", partAgg.FailureReasons)
+	}
+	// step-finish part 的 token 记账
+	if m := partAgg.ModelUsage["minimax/MiniMax-M2.1"]; m == nil || m.Tokens != 370 || m.InputTokens != 200 || m.OutputTokens != 80 || m.CachedInputTokens != 30 || m.ReasoningOutputTokens != 10 {
+		t.Fatalf("step-finish usage = %+v, want total=370 in=200 out=80 cacheRead=30 reasoning=10", m)
 	}
 }
 

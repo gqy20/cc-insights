@@ -152,32 +152,53 @@ func (idx *openCodeIndex) projectFor(sessionID string) string {
 	return "Unknown"
 }
 
+// openCodePartUsage part 文件的可解析字段（tool 与 step-finish 共用）。
+type openCodePartUsage struct {
+	ID        string `json:"id"`
+	MessageID string `json:"messageID"`
+	Type      string `json:"type"`
+	Tool      string `json:"tool"`
+	CallID    string `json:"callID"`
+	State     struct {
+		Status string          `json:"status"`
+		Input  json.RawMessage `json:"input"`
+		Output string          `json:"output"`
+		Error  string          `json:"error"`
+		Time   struct {
+			Start int64 `json:"start"`
+			End   int64 `json:"end"`
+		} `json:"time"`
+	} `json:"state"`
+	Tokens struct {
+		Input     int `json:"input"`
+		Output    int `json:"output"`
+		Reasoning int `json:"reasoning"`
+		Cache     struct {
+			Read  int `json:"read"`
+			Write int `json:"write"`
+		} `json:"cache"`
+	} `json:"tokens"`
+}
+
 // parseOpenCodePartFile 解析单个 part/<msgID>/<part>.json 文件（增量缓存单元）。
 func parseOpenCodePartFile(relPath, filePath string, idx *openCodeIndex, agg *ProjectAggregate) {
-	var p struct {
-		ID        string `json:"id"`
-		MessageID string `json:"messageID"`
-		Type      string `json:"type"`
-		Tool      string `json:"tool"`
-		CallID    string `json:"callID"`
-		State     struct {
-			Status string          `json:"status"`
-			Input  json.RawMessage `json:"input"`
-			Output string          `json:"output"`
-			Error  string          `json:"error"`
-			Time   struct {
-				Start int64 `json:"start"`
-				End   int64 `json:"end"`
-			} `json:"time"`
-		} `json:"state"`
-	}
+	var p openCodePartUsage
 	data, err := os.ReadFile(filePath)
 	if err != nil || json.Unmarshal(data, &p) != nil {
+		return
+	}
+	if p.Type == "step-finish" {
+		recordOpenCodeStepUsage(agg, idx, &p)
 		return
 	}
 	if p.Type != "tool" {
 		return
 	}
+	recordOpenCodeToolPart(agg, idx, &p)
+}
+
+// recordOpenCodeToolPart type=tool 的 part：自含调用+结果。
+func recordOpenCodeToolPart(agg *ProjectAggregate, idx *openCodeIndex, p *openCodePartUsage) {
 	msg := idx.messages[p.MessageID]
 	tool := agentToolName(p.Tool)
 	ts := msToTime(p.State.Time.Start)
@@ -267,4 +288,41 @@ func msToTime(ms int64) time.Time {
 		return time.Time{}
 	}
 	return time.UnixMilli(ms)
+}
+
+// recordOpenCodeStepUsage 把 step-finish part 的 tokens 记入模型/成本/
+// 会话/上下文统计（opencode 的 usage 载体，与 pi message.usage 同构）。
+// ponytail: 无时间戳（part 无 time 字段），用所属消息的创建时间近似。
+func recordOpenCodeStepUsage(agg *ProjectAggregate, idx *openCodeIndex, p *openCodePartUsage) {
+	msg := idx.messages[p.MessageID]
+	model := msg.Model
+	if model == "" {
+		model = "unknown"
+	}
+	ts := msToTime(msg.CreatedMs)
+	total := p.Tokens.Input + p.Tokens.Output + p.Tokens.Reasoning + p.Tokens.Cache.Read + p.Tokens.Cache.Write
+	projectName := idx.projectFor(msg.SessionID)
+	sessionID := msg.SessionID
+	outputTokens := p.Tokens.Output + p.Tokens.Reasoning
+
+	if !ts.IsZero() {
+		dateKey := ts.Format("2006-01-02")
+		if agg.DailyModelCounts[dateKey] == nil {
+			agg.DailyModelCounts[dateKey] = make(map[string]int)
+		}
+		agg.DailyModelCounts[dateKey][model]++
+		if agg.DailyModelTokens[dateKey] == nil {
+			agg.DailyModelTokens[dateKey] = make(map[string]int)
+		}
+		agg.DailyModelTokens[dateKey][model] += total
+	}
+	for _, target := range codexAggregatesForCall(agg, pendingToolCall{
+		Project: projectName, SessionID: sessionID, Model: model, Timestamp: ts,
+	}) {
+		recordModelUsageLocked(target, model, total)
+		recordModelTokenBreakdownLocked(target, model, p.Tokens.Input, p.Tokens.Cache.Read, p.Tokens.Output, p.Tokens.Reasoning)
+		recordCodexCostUsageLocked(target, sessionID, projectName, model, p.Tokens.Input, p.Tokens.Cache.Read, outputTokens, total)
+		recordCodexSessionTokenUsage(target, sessionID, projectName, model, ts, p.Tokens.Input, outputTokens, total)
+		recordCodexContextTokenUsage(target, p.Tokens.Input, p.Tokens.Cache.Read, p.Tokens.Reasoning, total)
+	}
 }
