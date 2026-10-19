@@ -13,7 +13,9 @@ import (
 // 否则旧二进制构建的缓存会被新代码当作有效数据复用。
 // 4.16 起缓存用 gob 序列化（旧 JSON 缓存解码失败会自动全量重建）。
 // 4.18 起按天快照序列化 TaskAgg（todo/任务按天归因，时间过滤查询可重建）。
-const CacheVersion = "4.18"
+// 4.19 修 4.18 版本号撞车：pi usage 解析落地时未实际升版本（diff 未含 cache.go），
+// 中间版本二进制构建的 4.18 缓存对 pi token 语义已过期，须强制重建。
+const CacheVersion = "4.19"
 
 // CacheFile 缓存文件结构
 type CacheFile struct {
