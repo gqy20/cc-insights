@@ -83,6 +83,7 @@ var cmdSum = &Command{
 		fs.BoolVar(&opts.Daily, "daily", false, "输出每日×渠道消耗 JSONL（跨设备交换格式，token 为源数据）")
 		fs.StringVar(&opts.Device, "device", "", "daily 导出的设备名（默认 hostname），多设备合并时区分来源")
 		fs.StringVar(&opts.Out, "out", "", "daily 导出路径（默认 ~/.cc-insights/digest/daily-<device>.jsonl；传 - 输出到 stdout；原子写）")
+		fs.BoolVar(&opts.Rewrite, "rewrite", false, "daily 全量快照重写：以当前源数据为准、清掉源数据已消失的旧行（默认按键合并，旧行保留）")
 		fs.DurationVar(&opts.Watch, "watch", 0, "周期刷新间隔（如 5m/30s；增量缓存下每次刷新秒级，0=单次导出）")
 	},
 	Run: func(opts cliOptions) error {

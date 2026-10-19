@@ -15,8 +15,11 @@ import (
 // 交换格式约定（跨设备合并，详见 docs）：
 //   - 自描述 JSONL，每行 = 该设备该渠道该天的总量计数器
 //   - token 为源数据，成本由汇聚端按统一定价现算（各设备 pricing 可能不一致）
-//   - 每设备每次导出为全量快照，消费端按 (device, provider, date) 取最新
-//     再按 (provider, date) 求和，重复导出天然幂等
+//   - 默认按键合并写入：键 = (device, provider, date)，本次导出的行覆盖旧行
+//     （计数口径修正、当天补录生效），源数据已消失的旧行原样保留——文件成为
+//     只增不减的系统记录；--rewrite 回退为全量快照重写
+//   - 消费端按 (device, provider, date) 取最新再按 (provider, date) 求和，
+//     合并模式下文件内键已唯一，直接求和即可
 //   - schema 只加字段不改名，语义变更升 v
 
 const dailyDigestSchemaVersion = 2
@@ -165,10 +168,92 @@ func buildDailyDigestRows(device string) ([]dailyDigestRow, error) {
 	return rows, nil
 }
 
-// writeDailyDigestFile 原子写 JSONL 快照（tmp+rename，消费端随时读到完整文件）。
-func writeDailyDigestFile(path string, rows []dailyDigestRow) error {
+// dailyDigestKey 合并键：同设备同渠道同一天只保留一行。
+type dailyDigestKey struct {
+	Device   string
+	Provider string
+	Date     string
+}
+
+func dailyDigestKeyOf(row dailyDigestRow) dailyDigestKey {
+	return dailyDigestKey{Device: row.Device, Provider: row.Provider, Date: row.Date}
+}
+
+// readDailyDigestRows 容错读取既有导出文件：损坏行跳过并告警，不整体失败。
+func readDailyDigestRows(path string) ([]dailyDigestRow, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	defer f.Close()
+	var rows []dailyDigestRow
+	scanner := newJSONLScanner(f)
+	line := 0
+	for scanner.Scan() {
+		line++
+		var row dailyDigestRow
+		if err := json.Unmarshal(scanner.Bytes(), &row); err != nil {
+			Warn("daily digest 旧行解析失败，跳过", "path", path, "line", line)
+			continue
+		}
+		if row.Date == "" || row.Provider == "" {
+			continue
+		}
+		rows = append(rows, row)
+	}
+	return rows, scanner.Err()
+}
+
+// mergeDailyDigestRows 合并语义：
+//   - 键 = (device, provider, date)，文件内每键一行
+//   - 本次导出的行覆盖旧行（exported_at 更新，口径修正/当天补录生效）
+//   - 源数据已消失的旧行原样保留（文件只增不减）
+//   - 冲突时 exported_at 新者胜（防御旧文件时钟倒拨）
+func mergeDailyDigestRows(existing, fresh []dailyDigestRow) []dailyDigestRow {
+	merged := make(map[dailyDigestKey]dailyDigestRow, len(existing)+len(fresh))
+	for _, row := range existing {
+		merged[dailyDigestKeyOf(row)] = row
+	}
+	for _, row := range fresh {
+		key := dailyDigestKeyOf(row)
+		if old, ok := merged[key]; ok && old.ExportedAt > row.ExportedAt {
+			continue
+		}
+		merged[key] = row
+	}
+	out := make([]dailyDigestRow, 0, len(merged))
+	for _, row := range merged {
+		out = append(out, row)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Device != out[j].Device {
+			return out[i].Device < out[j].Device
+		}
+		if out[i].Date != out[j].Date {
+			return out[i].Date < out[j].Date
+		}
+		return out[i].Provider < out[j].Provider
+	})
+	return out
+}
+
+// writeDailyDigestFile 按键合并后原子写 JSONL（tmp+rename，消费端随时读到完整文件）。
+// rewrite=true 时跳过合并，退回全量快照重写：以当前源数据为准，清掉幽灵行。
+func writeDailyDigestFile(path string, rows []dailyDigestRow, rewrite bool) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		return fmt.Errorf("创建导出目录失败: %w", err)
+	}
+	if !rewrite {
+		existing, err := readDailyDigestRows(path)
+		if err != nil {
+			return fmt.Errorf("读取既有导出失败: %w", err)
+		}
+		if len(existing) > 0 {
+			rows = mergeDailyDigestRows(existing, rows)
+		}
 	}
 	tmp := path + ".tmp"
 	f, err := os.Create(tmp)
@@ -212,10 +297,10 @@ func runDailyDigest(opts cliOptions) error {
 			}
 			return nil
 		}
-		if err := writeDailyDigestFile(out, rows); err != nil {
+		if err := writeDailyDigestFile(out, rows, opts.Rewrite); err != nil {
 			return err
 		}
-		Info("daily digest 已写入", "path", out, "rows", len(rows), "device", device)
+		Info("daily digest 已写入", "path", out, "rows", len(rows), "device", device, "merge", !opts.Rewrite)
 		if opts.Watch <= 0 {
 			// 单次模式向 stdout 报告位置，方便脚本/人取用
 			fmt.Fprintf(os.Stderr, "daily digest: %s (%d rows, device=%s)\n", out, len(rows), device)

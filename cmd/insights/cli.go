@@ -30,10 +30,11 @@ type cliOptions struct {
 	Detail   bool
 	Prompts  bool
 
-	Daily  bool          // sum --daily：每日×渠道消耗 JSONL 导出
-	Device string        // --device：导出设备名（默认 hostname）
-	Out    string        // --out：导出文件路径（默认 stdout）
-	Watch  time.Duration // --watch：周期刷新间隔（0=单次）
+	Daily   bool          // sum --daily：每日×渠道消耗 JSONL 导出
+	Device  string        // --device：导出设备名（默认 hostname）
+	Rewrite bool          // --rewrite：daily 全量快照重写（默认按键合并，旧行保留）
+	Out     string        // --out：导出文件路径（默认 stdout）
+	Watch   time.Duration // --watch：周期刷新间隔（0=单次）
 
 	jsonOut     bool // -j：输出 JSON（仅分析命令注册）
 	markdownOut bool // -m：输出 Markdown（仅分析命令注册）
