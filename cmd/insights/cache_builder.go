@@ -395,9 +395,10 @@ func (cb *CacheBuilder) buildProjectAggregateIncremental(dataDir string, previou
 	if previous != nil {
 		cachedForParse = previous.ProjectFiles
 	}
-	// opencode：session/message 元数据每次重建轻量索引，消息级计数直接计入 aggregate
+	// opencode：session/message 元数据每次重建轻量索引，消息级计数直接计入 aggregate；
+	// sqlite 布局（opencode.db）的索引与计数在 parseOpenCodeDBAggregate 内完成。
 	var ocIdx *openCodeIndex
-	if provider == ProviderOpenCode {
+	if provider == ProviderOpenCode && !fileExists(openCodeDBPathForDataDir(dataDir)) {
 		ocIdx = buildOpenCodeIndexInto(dataDir, aggregate)
 	}
 	parsedCaches, err := parseProjectFilesForCache(provider, toParse, cachedForParse, ocIdx)
@@ -441,6 +442,19 @@ func listLogFileInfos(provider Provider, dataDir string) ([]projectFileInfo, err
 	}
 	rootDir := logRootDir(provider, resolvedDataDir)
 	provider = resolveProvider(provider, resolvedDataDir)
+	// 新版 opencode（sqlite 布局）：opencode.db 是唯一数据源，跳过文件树扫描。
+	if provider == ProviderOpenCode {
+		if dbPath := openCodeDBPathForDataDir(resolvedDataDir); fileExists(dbPath) {
+			if info, err := os.Stat(dbPath); err == nil {
+				return sqliteDataFileInfos([]projectFileInfo{{
+					RelPath: openCodeDBName,
+					AbsPath: dbPath,
+					Size:    info.Size(),
+					ModTime: info.ModTime().UnixNano(),
+				}}), nil
+			}
+		}
+	}
 	ext := ".jsonl"
 	if provider == ProviderOpenCode {
 		ext = ".json"
@@ -484,7 +498,7 @@ func listLogFileInfos(provider Provider, dataDir string) ([]projectFileInfo, err
 	})
 	if provider == ProviderZcode {
 		// 活跃 sqlite 库的写入先落 WAL：合并 -wal/-shm 统计作为变更信号。
-		files = zcodeDataFileInfos(files)
+		files = sqliteDataFileInfos(files)
 	}
 	return files, nil
 }
@@ -534,6 +548,24 @@ func parseProjectFilesForCache(provider Provider, files []projectFileInfo, cache
 			defer wg.Done()
 			for info := range jobs {
 				var cache *ProjectFileCache
+				if provider == ProviderOpenCode && strings.HasSuffix(info.AbsPath, openCodeDBName) {
+					// 新版 opencode：sqlite 单库数据源（与 zcode 同机制）。
+					fileAggregate := newProjectAggregate()
+					if err := parseOpenCodeDBAggregate(info.AbsPath, TimeFilter{}, fileAggregate); err != nil {
+						Warn("opencode db 解析失败", "path", info.AbsPath, "error", err.Error())
+					}
+					results <- projectFileResult{
+						Info:      info,
+						Aggregate: fileAggregate,
+						Cache: &ProjectFileCache{
+							Path:        info.RelPath,
+							Size:        info.Size,
+							ModTimeUnix: info.ModTime,
+							Aggregate:   aggregateToProjectFileAggregate(fileAggregate),
+						},
+					}
+					continue
+				}
 				if provider == ProviderOpenCode {
 					// opencode：part 文件自含调用+结果，按文件独立解析（文件不可变，天然增量）
 					fileAggregate := newProjectAggregate()
@@ -727,6 +759,17 @@ func (cb *CacheBuilder) GetLastDataModified() (time.Time, error) {
 		// 目录不存在不是错误
 		if !os.IsNotExist(err) {
 			return time.Time{}, err
+		}
+	}
+	// 新版 opencode：库文件在数据目录根部（不在 storage/ 下），且不能整目录扫描
+	// （log/ 等高频变化目录会误触发重建），单独取 db+wal+shm 的 mtime。
+	if provider == ProviderOpenCode {
+		if dbPath := openCodeDBPathForDataDir(cb.DataDir); fileExists(dbPath) {
+			for _, suffix := range []string{"", "-wal", "-shm"} {
+				if info, err := os.Stat(dbPath + suffix); err == nil && info.ModTime().After(lastMod) {
+					lastMod = info.ModTime()
+				}
+			}
 		}
 	}
 
@@ -965,4 +1008,10 @@ func (cb *CacheBuilder) parseDebugFile(filePath string, cache *CacheFile) error 
 // newScanner 创建带缓冲的 scanner（如果 bufio.Scanner 不可用）
 func newScanner(r io.Reader, buf []byte, maxBufSize int) *bufio.Scanner {
 	return bufio.NewScanner(r)
+}
+
+// fileExists 判断文件存在且不是目录。
+func fileExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && !info.IsDir()
 }

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"database/sql"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -8,17 +9,231 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	_ "modernc.org/sqlite"
 )
 
-// opencode 数据源：~/.local/share/opencode/storage/{session,message,part}/
-// 每条记录一个 JSON 文件（非 JSONL）：
-//   - session/<projHash>/<ses>.json：directory（项目路径）、time.created/updated
-//   - message/<ses>/<msg>.json：role、model{providerID,modelID}、time.created
-//   - part/<msg>/<part>.json：type=text|reasoning|step-start|step-finish|tool
+// opencode 数据源（新版 sqlite 布局）：~/.local/share/opencode/opencode.db
+//   - session 表：directory/title/parent_id/time_created/time_updated（与 zcode 库同构）
+//   - message 表：data{role, agent, model{providerID,modelID}, time.created}
+//   - part 表：data{type, tool, callID, state{status,input,output,error,time}}，
+//     step-finish part 携带 tokens（usage 载体）
+//   - todo 表：session_id/status/time_created（与 zcode 库同构）
 //
-// 解析模型：message/ 与 session/ 每次构建重建轻量索引（文件小、成本可控）
+// 旧版文件布局（storage/{session,message,part}/*.json）继续支持：
+// opencode.db 存在时优先走 sqlite 路径，否则走文件路径。
+//
+// 解析模型（文件布局）：message/ 与 session/ 每次构建重建轻量索引（文件小、成本可控）
 // 并完成消息级计数；part/（尤其 type=tool）作为文件级增量缓存单元，
 // state.status/error 是结构化失败信号。无 token 用量数据。
+// sqlite 布局：单库文件作为唯一增量单元（复用 zcode 的 wal/shm 变更信号机制）。
+
+const (
+	openCodeDBName    = "opencode.db"
+	openCodeMainAgent = "build" // opencode 默认 agent，其余（explore/plan 等）按子代理归因
+)
+
+func openCodeDBPathForDataDir(dataDir string) string {
+	return filepath.Join(dataDir, openCodeDBName)
+}
+
+// parseOpenCodeDBAggregate 解析新版 opencode 的 sqlite 存储。
+// message/part 的 data JSON 与旧文件布局同构，复用 recordOpenCodeToolPart/
+// recordOpenCodeStepUsage 记账；会话标题、parent_id 子代理归并、todo 按天
+// 归因、compaction 信号复用 zcode 的 agent-sqlite 共享管道。
+func parseOpenCodeDBAggregate(dbPath string, tf TimeFilter, agg *ProjectAggregate) error {
+	db, err := sql.Open("sqlite", sqliteReadOnlyURI(dbPath))
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	sessions, times, err := loadOpenCodeDBSessions(db)
+	if err != nil {
+		return err
+	}
+	idx, err := buildOpenCodeDBIndex(db, sessions, tf, agg)
+	if err != nil {
+		return err
+	}
+	recordOpenCodeDBSessionLifecycle(agg, sessions, times)
+	if err := recordOpenCodeDBParts(db, idx, tf, agg); err != nil {
+		return err
+	}
+	if err := recordAgentTodos(db, sessions, tf, agg); err != nil {
+		return err
+	}
+	return recordAgentCompactions(db, sessions, tf, agg)
+}
+
+// loadOpenCodeDBSessions 读 session 表：zcodeSessionInfo（共享管道用）+ 生命周期时间戳。
+func loadOpenCodeDBSessions(db *sql.DB) (map[string]*zcodeSessionInfo, map[string][2]int64, error) {
+	rows, err := db.Query(`select id, coalesce(directory, ''), coalesce(path, ''),
+coalesce(title, ''), coalesce(parent_id, ''), coalesce(time_created, 0), coalesce(time_updated, 0) from session`)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer rows.Close()
+	sessions := make(map[string]*zcodeSessionInfo, 128)
+	times := make(map[string][2]int64, 128)
+	for rows.Next() {
+		var id, directory, path, title, parentID string
+		var createdMs, updatedMs int64
+		if err := rows.Scan(&id, &directory, &path, &title, &parentID, &createdMs, &updatedMs); err != nil {
+			return nil, nil, err
+		}
+		sessions[id] = &zcodeSessionInfo{
+			Directory: firstNonEmpty(directory, path),
+			Title:     title,
+			ParentID:  parentID,
+		}
+		times[id] = [2]int64{createdMs, updatedMs}
+	}
+	return sessions, times, rows.Err()
+}
+
+// buildOpenCodeDBIndex 从 message 表构建索引（模型按时序传播）并计入消息级统计。
+// 子代理 session（parent_id 链）归并到主会话，与 zcode 语义对齐。
+func buildOpenCodeDBIndex(db *sql.DB, sessions map[string]*zcodeSessionInfo, tf TimeFilter, agg *ProjectAggregate) (*openCodeIndex, error) {
+	idx := &openCodeIndex{
+		sessions: make(map[string]openCodeSessionInfo, len(sessions)),
+		messages: make(map[string]openCodeMessageInfo, 4096),
+	}
+	// 每个 session id（含子代理）映射到 root 的项目目录。
+	for id := range sessions {
+		rootID := resolveZCodeRootSession(sessions, id)
+		rootInfo := sessions[rootID]
+		idx.sessions[id] = openCodeSessionInfo{Directory: firstNonEmpty(rootInfo.Directory, sessions[id].Directory)}
+	}
+
+	rows, err := db.Query(`select id, session_id, coalesce(time_created, 0), data from message order by time_created, id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	type rawMessage struct {
+		id, sessionID, role, agent, model string
+		createdMs                         int64
+	}
+	sessionModels := make(map[string]string, len(sessions))
+	for rows.Next() {
+		var id, sessionID string
+		var createdMs int64
+		var raw []byte
+		if err := rows.Scan(&id, &sessionID, &createdMs, &raw); err != nil {
+			return nil, err
+		}
+		var m struct {
+			Role  string `json:"role"`
+			Agent string `json:"agent"`
+			Model struct {
+				ProviderID string `json:"providerID"`
+				ModelID    string `json:"modelID"`
+			} `json:"model"`
+		}
+		if len(raw) > 0 {
+			if err := json.Unmarshal(raw, &m); err != nil {
+				continue
+			}
+		}
+		model := m.Model.ModelID
+		if m.Model.ProviderID != "" {
+			model = m.Model.ProviderID + "/" + m.Model.ModelID
+		}
+		if model != "" {
+			sessionModels[sessionID] = model
+		}
+		if model == "" {
+			model = sessionModels[sessionID]
+		}
+		rootID := resolveZCodeRootSession(sessions, sessionID)
+		idx.messages[id] = openCodeMessageInfo{
+			SessionID: rootID,
+			Role:      m.Role,
+			Model:     model,
+			Agent:     m.Agent,
+			CreatedMs: createdMs,
+		}
+		ts := msToTime(createdMs)
+		if !tf.Contains(ts) {
+			continue
+		}
+		if m.Role == "assistant" {
+			recordAssistantMessage(agg, idx.projectFor(rootID), rootID, model, ts)
+			recordPiModelUsage(agg, model, ts, nil)
+		}
+	}
+	return idx, rows.Err()
+}
+
+// recordOpenCodeDBSessionLifecycle session 时间戳与标题计入主会话统计。
+func recordOpenCodeDBSessionLifecycle(agg *ProjectAggregate, sessions map[string]*zcodeSessionInfo, times map[string][2]int64) {
+	seen := make(map[string]bool, len(sessions))
+	for id, stamp := range times {
+		rootID := resolveZCodeRootSession(sessions, id)
+		if seen[rootID] {
+			continue
+		}
+		seen[rootID] = true
+		info := sessions[rootID]
+		stat := ensureSessionStat(agg, rootID, firstNonEmpty(info.Directory, "Unknown"))
+		if stat == nil {
+			continue
+		}
+		if created := msToTime(stamp[0]); !created.IsZero() {
+			recordSessionTimestamp(stat, created)
+		}
+		if updated := msToTime(stamp[1]); !updated.IsZero() {
+			recordSessionTimestamp(stat, updated)
+		}
+		if info.Title != "" && stat.TitleSource == "" {
+			recordSessionTitle(stat, "ai-title", info.Title)
+		}
+	}
+}
+
+// recordOpenCodeDBParts 解析 tool/step-finish part（data JSON 与旧文件布局同构）。
+func recordOpenCodeDBParts(db *sql.DB, idx *openCodeIndex, tf TimeFilter, agg *ProjectAggregate) error {
+	rows, err := db.Query(`select message_id, coalesce(time_created, 0), data from part
+where json_extract(data, '$.type') = 'tool' or json_extract(data, '$.type') = 'step-finish'`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var messageID string
+		var createdMs int64
+		var raw []byte
+		if err := rows.Scan(&messageID, &createdMs, &raw); err != nil {
+			return err
+		}
+		var p openCodePartUsage
+		if err := json.Unmarshal(raw, &p); err != nil {
+			continue
+		}
+		p.MessageID = messageID
+		msg := idx.messages[p.MessageID]
+		// 时间过滤：state.time.start → part time_created → 消息时间（与旧路径的回退链一致）。
+		ts := msToTime(p.State.Time.Start)
+		if ts.IsZero() {
+			ts = msToTime(createdMs)
+		}
+		if ts.IsZero() {
+			ts = msToTime(msg.CreatedMs)
+		}
+		if !ts.IsZero() && !tf.Contains(ts) {
+			continue
+		}
+		if p.Type == "step-finish" {
+			recordOpenCodeStepUsage(agg, idx, &p)
+			continue
+		}
+		recordOpenCodeToolPart(agg, idx, &p)
+	}
+	return rows.Err()
+}
 
 type openCodeSessionInfo struct {
 	Directory string
@@ -213,6 +428,11 @@ func recordOpenCodeToolPart(agg *ProjectAggregate, idx *openCodeIndex, p *openCo
 		SessionID: msg.SessionID,
 		Timestamp: ts,
 		Input:     normalizeOpenCodeInput(p.State.Input),
+	}
+	// 子代理（explore/plan 等，非默认 build agent）的工具调用归入主会话，agent 维度单独统计。
+	if msg.Agent != "" && msg.Agent != openCodeMainAgent {
+		call.AgentID = msg.Agent
+		call.IsSidechain = true
 	}
 	if call.Model == "" {
 		call.Model = "unknown"

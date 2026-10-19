@@ -16,7 +16,9 @@ import (
 // 4.19 修 4.18 版本号撞车：pi usage 解析落地时未实际升版本（diff 未含 cache.go），
 // 中间版本二进制构建的 4.18 缓存对 pi token 语义已过期，须强制重建。
 // 4.20 opencode step-finish tokens 解析落地。
-const CacheVersion = "4.20"
+// 4.21 opencode 新版 sqlite 布局（opencode.db）接入：旧布局缓存为空数据的
+// 机器需要重建才能读到 sqlite 数据。
+const CacheVersion = "4.21"
 
 // CacheFile 缓存文件结构
 type CacheFile struct {

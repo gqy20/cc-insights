@@ -114,10 +114,10 @@ func parseZCodeDBAggregate(dbPath string, tf TimeFilter, agg *ProjectAggregate) 
 	if err := recordZCodeToolParts(db, sessions, msgMeta, toolUsage, tf, agg); err != nil {
 		return err
 	}
-	if err := recordZCodeCompactions(db, sessions, tf, agg); err != nil {
+	if err := recordAgentCompactions(db, sessions, tf, agg); err != nil {
 		return err
 	}
-	if err := recordZCodeTodos(db, sessions, tf, agg); err != nil {
+	if err := recordAgentTodos(db, sessions, tf, agg); err != nil {
 		return err
 	}
 	return recordZCodeModelUsage(db, sessions, tf, agg)
@@ -395,7 +395,7 @@ func classifyZCodeToolError(tool, errorText string, usage zcodeToolUsageInfo) to
 	return newFailureClassification("tool_error", failureCategoryForTool(tool), "error_status")
 }
 
-func recordZCodeCompactions(db *sql.DB, sessions map[string]*zcodeSessionInfo, tf TimeFilter, agg *ProjectAggregate) error {
+func recordAgentCompactions(db *sql.DB, sessions map[string]*zcodeSessionInfo, tf TimeFilter, agg *ProjectAggregate) error {
 	rows, err := db.Query(`select session_id, coalesce(time_created, 0), data from part where json_extract(data, '$.type') = 'compaction'`)
 	if err != nil {
 		return err
@@ -515,9 +515,10 @@ func recordZCodeRequestDurationLocked(agg *ProjectAggregate, sessionID, project,
 	}
 }
 
-// recordZCodeTodos 把 todo 表按 time_created 归因写入 TaskAgg（顶层 + 按天快照），
-// 子代理 session 的 todo 归并到主会话。时间过滤查询经按天快照重建 TaskPlanAnalysis。
-func recordZCodeTodos(db *sql.DB, sessions map[string]*zcodeSessionInfo, tf TimeFilter, agg *ProjectAggregate) error {
+// recordAgentTodos 把 todo 表按 time_created 归因写入 TaskAgg（顶层 + 按天快照），
+// 子代理 session 的 todo 归并到主会话。zcode 与 opencode（sqlite 布局）的 todo 表同构，共用。
+// 时间过滤查询经按天快照重建 TaskPlanAnalysis。
+func recordAgentTodos(db *sql.DB, sessions map[string]*zcodeSessionInfo, tf TimeFilter, agg *ProjectAggregate) error {
 	rows, err := db.Query(`select session_id, coalesce(status, ''), coalesce(time_created, 0) from todo`)
 	if err != nil {
 		// 表缺失属旧版本 zcode：无任务信号，跳过。
@@ -544,9 +545,10 @@ func recordZCodeTodos(db *sql.DB, sessions map[string]*zcodeSessionInfo, tf Time
 	return rows.Err()
 }
 
-// zcodeDataFileInfos 把 db.sqlite 条目的 size/mtime 合并 -wal/-shm 统计：
-// 活跃库的写入先落 WAL，db.sqlite 本体 mtime 可能不变，合并后才能作为变更信号。
-func zcodeDataFileInfos(files []projectFileInfo) []projectFileInfo {
+// sqliteDataFileInfos 把 sqlite 库文件的 size/mtime 合并 -wal/-shm 统计：
+// 活跃库的写入先落 WAL，库本体 mtime 可能不变，合并后才能作为变更信号。
+// zcode（db.sqlite）与 opencode（opencode.db）共用。
+func sqliteDataFileInfos(files []projectFileInfo) []projectFileInfo {
 	for i := range files {
 		base := files[i].AbsPath
 		var size int64
