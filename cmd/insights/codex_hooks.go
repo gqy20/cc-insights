@@ -33,7 +33,7 @@ var (
 	codexHookTurnRe   = regexp.MustCompile(`turn\.id=([0-9a-fA-F-]+)`)
 	// cwd= 位于 {...} 内，排除 } 即可；再排除 : 会把 Windows 盘符路径
 	// （cwd=C:\Users\...）截断成 "C"，导致项目归因错误。
-	codexHookCWDRe    = regexp.MustCompile(`cwd=([^}]+)`)
+	codexHookCWDRe = regexp.MustCompile(`cwd=([^}]+)`)
 )
 
 type codexHookLogRow struct {

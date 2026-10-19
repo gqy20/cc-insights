@@ -593,9 +593,9 @@ type CostModelStat struct {
 	// 单请求 round-trip 累计耗时（ms），用于派生 AvgRoundTripMs / OutputTokensPerSec。
 	TotalRoundTripMs int64 `json:"total_round_trip_ms,omitempty"`
 	// 首 token 延迟累计（ms，zcode model_usage.time_to_first_token_ms），派生 AvgTTFTMs。
-	TotalTTFTMs      int64   `json:"total_ttft_ms,omitempty"`
-	AvgRoundTripMs   float64 `json:"avg_round_trip_ms,omitempty"`
-	AvgTTFTMs        float64 `json:"avg_ttft_ms,omitempty"`
+	TotalTTFTMs        int64   `json:"total_ttft_ms,omitempty"`
+	AvgRoundTripMs     float64 `json:"avg_round_trip_ms,omitempty"`
+	AvgTTFTMs          float64 `json:"avg_ttft_ms,omitempty"`
 	OutputTokensPerSec float64 `json:"output_tokens_per_sec,omitempty"`
 }
 
