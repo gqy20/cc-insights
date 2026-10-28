@@ -57,7 +57,7 @@ func buildRecommendationDashboardDataWithCache(cache *CacheFile, tf TimeFilter, 
 		TaskPlanAnalysis: cloneTaskPlanAnalysis(cached.TaskPlanAnalysis),
 		RuntimeCache:     cache,
 	}
-	decorateQoderModelNames(data)
+	decorateQoderModels(data)
 	return data, "cache", nil
 }
 

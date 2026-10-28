@@ -2,6 +2,7 @@ package main
 
 import (
 	"database/sql"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -43,6 +44,63 @@ func createQoderStateDB(t *testing.T, dir string) string {
 		}
 	}
 	return dbPath
+}
+
+func TestApplyQoderStateDBContextWindowsFillsGaps(t *testing.T) {
+	appData := t.TempDir()
+	t.Setenv("APPDATA", appData)
+	storage := filepath.Join(appData, qoderAppStorageName)
+	if err := os.MkdirAll(storage, 0755); err != nil {
+		t.Fatalf("mkdir failed: %v", err)
+	}
+	db, err := sql.Open("sqlite", filepath.Join(storage, qoderStateDBName))
+	if err != nil {
+		t.Fatalf("打开测试状态库失败: %v", err)
+	}
+	for _, statement := range []string{
+		`create table chat_model_preferences (model_key text primary key, visible integer, context_window integer, reasoning_effort text, updated_at integer)`,
+		`insert into chat_model_preferences values ('qfmodel', 1, 400000, null, 0)`,
+		`insert into chat_model_preferences values ('ultimate', 1, 1000000, null, 0)`,
+		// 日志已给出 smodel=180000，DB 的 999999 不得覆盖（日志是请求时实际配置）。
+		`insert into chat_model_preferences values ('smodel', 1, 999999, null, 0)`,
+	} {
+		if _, err := db.Exec(statement); err != nil {
+			t.Fatalf("初始化 chat_model_preferences 失败: %v", err)
+		}
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("关闭测试状态库失败: %v", err)
+	}
+
+	catalog := map[string]qoderModelInfo{
+		"smodel":   {Name: "Sonus", MaxInputTokens: 180000},
+		"ultimate": {Name: "Ultimate"},
+	}
+	applyQoderStateDBContextWindows(catalog)
+	if got := catalog["smodel"].MaxInputTokens; got != 180000 {
+		t.Fatalf("smodel.MaxInputTokens = %d, want 180000（日志优先，DB 不覆盖）", got)
+	}
+	if got := catalog["ultimate"].MaxInputTokens; got != 1000000 {
+		t.Fatalf("ultimate.MaxInputTokens = %d, want 1000000（DB 兜底）", got)
+	}
+	// catalog 里没有的别名（日志被清理过）也允许 DB 单独补窗口：真名缺席但估算仍可用。
+	if got := catalog["qfmodel"]; got.MaxInputTokens != 400000 || got.Name != "" {
+		t.Fatalf("qfmodel = %+v, want DB 兜底窗口 400000 且不带真名", got)
+	}
+
+	// 表缺失（旧版状态库）：静默跳过，不 panic、不改 catalog。
+	legacyAppData := t.TempDir()
+	t.Setenv("APPDATA", legacyAppData)
+	legacyStorage := filepath.Join(legacyAppData, qoderAppStorageName)
+	if err := os.MkdirAll(legacyStorage, 0755); err != nil {
+		t.Fatalf("mkdir failed: %v", err)
+	}
+	createQoderStateDB(t, legacyStorage) // 没有 chat_model_preferences 表
+	missing := map[string]qoderModelInfo{"smodel": {Name: "Sonus"}}
+	applyQoderStateDBContextWindows(missing)
+	if missing["smodel"].MaxInputTokens != 0 {
+		t.Fatalf("无 chat_model_preferences 表时不应写入窗口: %+v", missing["smodel"])
+	}
 }
 
 func TestRecordQoderStateDBTurnSignals(t *testing.T) {

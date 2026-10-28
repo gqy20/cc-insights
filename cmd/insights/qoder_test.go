@@ -92,6 +92,11 @@ func TestQoderContextRatioRecordsPeakOnly(t *testing.T) {
 	if context.PeakContextRatio < 0.549 || context.PeakContextRatio > 0.551 {
 		t.Fatalf("PeakContextRatio=%v, want 0.55", context.PeakContextRatio)
 	}
+	// ratio 和是估算输入 token 的原料：resp-1/2/3 各计一次（resp-2 的重复
+	// usage 去重后只计一次），0.3+0.55+0.2=1.05。
+	if sum := agg.CostModelStats["qfmodel"].ContextRatioSum; sum < 1.0499 || sum > 1.0501 {
+		t.Fatalf("ContextRatioSum=%v, want 1.05", sum)
+	}
 	// 压缩计数只认 system/compact_boundary，不再按 ratio 回落推断（两种口径会打架）。
 	if context.ContextCompactions != 0 {
 		t.Fatalf("ContextCompactions=%d, want 0（比例回落不该计数）", context.ContextCompactions)

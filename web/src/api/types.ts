@@ -200,6 +200,8 @@ export interface CostByModel {
   model_name?: string
   request_count: number
   total_tokens?: number
+  // Qoder 的估算输入 token（按 context_usage_ratio×模型窗口推算，仅输入侧，~ 口径）。
+  est_input_tokens?: number
   input_tokens?: number
   output_tokens?: number
   cache_read_input_tokens?: number

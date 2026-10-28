@@ -25,7 +25,9 @@ func writeQoderRunLog(t *testing.T, root, runName, body string) {
 
 func TestQoderModelCatalogParsesRunLogs(t *testing.T) {
 	root := t.TempDir()
-	// 真实排版：model_config 同行带 api_key/url（官方已脱敏），只取 key 与 display_name。
+	// 隔离真实状态库（catalog 会用 chat_model_preferences 兜底窗口），只测日志来源。
+	t.Setenv("APPDATA", t.TempDir())
+	// 真实排版：model_config 同行带 api_key/url（官方已脱敏），只取 key/display_name/窗口。
 	writeQoderRunLog(t, root, "2026-10-24T11-36-33-668+08-00-aaaaaa-p1", strings.Join([]string{
 		`2026-10-24T11:36:35 info starting worker`,
 		`[QoderInferRequest details] model_config={"key":"smodel","display_name":"Sonus","model":"","format":"openai","is_vl":true,"is_reasoning":true,"api_key":"[redacted]","url":"","source":"system","max_input_tokens":180000}, custom_model=null`,
@@ -34,41 +36,56 @@ func TestQoderModelCatalogParsesRunLogs(t *testing.T) {
 	writeQoderRunLog(t, root, "2026-10-27T17-27-02-489+08-00-bbbbbb-p2", strings.Join([]string{
 		`[QoderInferRequest details] model_config={"key":"qfmodel","display_name":"Qwen3.8-Flash","api_key":"[redacted]","max_input_tokens":180000}, custom_model=null`,
 		`[Routing] Reasoning: Validated model 'dfmodel' (DeepSeek-Flash) from catalog`,
-		// 同一个 run 日志内后面的行更新，应该覆盖前面的。
+		// 同一个 run 日志内后面的行更新真名，应该覆盖前面的；但不带窗口的行不能清掉窗口。
 		`[QoderInferRequest details] model_config={"key":"qfmodel","display_name":"Qwen3.8-Flash-v2","api_key":"[redacted]"}`,
 	}, "\n"))
 
 	catalog := qoderModelCatalog(qoderModelLogRootsForTest(root))
-	if got := catalog["qfmodel"]; got != "Qwen3.8-Flash-v2" {
-		t.Fatalf("qfmodel = %q, want latest in-file name", got)
+	if got := catalog["qfmodel"].Name; got != "Qwen3.8-Flash-v2" {
+		t.Fatalf("qfmodel.Name = %q, want latest in-file name", got)
 	}
-	if got := catalog["smodel"]; got != "Sonus" {
-		t.Fatalf("smodel = %q, want Sonus", got)
+	if got := catalog["smodel"].Name; got != "Sonus" {
+		t.Fatalf("smodel.Name = %q, want Sonus", got)
 	}
-	if got := catalog["dfmodel"]; got != "DeepSeek-Flash" {
-		t.Fatalf("dfmodel = %q, want DeepSeek-Flash (routing fallback)", got)
+	if got := catalog["dfmodel"].Name; got != "DeepSeek-Flash" {
+		t.Fatalf("dfmodel.Name = %q, want DeepSeek-Flash (routing fallback)", got)
 	}
-	for alias, name := range catalog {
-		if strings.Contains(name, "api_key") || strings.Contains(name, "redacted") {
-			t.Fatalf("alias %q leaked raw log text: %q", alias, name)
+	// 窗口只来自 config 行；routing 行不带，也不该清掉已有值。
+	if got := catalog["smodel"].MaxInputTokens; got != 180000 {
+		t.Fatalf("smodel.MaxInputTokens = %d, want 180000", got)
+	}
+	if got := catalog["qfmodel"].MaxInputTokens; got != 180000 {
+		t.Fatalf("qfmodel.MaxInputTokens = %d, want 180000（v2 行无窗口不得清零）", got)
+	}
+	if got := catalog["dfmodel"].MaxInputTokens; got != 0 {
+		t.Fatalf("dfmodel.MaxInputTokens = %d, want 0（routing 行不带窗口）", got)
+	}
+	for alias, info := range catalog {
+		if strings.Contains(info.Name, "api_key") || strings.Contains(info.Name, "redacted") {
+			t.Fatalf("alias %q leaked raw log text: %q", alias, info.Name)
 		}
 	}
 }
 
 func TestQoderModelCatalogNewestRunWins(t *testing.T) {
 	root := t.TempDir()
+	t.Setenv("APPDATA", t.TempDir())
 	writeQoderRunLog(t, root, "2026-10-01T00-00-00-000+08-00-old-p1",
-		`model_config={"key":"qmodel_38max","display_name":"Qwen3.7-Max"}`)
+		`model_config={"key":"qmodel_38max","display_name":"Qwen3.7-Max","max_input_tokens":100000}`)
 	writeQoderRunLog(t, root, "2026-10-27T00-00-00-000+08-00-new-p2",
-		`model_config={"key":"qmodel_38max","display_name":"Qwen3.8-Max"}`)
+		`model_config={"key":"qmodel_38max","display_name":"Qwen3.8-Max","max_input_tokens":180000}`)
 
 	catalog := qoderModelCatalog(qoderModelLogRootsForTest(root))
-	if got := catalog["qmodel_38max"]; got != "Qwen3.8-Max" {
-		t.Fatalf("qmodel_38max = %q, want name from the newest run", got)
+	if got := catalog["qmodel_38max"].Name; got != "Qwen3.8-Max" {
+		t.Fatalf("qmodel_38max.Name = %q, want name from the newest run", got)
+	}
+	if got := catalog["qmodel_38max"].MaxInputTokens; got != 180000 {
+		t.Fatalf("qmodel_38max.MaxInputTokens = %d, want window from the newest run", got)
 	}
 }
 
 func TestQoderModelCatalogMissingLogsDegradesToEmpty(t *testing.T) {
+	t.Setenv("APPDATA", t.TempDir())
 	catalog := qoderModelCatalog(qoderModelLogRootsForTest(t.TempDir()))
 	if len(catalog) != 0 {
 		t.Fatalf("catalog = %v, want empty when no run logs exist", catalog)
@@ -112,14 +129,15 @@ func TestSelectQoderModelLogsKeepsNewestWithinBudget(t *testing.T) {
 }
 
 func TestQoderModelCatalogMemoizedPerRoots(t *testing.T) {
+	t.Setenv("APPDATA", t.TempDir())
 	roots := qoderModelLogRootsForTest(t.TempDir())
 	first := qoderModelCatalog(roots)
 	if _, ok := first["__sentinel__"]; ok {
 		t.Fatal("fresh catalog should not contain the sentinel")
 	}
-	first["__sentinel__"] = "written"
+	first["__sentinel__"] = qoderModelInfo{Name: "written"}
 	second := qoderModelCatalog(roots)
-	if second["__sentinel__"] != "written" {
+	if second["__sentinel__"].Name != "written" {
 		t.Fatal("catalog should be reused per roots, not rescanned")
 	}
 	if other := qoderModelCatalog(qoderModelLogRootsForTest(t.TempDir())); len(other) != 0 {
@@ -127,17 +145,26 @@ func TestQoderModelCatalogMemoizedPerRoots(t *testing.T) {
 	}
 }
 
-func TestApplyQoderModelNamesFillsModelUsageAndCostViews(t *testing.T) {
+func TestApplyQoderModelsFillsNamesAndEstimates(t *testing.T) {
 	data := &DashboardData{
 		ModelUsage: []ModelUsageItem{
 			{Model: "qfmodel"},
 			{Model: "claude-opus-4-6"},
 		},
 		CostAnalysis: &CostAnalysisData{
-			ByModel: []CostModelStat{{Model: "smodel"}, {Model: "gpt-5.1-codex-max"}},
+			ByModel: []CostModelStat{
+				{Model: "smodel", ContextRatioSum: 3.0},
+				{Model: "gpt-5.1-codex-max"},
+				{Model: "qfmodel", ContextRatioSum: 0.5},
+				{Model: "nmodel", ContextRatioSum: 2.0}, // catalog 里没有窗口：不估算
+			},
 		},
 	}
-	applyQoderModelNames(data, map[string]string{"qfmodel": "Qwen3.8-Flash", "smodel": "Sonus"})
+	applyQoderModels(data, map[string]qoderModelInfo{
+		"qfmodel": {Name: "Qwen3.8-Flash", MaxInputTokens: 180000},
+		"smodel":  {Name: "Sonus", MaxInputTokens: 180000},
+		"nmodel":  {Name: "NoWindow"},
+	})
 
 	if got := data.ModelUsage[0].ModelName; got != "Qwen3.8-Flash" {
 		t.Fatalf("ModelUsage[0].ModelName = %q", got)
@@ -145,17 +172,33 @@ func TestApplyQoderModelNamesFillsModelUsageAndCostViews(t *testing.T) {
 	if got := data.ModelUsage[1].ModelName; got != "" {
 		t.Fatalf("non-qoder model got %q, want untouched", got)
 	}
-	if got := data.CostAnalysis.ByModel[0].ModelName; got != "Sonus" {
-		t.Fatalf("CostAnalysis.ByModel[0].ModelName = %q", got)
+	byModel := data.CostAnalysis.ByModel
+	if byModel[0].ModelName != "Sonus" {
+		t.Fatalf("ByModel[0].ModelName = %q", byModel[0].ModelName)
 	}
-	if got := data.CostAnalysis.ByModel[1].ModelName; got != "" {
-		t.Fatalf("non-qoder cost model got %q, want untouched", got)
+	if got := byModel[0].EstInputTokens; got != 540000 {
+		t.Fatalf("smodel.EstInputTokens = %d, want 540000 (3.0×180000)", got)
+	}
+	if got := byModel[2].EstInputTokens; got != 90000 {
+		t.Fatalf("qfmodel.EstInputTokens = %d, want 90000 (0.5×180000)", got)
+	}
+	if byModel[1].ModelName != "" || byModel[1].EstInputTokens != 0 {
+		t.Fatalf("non-qoder cost model touched: %+v", byModel[1])
+	}
+	if byModel[3].ModelName != "NoWindow" || byModel[3].EstInputTokens != 0 {
+		t.Fatalf("windowless alias should get name only: %+v", byModel[3])
+	}
+	if got := data.CostAnalysis.Totals.EstInputTokens; got != 630000 {
+		t.Fatalf("Totals.EstInputTokens = %d, want 630000", got)
 	}
 
-	// 空 catalog 必须是纯 no-op（无日志时统计照常输出）。
-	applyQoderModelNames(data, map[string]string{})
+	// 空 catalog 必须是纯 no-op（无日志时统计照常输出，也不清已填充的估算）。
+	applyQoderModels(data, map[string]qoderModelInfo{})
 	if data.ModelUsage[0].ModelName != "Qwen3.8-Flash" {
 		t.Fatal("empty catalog must not clear already-resolved names")
+	}
+	if data.CostAnalysis.Totals.EstInputTokens != 630000 {
+		t.Fatal("empty catalog must not clear estimates")
 	}
 }
 
@@ -190,17 +233,26 @@ func TestModelDisplayLabelKeepsAliasForDrilldown(t *testing.T) {
 }
 
 func TestScanQoderModelMarkerWindowsMultipleMatches(t *testing.T) {
-	catalog := map[string]string{}
-	line := `[QoderInferRequest details] model_config={"key":"a1","display_name":"Alpha"}` +
-		` model_config={"key":"a2","display_name":"Beta"}` +
+	catalog := map[string]qoderModelInfo{}
+	line := `[QoderInferRequest details] model_config={"key":"a1","display_name":"Alpha","max_input_tokens":111000}` +
+		` model_config={"key":"a2","display_name":"Beta","max_input_tokens":222000}` +
 		` padding=` + strings.Repeat("z", 1024)
-	scanQoderModelMarker(catalog, line, qoderModelConfigMarker, qoderModelConfigRe)
-	if catalog["a1"] != "Alpha" || catalog["a2"] != "Beta" {
+	scanQoderModelMarker(catalog, line, qoderModelConfigMarker, qoderModelConfigRe, true)
+	if catalog["a1"].Name != "Alpha" || catalog["a2"].Name != "Beta" {
 		t.Fatalf("catalog = %v, want both matches on one line found", catalog)
+	}
+	if catalog["a1"].MaxInputTokens != 111000 || catalog["a2"].MaxInputTokens != 222000 {
+		t.Fatalf("windows = %v/%v, want 111000/222000", catalog["a1"].MaxInputTokens, catalog["a2"].MaxInputTokens)
+	}
+	// Routing 行只更新真名，不带窗口也不清窗口。
+	routing := `[Routing] Reasoning: Validated model 'a1' (Alpha-2) from catalog`
+	scanQoderModelMarker(catalog, routing, qoderModelRoutingMarker, qoderRoutingRe, false)
+	if catalog["a1"].Name != "Alpha-2" || catalog["a1"].MaxInputTokens != 111000 {
+		t.Fatalf("routing updated window: %+v", catalog["a1"])
 	}
 	// 超长 marker 落在窗口截断处也不能崩，命中不到就是不加。
 	before := len(catalog)
-	scanQoderModelMarker(catalog, "model_config="+strings.Repeat("z", 2048), qoderModelConfigMarker, qoderModelConfigRe)
+	scanQoderModelMarker(catalog, "model_config="+strings.Repeat("z", 2048), qoderModelConfigMarker, qoderModelConfigRe, true)
 	if len(catalog) != before {
 		t.Fatalf("catalog = %v, want noise to add nothing", catalog)
 	}

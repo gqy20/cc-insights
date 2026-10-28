@@ -93,6 +93,14 @@ transcript 里的 `message.model` 是内部别名（`qfmodel`、`smodel` 等）�
 - 真名不进入统计 key，也不写进缓存。日志随时会被清掉，若以真名聚合，同一模型会在缓存里裂成两个桶。
 - 报表标签保留别名（`Qwen3.8-Flash (qfmodel)`），因为 `--model` 过滤和聚合口径用的都是别名。
 
+### Qoder 估算输入 token
+
+官方不下发 token（transcript/日志全 0），但 `usage.context_usage_ratio` 每条都有。估算链路：
+
+- 解析层按模型累加 `context_ratio_sum`（原料），渲染层乘以窗口得 `est_input_tokens`（`~` 前缀展示）。窗口变化或日志缺失只会让估算退化为不展示，不会污染缓存统计。
+- 窗口来源优先日志 `model_config.max_input_tokens`（请求时实际配置，qfmodel=180k、dfmodel/ultimate=1M），日志没有该别名时用状态库 `chat_model_preferences.context_window` 兜底（实测清一色 400k，更像 UI 默认）。
+- 口径是"输入侧上下文吞吐"：含每轮重复计入的缓存上下文，与 Claude 的 input+cache_read 量级可比；输出侧无任何锚点，不做估算。
+
 ## 记录级容错
 
 解析 JSONL 时应遵循：

@@ -27,6 +27,7 @@ func recordCostUsageLocked(agg *ProjectAggregate, msg AssistantMessage, record P
 	modelStat.ServerToolUseRequests += serverToolUseRequests
 	modelStat.TotalTokens += totalTokens
 	modelStat.Credits += msg.Usage.Credits
+	modelStat.ContextRatioSum += msg.Usage.ContextUsageRatio
 	recordContextRatio(agg, msg.Usage.ContextUsageRatio)
 	if roundTripMs > 0 {
 		modelStat.TotalRoundTripMs += roundTripMs
@@ -154,6 +155,8 @@ func mergeCostModelStat(dst *CostModelStat, src *CostModelStat) {
 	dst.ServerToolUseRequests += src.ServerToolUseRequests
 	dst.TotalTokens += src.TotalTokens
 	dst.Credits += src.Credits
+	dst.ContextRatioSum += src.ContextRatioSum
+	// EstInputTokens 是渲染层派生值，不参与合并——合并的是解析层原料。
 	dst.TotalRoundTripMs += src.TotalRoundTripMs
 	dst.TotalTTFTMs += src.TotalTTFTMs
 }
@@ -292,10 +295,15 @@ func (agg *ProjectAggregate) finalizeCostAnalysis() {
 	}
 
 	sort.Slice(analysis.ByModel, func(i, j int) bool {
-		if analysis.ByModel[i].TotalTokens == analysis.ByModel[j].TotalTokens {
-			return analysis.ByModel[i].Model < analysis.ByModel[j].Model
+		if analysis.ByModel[i].TotalTokens != analysis.ByModel[j].TotalTokens {
+			return analysis.ByModel[i].TotalTokens > analysis.ByModel[j].TotalTokens
 		}
-		return analysis.ByModel[i].TotalTokens > analysis.ByModel[j].TotalTokens
+		// Qoder 的 token 恒 0：同分时按估算输入的原料（ratio 和）降序，
+		// 与渲染层的 EstInputTokens 排序一致，避免按 map 随机序输出。
+		if analysis.ByModel[i].ContextRatioSum != analysis.ByModel[j].ContextRatioSum {
+			return analysis.ByModel[i].ContextRatioSum > analysis.ByModel[j].ContextRatioSum
+		}
+		return analysis.ByModel[i].Model < analysis.ByModel[j].Model
 	})
 
 	for _, stat := range agg.CostProjectStats {

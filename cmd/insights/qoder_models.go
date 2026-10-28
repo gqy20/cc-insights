@@ -2,10 +2,13 @@ package main
 
 import (
 	"bufio"
+	"database/sql"
+	"math"
 	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 )
@@ -39,7 +42,17 @@ const (
 var (
 	qoderModelConfigRe = regexp.MustCompile(`^\{"key":"([A-Za-z0-9_.-]+)","display_name":"([^"]+)"`)
 	qoderRoutingRe     = regexp.MustCompile(`^([A-Za-z0-9_.-]+)' \(([^)]+)\) from catalog`)
+	// max_input_tokens 是请求时实际下发的输入窗口，估算输入 token 的锚点。
+	qoderModelWindowRe = regexp.MustCompile(`"max_input_tokens":([0-9]+)`)
 )
+
+// qoderModelInfo 是 catalog 条目：真实名称 + 输入窗口。
+// Name 只影响展示；MaxInputTokens 与 transcript 的 context_usage_ratio 相乘
+// 估算输入侧 token（Qoder 官方不下发 token，输出侧没有任何锚点，不做估算）。
+type qoderModelInfo struct {
+	Name           string
+	MaxInputTokens int64
+}
 
 // qoderModelCatalogNeeded 判断这次分析是否可能含 Qoder 数据，只有可能时才付扫描成本。
 // 只用 Claude/Codex 的调用因此完全不受影响。
@@ -47,30 +60,67 @@ func qoderModelCatalogNeeded(provider Provider) bool {
 	return provider == ProviderQoder || provider == ProviderAll
 }
 
-// qoderModelCatalog 返回别名 -> 真实模型名。按 (数据目录集合) 记忆：web 是常驻进程，
+// qoderModelCatalog 返回别名 -> 模型信息。按 (数据目录集合) 记忆：web 是常驻进程，
 // 会在一次进程里切多个 provider，同一批目录只扫一次。
-func qoderModelCatalog(roots []string) map[string]string {
+func qoderModelCatalog(roots []string) map[string]qoderModelInfo {
 	key := strings.Join(roots, "\n")
 	qoderModelCatalogMu.Lock()
 	defer qoderModelCatalogMu.Unlock()
 	if catalog, ok := qoderModelCatalogCache[key]; ok {
 		return catalog
 	}
-	merged := map[string]string{}
+	merged := map[string]qoderModelInfo{}
 	for _, root := range roots {
 		runsDir := filepath.Join(root, "logs", qoderModelRunsSubdir)
 		for _, logPath := range selectQoderModelLogs(runsDir, qoderModelScanBudgetBytes) {
 			applyQoderModelLog(merged, logPath)
 		}
 	}
+	applyQoderStateDBContextWindows(merged)
 	qoderModelCatalogCache[key] = merged
 	return merged
 }
 
 var (
 	qoderModelCatalogMu    sync.Mutex
-	qoderModelCatalogCache = map[string]map[string]string{}
+	qoderModelCatalogCache = map[string]map[string]qoderModelInfo{}
 )
+
+// applyQoderStateDBContextWindows 用状态库 chat_model_preferences.context_window
+// 补日志里没出现的别名。日志的 max_input_tokens 是请求时实际配置（qfmodel=180k、
+// dfmodel=1M），优先级更高；状态库的数值更像 UI 默认（实测清一色 400k），只在
+// 日志完全缺席该别名时兜底。窗口两个来源都没有时估算退化为不展示。
+func applyQoderStateDBContextWindows(catalog map[string]qoderModelInfo) {
+	dbPath := qoderStateDBPath()
+	if dbPath == "" {
+		return
+	}
+	db, err := sql.Open("sqlite", sqliteReadOnlyURI(dbPath))
+	if err != nil {
+		return
+	}
+	defer db.Close()
+	rows, err := db.Query(`select model_key, context_window from chat_model_preferences where context_window > 0`)
+	if err != nil {
+		return // 表缺失或版本差异，静默跳过
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var key string
+		var window int64
+		if err := rows.Scan(&key, &window); err != nil {
+			return
+		}
+		if key == "" || window <= 0 {
+			continue
+		}
+		info := catalog[key]
+		if info.MaxInputTokens == 0 {
+			info.MaxInputTokens = window
+			catalog[key] = info
+		}
+	}
+}
 
 // qoderModelLogRoots 返回要扫描的数据目录：Qoder 默认目录，以及 provider 解析为
 // qoder 时显式指定的 --data 目录。
@@ -135,7 +185,7 @@ func selectQoderModelLogs(runsDir string, budget int64) []string {
 	return chosen
 }
 
-func applyQoderModelLog(catalog map[string]string, logPath string) {
+func applyQoderModelLog(catalog map[string]qoderModelInfo, logPath string) {
 	file, err := os.Open(logPath)
 	if err != nil {
 		return
@@ -148,8 +198,7 @@ func applyQoderModelLog(catalog map[string]string, logPath string) {
 	for {
 		line, err := reader.ReadString('\n')
 		if len(line) > 0 {
-			scanQoderModelMarker(catalog, line, qoderModelRoutingMarker, qoderRoutingRe)
-			scanQoderModelMarker(catalog, line, qoderModelConfigMarker, qoderModelConfigRe)
+			scanQoderModelLine(catalog, line)
 		}
 		if err != nil {
 			return
@@ -157,9 +206,16 @@ func applyQoderModelLog(catalog map[string]string, logPath string) {
 	}
 }
 
+// scanQoderModelLine 消费一行里的全部线索：config 行同时提取真名与窗口，
+// Routing 行只提取真名（不触碰已有窗口——窗口以请求时配置为准，Routing 行不带）。
+func scanQoderModelLine(catalog map[string]qoderModelInfo, line string) {
+	scanQoderModelMarker(catalog, line, qoderModelConfigMarker, qoderModelConfigRe, true)
+	scanQoderModelMarker(catalog, line, qoderModelRoutingMarker, qoderRoutingRe, false)
+}
+
 // scanQoderModelMarker 对每个 marker 之后的有界窗口跑 re，命中即写入 catalog。
 // 窗口把正则成本钉死：日志行里可能带完整请求体，对整行跑正则会随行长放大。
-func scanQoderModelMarker(catalog map[string]string, line, marker string, re *regexp.Regexp) {
+func scanQoderModelMarker(catalog map[string]qoderModelInfo, line, marker string, re *regexp.Regexp, withWindow bool) {
 	if !strings.Contains(line, marker) {
 		return
 	}
@@ -174,18 +230,27 @@ func scanQoderModelMarker(catalog map[string]string, line, marker string, re *re
 			window = window[:qoderModelWindowBytes]
 		}
 		if match := re.FindStringSubmatch(window); match != nil {
+			info := catalog[match[1]]
 			if name := strings.TrimSpace(match[2]); name != "" {
-				catalog[match[1]] = name
+				info.Name = name
 			}
+			if withWindow {
+				if w := qoderModelWindowRe.FindStringSubmatch(window); w != nil {
+					if v, err := strconv.ParseInt(w[1], 10, 64); err == nil && v > 0 {
+						info.MaxInputTokens = v
+					}
+				}
+			}
+			catalog[match[1]] = info
 		}
 		offset = start
 	}
 }
 
-// decorateQoderModelNames 在渲染边缘给模型条目补真实名称。只有分析里可能出现
-// Qoder 数据时才扫描日志，Claude/Codex 的调用完全不付这个成本。
-// 挂在两个 dashboard 构建器的出口，CLI 与 web 的每条命令路径都覆盖到。
-func decorateQoderModelNames(data *DashboardData) {
+// decorateQoderModels 在渲染边缘给模型条目补真实名称与估算输入 token。
+// 只有分析里可能出现 Qoder 数据时才扫描日志，Claude/Codex 的调用完全不付这个成本。
+// 挂在三个 DashboardData 构建器的出口，CLI 与 web 的每条命令路径都覆盖到。
+func decorateQoderModels(data *DashboardData) {
 	if data == nil {
 		return
 	}
@@ -193,28 +258,43 @@ func decorateQoderModelNames(data *DashboardData) {
 	if !qoderModelCatalogNeeded(provider) {
 		return
 	}
-	applyQoderModelNames(data, qoderModelCatalog(qoderModelLogRoots(provider, cfg.DataDir)))
+	applyQoderModels(data, qoderModelCatalog(qoderModelLogRoots(provider, cfg.DataDir)))
 }
 
-// applyQoderModelNames 按 catalog 填充 ModelName。别名不是 Qoder 专属命名，
-// Claude/GPT 之类的模型名查不到就是空串，不影响它们。
-func applyQoderModelNames(data *DashboardData, catalog map[string]string) {
+// applyQoderModels 按 catalog 填充真实名称与估算输入 token。估算 =
+// 该模型 Σ(context_usage_ratio) × 窗口：解析层只落 ratio 和这一"原料"，
+// 乘法留在渲染层，窗口配置变化或日志缺失都不会污染缓存里的统计口径。
+// 别名不是 Qoder 专属命名，Claude/GPT 之类的模型名查不到就是零值，不影响它们。
+func applyQoderModels(data *DashboardData, catalog map[string]qoderModelInfo) {
 	if data == nil || len(catalog) == 0 {
 		return
 	}
 	for i := range data.ModelUsage {
-		if name := catalog[data.ModelUsage[i].Model]; name != "" {
-			data.ModelUsage[i].ModelName = name
+		if info, ok := catalog[data.ModelUsage[i].Model]; ok && info.Name != "" {
+			data.ModelUsage[i].ModelName = info.Name
 		}
 	}
 	if data.CostAnalysis == nil {
 		return
 	}
 	for i := range data.CostAnalysis.ByModel {
-		if name := catalog[data.CostAnalysis.ByModel[i].Model]; name != "" {
-			data.CostAnalysis.ByModel[i].ModelName = name
+		stat := &data.CostAnalysis.ByModel[i]
+		info, ok := catalog[stat.Model]
+		if !ok {
+			continue
+		}
+		if info.Name != "" {
+			stat.ModelName = info.Name
+		}
+		if info.MaxInputTokens > 0 && stat.ContextRatioSum > 0 {
+			stat.EstInputTokens = int(math.Round(stat.ContextRatioSum * float64(info.MaxInputTokens)))
 		}
 	}
+	var estTotal int
+	for _, stat := range data.CostAnalysis.ByModel {
+		estTotal += stat.EstInputTokens
+	}
+	data.CostAnalysis.Totals.EstInputTokens = estTotal
 }
 
 // modelDisplayLabel 渲染用标签：查到真名就带上别名括号，查不到就只显示原值。

@@ -597,8 +597,28 @@ func buildCLICostReport(data *DashboardData, limit int) cliCostReport {
 			report.Insights = append(report.Insights, fmt.Sprintf("Token 最高模型是 %s，共 %s。", modelDisplayLabel(report.ByModel[0].Model, report.ByModel[0].ModelName), formatCompactInt(report.ByModel[0].TotalTokens)))
 		}
 	}
+	if est := report.Totals.EstInputTokens; est > 0 {
+		top := report.ByModel[0]
+		for _, model := range report.ByModel {
+			if model.EstInputTokens > top.EstInputTokens {
+				top = model
+			}
+		}
+		report.Insights = append(report.Insights, fmt.Sprintf("估算输入共 ~%s token，最多的是 %s（~%s）——按 context_usage_ratio×模型窗口推算，仅输入侧、含每轮重复计入的缓存上下文；输出侧无锚点不估算。", formatCompactInt(est), modelDisplayLabel(top.Model, top.ModelName), formatCompactInt(top.EstInputTokens)))
+	}
 	if len(report.ByProject) > 0 {
-		report.Insights = append(report.Insights, fmt.Sprintf("Token 最高项目是 %s，共 %s。", report.ByProject[0].Project, formatCompactInt(report.ByProject[0].TotalTokens)))
+		if report.Totals.TotalTokens == 0 && report.Totals.Credits > 0 {
+			// Qoder 的项目维度 token 也是 0：改按积分取最值，避免"共 0"的假洞察。
+			top := report.ByProject[0]
+			for _, project := range report.ByProject {
+				if project.Credits > top.Credits {
+					top = project
+				}
+			}
+			report.Insights = append(report.Insights, fmt.Sprintf("积分最高项目是 %s，共 %s。", top.Project, formatCredits(top.Credits)))
+		} else {
+			report.Insights = append(report.Insights, fmt.Sprintf("Token 最高项目是 %s，共 %s。", report.ByProject[0].Project, formatCompactInt(report.ByProject[0].TotalTokens)))
+		}
 	}
 	return report
 }

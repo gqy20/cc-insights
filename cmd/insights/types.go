@@ -551,18 +551,20 @@ type TokenUsageBreakdown struct {
 	ServerToolUseRequests    int     `json:"server_tool_use_requests"`
 	TotalTokens              int     `json:"total_tokens"`
 	Credits                  float64 `json:"credits,omitempty"`
-	BillableInputTokens      int     `json:"billable_input_tokens"`
-	RequestCount             int     `json:"request_count"`
-	InputCostCNY             float64 `json:"input_cost_cny"`
-	OutputCostCNY            float64 `json:"output_cost_cny"`
-	CacheReadCostCNY         float64 `json:"cache_read_cost_cny"`
-	CacheCreationCostCNY     float64 `json:"cache_creation_cost_cny"`
-	CostCNY                  float64 `json:"cost_cny"`
-	InputCostUSD             float64 `json:"input_cost_usd,omitempty"`
-	OutputCostUSD            float64 `json:"output_cost_usd,omitempty"`
-	CacheReadCostUSD         float64 `json:"cache_read_cost_usd,omitempty"`
-	CacheCreationCostUSD     float64 `json:"cache_creation_cost_usd,omitempty"`
-	CostUSD                  float64 `json:"cost_usd,omitempty"`
+	// EstInputTokens 是 Qoder 的估算输入 token 总量（渲染层由 ByModel 汇总）。
+	EstInputTokens       int     `json:"est_input_tokens,omitempty"`
+	BillableInputTokens  int     `json:"billable_input_tokens"`
+	RequestCount         int     `json:"request_count"`
+	InputCostCNY         float64 `json:"input_cost_cny"`
+	OutputCostCNY        float64 `json:"output_cost_cny"`
+	CacheReadCostCNY     float64 `json:"cache_read_cost_cny"`
+	CacheCreationCostCNY float64 `json:"cache_creation_cost_cny"`
+	CostCNY              float64 `json:"cost_cny"`
+	InputCostUSD         float64 `json:"input_cost_usd,omitempty"`
+	OutputCostUSD        float64 `json:"output_cost_usd,omitempty"`
+	CacheReadCostUSD     float64 `json:"cache_read_cost_usd,omitempty"`
+	CacheCreationCostUSD float64 `json:"cache_creation_cost_usd,omitempty"`
+	CostUSD              float64 `json:"cost_usd,omitempty"`
 	// 单请求 round-trip（assistant 行 timestamp 与上一条 message 行 timestamp 之差）
 	// 汇总，反映端到端响应速度。不含首 token 延迟粒度。
 	TotalRoundTripMs   int64   `json:"total_round_trip_ms,omitempty"`
@@ -582,7 +584,14 @@ type CostModelStat struct {
 	ServerToolUseRequests int    `json:"server_tool_use_requests"`
 	TotalTokens           int    `json:"total_tokens"`
 	// Credits 是 Qoder 口径的消耗（token 恒 0，无法按单价折算现金）。
-	Credits              float64 `json:"credits,omitempty"`
+	Credits float64 `json:"credits,omitempty"`
+	// ContextRatioSum 是该模型全部已记账请求的 context_usage_ratio 之和（Qoder 独有，
+	// 每次请求的上下文占用比例）。它是估算输入 token 的"原料"，解析层只累加不换算；
+	// 渲染层乘以模型窗口得 EstInputTokens，窗口变化不会污染缓存里的统计。
+	ContextRatioSum float64 `json:"context_ratio_sum,omitempty"`
+	// EstInputTokens 是渲染层填充的估算输入 token（Σratio×窗口），非真实计数，
+	// 仅 Qoder 渠道出现；输出侧官方无任何锚点，不做估算。
+	EstInputTokens       int     `json:"est_input_tokens,omitempty"`
 	AvgOutputTokens      float64 `json:"avg_output_tokens"`
 	CacheReadRatio       float64 `json:"cache_read_ratio"`
 	InputCostCNY         float64 `json:"input_cost_cny"`

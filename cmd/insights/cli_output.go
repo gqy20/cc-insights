@@ -42,8 +42,13 @@ func writeTable(value any, w io.Writer) error {
 	case cliCostReport:
 		fmt.Fprintf(w, "%s Cost · %s\n\n", providerTitle(v.Provider), formatRange(v.TimeRange))
 		if v.Totals.TotalTokens == 0 && v.Totals.Credits > 0 {
-			// Qoder 口径：官方不下发 token（实测 transcript 与运行日志全为 0），消耗以积分计。
-			fmt.Fprintf(w, "请求: %s  积分: %s\n\n", formatInt(v.Totals.RequestCount), formatCredits(v.Totals.Credits))
+			// Qoder 口径：官方不下发 token（实测 transcript 与运行日志全为 0），消耗以积分计；
+			// 输入 token 用 占比×窗口 推算，前缀 ~ 标记估算值。
+			estimate := ""
+			if v.Totals.EstInputTokens > 0 {
+				estimate = fmt.Sprintf("  估算输入: ~%s", formatCompactInt(v.Totals.EstInputTokens))
+			}
+			fmt.Fprintf(w, "请求: %s  积分: %s%s\n\n", formatInt(v.Totals.RequestCount), formatCredits(v.Totals.Credits), estimate)
 		} else {
 			fmt.Fprintf(w, "请求: %s  Token: %s  输出: %s  成本: %s  缓存读取: %s",
 				formatInt(v.Totals.RequestCount),
@@ -61,7 +66,12 @@ func writeTable(value any, w io.Writer) error {
 		for _, item := range v.ByModel {
 			name := modelDisplayLabel(item.Model, item.ModelName)
 			if item.TotalTokens == 0 && item.Credits > 0 {
-				fmt.Fprintf(w, "  %-26s %10s  %10s  %s requests\n", name, formatCredits(item.Credits), "  --  ", formatInt(item.RequestCount))
+				// Qoder 行：token 列给估算输入（~ 前缀），成本列给积分。
+				estimate := "  --  "
+				if item.EstInputTokens > 0 {
+					estimate = "~" + formatCompactInt(item.EstInputTokens)
+				}
+				fmt.Fprintf(w, "  %-26s %10s  %10s  %s requests\n", name, estimate, formatCredits(item.Credits), formatInt(item.RequestCount))
 				continue
 			}
 			fmt.Fprintf(w, "  %-26s %10s  %10s  %s requests\n", name, formatCompactInt(item.TotalTokens), formatCost(item.CostCNY, item.CostUSD), formatInt(item.RequestCount))
@@ -229,6 +239,9 @@ func writeMarkdown(value any, w io.Writer) error {
 		fmt.Fprintf(w, "- 请求: %s\n", formatInt(v.Totals.RequestCount))
 		if v.Totals.TotalTokens == 0 && v.Totals.Credits > 0 {
 			fmt.Fprintf(w, "- 积分: %s\n", formatCredits(v.Totals.Credits))
+			if v.Totals.EstInputTokens > 0 {
+				fmt.Fprintf(w, "- 估算输入: ~%s（按 占比×窗口 推算，仅输入侧）\n", formatCompactInt(v.Totals.EstInputTokens))
+			}
 		} else {
 			fmt.Fprintf(w, "- Token: %s\n- 输出: %s\n- 成本: %s\n- 缓存读取: %s\n", formatCompactInt(v.Totals.TotalTokens), formatCompactInt(v.Totals.OutputTokens), formatCost(v.Totals.CostCNY, v.Totals.CostUSD), formatCompactInt(v.Totals.CacheReadInputTokens))
 			if v.Totals.Credits > 0 {
@@ -244,6 +257,9 @@ func writeMarkdown(value any, w io.Writer) error {
 			metric := fmt.Sprintf("%s · %s", formatCompactInt(item.TotalTokens), formatCost(item.CostCNY, item.CostUSD))
 			if item.TotalTokens == 0 && item.Credits > 0 {
 				metric = formatCredits(item.Credits)
+				if item.EstInputTokens > 0 {
+					metric = fmt.Sprintf("~%s 输入 · %s", formatCompactInt(item.EstInputTokens), formatCredits(item.Credits))
+				}
 			}
 			fmt.Fprintf(w, "- `%s`: %s (%s requests)\n", modelDisplayLabel(item.Model, item.ModelName), metric, formatInt(item.RequestCount))
 		}

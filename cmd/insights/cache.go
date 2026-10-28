@@ -23,7 +23,9 @@ import (
 // 4.23 用量记账按 message.id 去重：一次 API 响应会被拆成多条 assistant 记录，且 Claude
 // 在每条上重复同一份 usage，旧缓存的请求数虚高约 2.3 倍、token/成本虚高约 2.0 倍。
 // 同批引入 credits 与上下文峰值（Qoder）、compact_boundary 压缩代价（Claude+Qoder）。
-const CacheVersion = "4.23"
+// 4.24 qoder 估算输入 token：CostModelStats 新增 context_ratio_sum 累加，旧缓存没有
+// 该字段（恒 0），不重建则估算输入不展示。
+const CacheVersion = "4.24"
 
 // CacheFile 缓存文件结构
 type CacheFile struct {

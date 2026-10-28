@@ -231,7 +231,7 @@ func buildDataFromCache(cache *CacheFile, tf TimeFilter, preset string) (*Dashbo
 		"total_duration", time.Since(startedAt).Round(time.Millisecond),
 		"messages", cached.TotalMessages,
 	)
-	decorateQoderModelNames(data)
+	decorateQoderModels(data)
 	return data, nil
 }
 
@@ -316,7 +316,7 @@ func buildDataFromParsing(tf TimeFilter, preset string) (*DashboardData, error) 
 		TaskPlanAnalysis: aggregate.TaskPlanAnalysis,
 		ToolPerformance:  aggregate.ToolPerformance,
 	}
-	decorateQoderModelNames(data)
+	decorateQoderModels(data)
 	return data, nil
 }
 
