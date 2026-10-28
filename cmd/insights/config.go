@@ -31,6 +31,7 @@ const (
 	ProviderOpenCode Provider = "opencode"
 	ProviderPi       Provider = "pi"
 	ProviderZcode    Provider = "zcode"
+	ProviderQoder    Provider = "qoder"
 	ProviderAll      Provider = "all" // 合并所有可用渠道
 	ProviderAuto     Provider = "auto"
 )
@@ -66,7 +67,7 @@ func registerConfigFlags(fs *flag.FlagSet, target *Config) {
 	fs.StringVar(&target.CacheDir, "cache", target.CacheDir, "缓存目录路径 (默认: ~/.cc-insights/cache/)")
 	fs.StringVar(&target.RulesPath, "rules", target.RulesPath, "Bash 命令分类规则 YAML 路径")
 	fs.StringVar(&target.PricingPath, "pricing", target.PricingPath, "模型定价规则 YAML 路径（默认内置 rules/pricing.yml，可用 ~/.cc-insights/pricing.yml 覆盖）")
-	fs.Var(&target.Provider, "provider", "数据源 provider: claude|codex|opencode|pi|zcode|all|auto（all 为跨渠道合并视图）")
+	fs.Var(&target.Provider, "provider", "数据源 provider: claude|codex|opencode|pi|zcode|qoder|all|auto（all 为跨渠道合并视图）")
 }
 
 // registerServerFlags 注册仅 web 命令使用的服务 flag（监听地址/反向代理）。
@@ -91,17 +92,22 @@ func (p *Provider) String() string {
 func (p *Provider) Set(value string) error {
 	provider := Provider(value)
 	switch provider {
-	case ProviderClaude, ProviderCodex, ProviderOpenCode, ProviderPi, ProviderZcode, ProviderAll, ProviderAuto:
+	case ProviderClaude, ProviderCodex, ProviderOpenCode, ProviderPi, ProviderZcode, ProviderQoder, ProviderAll, ProviderAuto:
 		*p = provider
 		return nil
 	default:
-		return fmt.Errorf("未知 provider %q，可选: claude|codex|opencode|pi|zcode|auto", value)
+		return fmt.Errorf("未知 provider %q，可选: claude|codex|opencode|pi|zcode|qoder|auto", value)
 	}
 }
 
 func resolveProvider(provider Provider, dataDir string) Provider {
 	if provider != ProviderAuto && provider != "" {
 		return provider
+	}
+	// qoder 必须先于 claude 判断：两者都用 <dataDir>/projects/ 存会话，
+	// 且 Qoder transcript 就是 Claude 兼容 schema，只看 projects 会把 qoder 认成 claude。
+	if looksLikeQoderDataDir(dataDir) {
+		return ProviderQoder
 	}
 	if looksLikeClaudeDataDir(dataDir) {
 		return ProviderClaude
@@ -163,6 +169,21 @@ func looksLikeOpenCodeDataDir(dataDir string) bool {
 	return false
 }
 
+// looksLikeQoderDataDir 识别 Qoder 数据目录（~/.qoder，含 projects/ 与 installation_id）。
+// installation_id 是 Qoder 独有标志：实测 ~/.claude 没有该文件，两者 projects/ 布局同名。
+func looksLikeQoderDataDir(dataDir string) bool {
+	if dataDir == "" {
+		return false
+	}
+	if info, err := os.Stat(filepath.Join(dataDir, "projects")); err != nil || !info.IsDir() {
+		return false
+	}
+	if _, err := os.Stat(filepath.Join(dataDir, "installation_id")); err != nil {
+		return false
+	}
+	return true
+}
+
 // looksLikeZCodeDataDir 识别 zcode agent 数据目录（~/.zcode，含 cli/db/db.sqlite）。
 func looksLikeZCodeDataDir(dataDir string) bool {
 	if dataDir == "" {
@@ -185,6 +206,8 @@ func defaultDataDirForProvider(provider Provider) string {
 		return filepath.Join(homeDir, ".pi")
 	case ProviderZcode:
 		return filepath.Join(homeDir, ".zcode")
+	case ProviderQoder:
+		return filepath.Join(homeDir, ".qoder")
 	default:
 		return filepath.Join(homeDir, ".claude")
 	}

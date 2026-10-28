@@ -80,6 +80,19 @@ Claude 的 `projects/**/*.jsonl` 和 Codex 的 `sessions/**/*.jsonl` 是各自 p
 
 `tasks/` 提供 Task 状态和提醒相关信号。目录缺失时返回空 Task 分析。单个 task JSON 损坏时跳过该文件。
 
+### Qoder 状态库
+
+AppData 下的 `main.sqlite` 是只读增强层，补 turn 级 `failed`/`interrupted` 结局、整轮耗时和上下文构成占比。文件缺失、被锁、表结构不匹配或路径探测不到（Linux 路径尚未核实）时整层静默跳过，transcript 已给出的会话、工具、失败与 credits 统计不受影响。上下文构成按天快照写入，所以时间筛选后仍然可用。
+
+### Qoder 运行日志（模型真名）
+
+transcript 里的 `message.model` 是内部别名（`qfmodel`、`smodel` 等），真实模型名只在 `logs/runs/*/qodercli.log` 的 `model_config` 与 `[Routing]` 行里。这一层是纯展示增强：
+
+- 只在 provider 解析为 `qoder` 或 `all` 时扫描，其他 provider 完全不付这个成本。
+- 按 run 目录从新到旧累计，超出扫描预算的文件跳过；日志缺失、超长或排版变化导致查不到时，模型只显示别名。
+- 真名不进入统计 key，也不写进缓存。日志随时会被清掉，若以真名聚合，同一模型会在缓存里裂成两个桶。
+- 报表标签保留别名（`Qwen3.8-Flash (qfmodel)`），因为 `--model` 过滤和聚合口径用的都是别名。
+
 ## 记录级容错
 
 解析 JSONL 时应遵循：

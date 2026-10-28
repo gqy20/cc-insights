@@ -43,7 +43,7 @@ func buildRecommendationDashboardDataWithCache(cache *CacheFile, tf TimeFilter, 
 		rangeInfo.End = tf.End.Format("2006-01-02")
 	}
 
-	return &DashboardData{
+	data := &DashboardData{
 		TimeRange:        rangeInfo,
 		Provider:         firstNonEmpty(cached.Provider, string(resolveProvider(cfg.Provider, cfg.DataDir))),
 		ModelUsage:       modelUsageItemsFromCache(cached),
@@ -56,7 +56,9 @@ func buildRecommendationDashboardDataWithCache(cache *CacheFile, tf TimeFilter, 
 		EventAnalysis:    cloneEventAnalysis(cached.EventAnalysis),
 		TaskPlanAnalysis: cloneTaskPlanAnalysis(cached.TaskPlanAnalysis),
 		RuntimeCache:     cache,
-	}, "cache", nil
+	}
+	decorateQoderModelNames(data)
+	return data, "cache", nil
 }
 
 func buildCLIRecommendationReport(data *DashboardData, opts cliOptions) cliRecommendationReport {

@@ -88,6 +88,8 @@ export interface ProjectStatsData {
 }
 export interface ModelUsageItem {
   model: string
+  // Qoder 的内部别名对应的真实模型名；其他 provider 不下发。
+  model_name?: string
   count: number
   tokens: number
   input_tokens?: number
@@ -194,6 +196,8 @@ export interface ToolPerformanceData {
 // cost + runtime 组子结构（Phase 3c）
 export interface CostByModel {
   model: string
+  // Qoder 的内部别名对应的真实模型名；其他 provider 不下发。
+  model_name?: string
   request_count: number
   total_tokens?: number
   input_tokens?: number
@@ -355,7 +359,7 @@ export interface RuntimeToolSignal {
 
 export interface DashboardData {
   timestamp?: string
-  provider?: 'claude' | 'codex' | 'opencode' | 'pi' | 'all' | 'opencode' | 'pi' | 'all' | string
+  provider?: 'claude' | 'codex' | 'opencode' | 'pi' | 'zcode' | 'qoder' | 'all' | string
   time_range?: TimeRange
   daily_trend: DailyTrend
   commands?: CommandStat[]
@@ -398,7 +402,7 @@ export interface TimelineData {
 // 前端 filter（驱动所有 Query，见 hooks/useFilters.ts）
 export interface Filters {
   preset: string
-  provider?: 'claude' | 'codex' | 'opencode' | 'pi' | 'zcode' | 'all'
+  provider?: 'claude' | 'codex' | 'opencode' | 'pi' | 'zcode' | 'qoder' | 'all'
   start?: string
   end?: string
   project?: string

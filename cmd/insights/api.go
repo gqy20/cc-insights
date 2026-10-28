@@ -231,6 +231,7 @@ func buildDataFromCache(cache *CacheFile, tf TimeFilter, preset string) (*Dashbo
 		"total_duration", time.Since(startedAt).Round(time.Millisecond),
 		"messages", cached.TotalMessages,
 	)
+	decorateQoderModelNames(data)
 	return data, nil
 }
 
@@ -290,7 +291,7 @@ func buildDataFromParsing(tf TimeFilter, preset string) (*DashboardData, error) 
 	hourlyCountsMap = hourlyCountsFromItems(aggregate.HourlyData)
 	projectStatsData := buildProjectStatsData(aggregate.Projects, 0, sessionStats, aggregate.SessionAnalysis)
 
-	return &DashboardData{
+	data := &DashboardData{
 		Timestamp:        time.Now().Format("2006-01-02 15:04:05"),
 		Provider:         string(resolveProvider(cfg.Provider, cfg.DataDir)),
 		TimeRange:        buildTimeRangeInfo(tf, preset),
@@ -314,7 +315,9 @@ func buildDataFromParsing(tf TimeFilter, preset string) (*DashboardData, error) 
 		FileAnalysis:     aggregate.FileAnalysis,
 		TaskPlanAnalysis: aggregate.TaskPlanAnalysis,
 		ToolPerformance:  aggregate.ToolPerformance,
-	}, nil
+	}
+	decorateQoderModelNames(data)
+	return data, nil
 }
 
 func buildTimeRangeInfo(tf TimeFilter, preset string) TimeRangeInfo {

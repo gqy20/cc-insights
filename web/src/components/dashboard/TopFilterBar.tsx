@@ -2,6 +2,7 @@ import { useDashboardData } from '@/api/hooks'
 import { useFilters } from '@/hooks/useFilters'
 import type { Filters } from '@/api/types'
 import { Button } from '@/components/ui/button'
+import { modelOptionLabel } from '@/lib/utils'
 
 const fieldClass =
   'h-9 min-w-[150px] flex-1 rounded-md border border-input bg-background px-3 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
@@ -12,7 +13,10 @@ export function TopFilterBar() {
   // 候选用 preset-only 数据（不受当前 filter 影响），避免选中某项后候选缩水、无法直接切换。
   const cq = useDashboardData({ preset: filters.preset, provider: filters.provider })
 
-  const models = (cq.data?.model_usage ?? []).map((m) => m.model)
+  const models = (cq.data?.model_usage ?? []).map((m) => ({
+    value: m.model,
+    label: modelOptionLabel(m.model, m.model_name),
+  }))
   const tools = (cq.data?.tool_analysis?.tools ?? [])
     .map((t) => t.tool)
     .filter((t): t is string => !!t)
@@ -32,6 +36,7 @@ export function TopFilterBar() {
         <option value="opencode">OpenCode</option>
         <option value="pi">Pi</option>
         <option value="zcode">ZCode</option>
+        <option value="qoder">Qoder</option>
         <option value="all">全渠道合并</option>
       </select>
 
@@ -63,8 +68,8 @@ export function TopFilterBar() {
       >
         <option value="">全部模型</option>
         {models.map((m) => (
-          <option key={m} value={m}>
-            {m}
+          <option key={m.value} value={m.value}>
+            {m.label}
           </option>
         ))}
       </select>

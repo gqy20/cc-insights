@@ -121,6 +121,7 @@ provider 说明：
 | `opencode` | `~/.local/share/opencode` | `storage/message/*.json`、`storage/part/*.json` | opencode 会话与工具调用 |
 | `pi` | `~/.pi` | `agent/sessions/**/*.jsonl` | pi agent 会话、工具调用与结构化失败 |
 | `zcode` | `~/.zcode` | `cli/db/db.sqlite`（只读） | ZCode 等本地 agent：message/part/model_usage 三表给出消息、项目、模型 token、请求时长吞吐、工具调用、Bash 命令族与结构化失败 |
+| `qoder` | `~/.qoder` | `projects/**/*.jsonl`（Claude 兼容 schema）、AppData 下 `main.sqlite`（只读增强）、`logs/runs/*/qodercli.log` | Qoder 会话/工具/失败/任务/技能诊断。官方不下发 token（实测恒为 0），消耗按 `credits` 计，上下文压力用 `context_usage_ratio` 峰值；状态库另补 turn 级 failed/interrupted 结局与整轮耗时；模型别名的真实名称从运行日志解析，仅在展示层套用 |
 | `all` | 各渠道默认目录 | 上述全部合并 | 跨渠道合并视图，不落盘 |
 | `auto` | 按 `--data` 目录检测 | 按目录特征识别 | 适合显式传入数据目录时自动识别 |
 

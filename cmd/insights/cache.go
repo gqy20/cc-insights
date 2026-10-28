@@ -18,7 +18,12 @@ import (
 // 4.20 opencode step-finish tokens 解析落地。
 // 4.21 opencode 新版 sqlite 布局（opencode.db）接入：旧布局缓存为空数据的
 // 机器需要重建才能读到 sqlite 数据。
-const CacheVersion = "4.21"
+// 4.22 qoder provider 接入：transcript 为 Claude 兼容 schema，但 token 恒为 0、
+// 计费口径是 credits；auto 探测顺序调整后 ~/.qoder 不再被认成 claude。
+// 4.23 用量记账按 message.id 去重：一次 API 响应会被拆成多条 assistant 记录，且 Claude
+// 在每条上重复同一份 usage，旧缓存的请求数虚高约 2.3 倍、token/成本虚高约 2.0 倍。
+// 同批引入 credits 与上下文峰值（Qoder）、compact_boundary 压缩代价（Claude+Qoder）。
+const CacheVersion = "4.23"
 
 // CacheFile 缓存文件结构
 type CacheFile struct {

@@ -409,7 +409,7 @@ func (cb *CacheBuilder) buildProjectAggregateIncremental(dataDir string, previou
 		mergeProjectAggregate(aggregate, item.Aggregate)
 		projectFiles[item.Info.RelPath] = item.Cache
 	}
-	if provider == ProviderClaude {
+	if provider == ProviderClaude || provider == ProviderQoder {
 		recordInstalledSkillsLocked(aggregate, dataDir)
 	}
 	if provider == ProviderCodex {
@@ -417,10 +417,22 @@ func (cb *CacheBuilder) buildProjectAggregateIncremental(dataDir string, previou
 			Warn("Codex hook SQLite 扫描失败", "error", err.Error())
 		}
 	}
+	// qoder 状态库在 AppData 下（不在 --data 目录里），只补 transcript 没有的 turn 级信号。
+	if provider == ProviderQoder {
+		if dbPath := qoderStateDBPath(); dbPath != "" {
+			if err := recordQoderStateDBLocked(aggregate, dbPath, TimeFilter{}); err != nil {
+				Warn("Qoder 状态库扫描失败", "path", dbPath, "error", err.Error())
+			}
+			if err := recordQoderContextCategories(aggregate, dbPath, TimeFilter{}); err != nil {
+				Warn("Qoder 上下文构成读取失败", "path", dbPath, "error", err.Error())
+			}
+		}
+	}
 
 	// task_plan_analysis (M4)：任务统计写入 TaskAgg（含按天快照），
 	// finalize 统一生成 TaskPlanAnalysis.Tasks；时间过滤查询经按天快照重建。
-	if provider == ProviderClaude {
+	// qoder 的 tasks/<sessionID>/N.json 与 claude 同构（status 值一致），共用扫描。
+	if provider == ProviderClaude || provider == ProviderQoder {
 		if err := recordClaudeTasksIntoAgg(dataDir, aggregate); err != nil {
 			Warn("tasks/ 目录扫描失败", "error", err.Error())
 		}
@@ -651,6 +663,10 @@ func parseLogFileAggregate(provider Provider, filePath string, tf TimeFilter, fi
 			Warn("zcode db 解析失败", "path", filePath, "error", err.Error())
 		}
 		return 0, nil
+	case ProviderQoder:
+		// Claude 兼容 schema，外加按文件来源补全子代理身份。
+		parseQoderSessionFile(filePath, tf, fileAggregate)
+		return 0, nil
 	default:
 		parseProjectFileAggregate(filePath, tf, fileAggregate)
 		return 0, nil
@@ -765,6 +781,17 @@ func (cb *CacheBuilder) GetLastDataModified() (time.Time, error) {
 	// （log/ 等高频变化目录会误触发重建），单独取 db+wal+shm 的 mtime。
 	if provider == ProviderOpenCode {
 		if dbPath := openCodeDBPathForDataDir(cb.DataDir); fileExists(dbPath) {
+			for _, suffix := range []string{"", "-wal", "-shm"} {
+				if info, err := os.Stat(dbPath + suffix); err == nil && info.ModTime().After(lastMod) {
+					lastMod = info.ModTime()
+				}
+			}
+		}
+	}
+	// qoder：turn 级信号来自 AppData 下的状态库，不在 --data 目录内，
+	// 必须单独纳入变更信号，否则新 turn 不会触发缓存重建。
+	if provider == ProviderQoder {
+		if dbPath := qoderStateDBPath(); dbPath != "" {
 			for _, suffix := range []string{"", "-wal", "-shm"} {
 				if info, err := os.Stat(dbPath + suffix); err == nil && info.ModTime().After(lastMod) {
 					lastMod = info.ModTime()

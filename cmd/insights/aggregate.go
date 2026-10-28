@@ -1275,14 +1275,32 @@ func mergeContextStats(dst *ProjectAggregate, src *ContextAnalysisData) {
 	}
 	dst.ContextStats.TokenEvents += src.TokenEvents
 	dst.ContextStats.ContextCompactions += src.ContextCompactions
+	dst.ContextStats.CompactDroppedTokens += src.CompactDroppedTokens
+	dst.ContextStats.CompactDurationMs += src.CompactDurationMs
+	dst.ContextStats.CompactMessagesSummary += src.CompactMessagesSummary
+	if src.CompactMaxPreTokens > dst.ContextStats.CompactMaxPreTokens {
+		dst.ContextStats.CompactMaxPreTokens = src.CompactMaxPreTokens
+	}
 	if src.MaxInputTokens > dst.ContextStats.MaxInputTokens {
 		dst.ContextStats.MaxInputTokens = src.MaxInputTokens
 	}
 	if src.MaxTotalTokens > dst.ContextStats.MaxTotalTokens {
 		dst.ContextStats.MaxTotalTokens = src.MaxTotalTokens
 	}
+	if src.PeakContextRatio > dst.ContextStats.PeakContextRatio {
+		dst.ContextStats.PeakContextRatio = src.PeakContextRatio
+	}
 	dst.ContextStats.TotalCachedInputTokens += src.TotalCachedInputTokens
 	dst.ContextStats.TotalReasoningTokens += src.TotalReasoningTokens
+	// 上下文构成占比按类别取最大值：max 是单调量，跨文件/跨天合并都不会失真。
+	for name, share := range src.CategoryShares {
+		if dst.ContextStats.CategoryShares == nil {
+			dst.ContextStats.CategoryShares = make(map[string]float64, len(src.CategoryShares))
+		}
+		if share > dst.ContextStats.CategoryShares[name] {
+			dst.ContextStats.CategoryShares[name] = share
+		}
+	}
 }
 
 // mergeTaskAgg 合并任务中间聚合（只读 src，写 dst），跨文件/跨天合并用。

@@ -26,6 +26,8 @@ func recordCostUsageLocked(agg *ProjectAggregate, msg AssistantMessage, record P
 	modelStat.CacheCreationTokens += msg.Usage.CacheCreationInputTokens
 	modelStat.ServerToolUseRequests += serverToolUseRequests
 	modelStat.TotalTokens += totalTokens
+	modelStat.Credits += msg.Usage.Credits
+	recordContextRatio(agg, msg.Usage.ContextUsageRatio)
 	if roundTripMs > 0 {
 		modelStat.TotalRoundTripMs += roundTripMs
 	}
@@ -35,6 +37,7 @@ func recordCostUsageLocked(agg *ProjectAggregate, msg AssistantMessage, record P
 	projectStat.InputTokens += msg.Usage.InputTokens
 	projectStat.OutputTokens += msg.Usage.OutputTokens
 	projectStat.TotalTokens += totalTokens
+	projectStat.Credits += msg.Usage.Credits
 	if roundTripMs > 0 {
 		projectStat.TotalRoundTripMs += roundTripMs
 	}
@@ -45,6 +48,7 @@ func recordCostUsageLocked(agg *ProjectAggregate, msg AssistantMessage, record P
 		sessionStat.InputTokens += msg.Usage.InputTokens
 		sessionStat.OutputTokens += msg.Usage.OutputTokens
 		sessionStat.TotalTokens += totalTokens
+		sessionStat.Credits += msg.Usage.Credits
 		if roundTripMs > 0 {
 			sessionStat.TotalRoundTripMs += roundTripMs
 		}
@@ -61,8 +65,21 @@ func recordCostUsageLocked(agg *ProjectAggregate, msg AssistantMessage, record P
 	agentStat.InputTokens += msg.Usage.InputTokens
 	agentStat.OutputTokens += msg.Usage.OutputTokens
 	agentStat.TotalTokens += totalTokens
+	agentStat.Credits += msg.Usage.Credits
 	if roundTripMs > 0 {
 		agentStat.TotalRoundTripMs += roundTripMs
+	}
+}
+
+// recordContextRatio 记录上下文占用峰值。峰值是单调量，可安全跨文件/跨渠道合并；
+// 压缩次数由解析循环里的回落检测负责，不在这里累加。
+func recordContextRatio(agg *ProjectAggregate, ratio float64) {
+	if ratio <= 0 {
+		return
+	}
+	stats := ensureContextStats(agg)
+	if ratio > stats.PeakContextRatio {
+		stats.PeakContextRatio = ratio
 	}
 }
 
@@ -136,6 +153,7 @@ func mergeCostModelStat(dst *CostModelStat, src *CostModelStat) {
 	dst.CacheCreationTokens += src.CacheCreationTokens
 	dst.ServerToolUseRequests += src.ServerToolUseRequests
 	dst.TotalTokens += src.TotalTokens
+	dst.Credits += src.Credits
 	dst.TotalRoundTripMs += src.TotalRoundTripMs
 	dst.TotalTTFTMs += src.TotalTTFTMs
 }
@@ -145,6 +163,7 @@ func mergeCostProjectStat(dst *CostProjectStat, src *CostProjectStat) {
 	dst.InputTokens += src.InputTokens
 	dst.OutputTokens += src.OutputTokens
 	dst.TotalTokens += src.TotalTokens
+	dst.Credits += src.Credits
 	dst.TotalRoundTripMs += src.TotalRoundTripMs
 }
 
@@ -153,6 +172,7 @@ func mergeCostSessionStat(dst *CostSessionStat, src *CostSessionStat) {
 	dst.InputTokens += src.InputTokens
 	dst.OutputTokens += src.OutputTokens
 	dst.TotalTokens += src.TotalTokens
+	dst.Credits += src.Credits
 	dst.TotalRoundTripMs += src.TotalRoundTripMs
 }
 
@@ -161,6 +181,7 @@ func mergeCostAgentStat(dst *CostAgentStat, src *CostAgentStat) {
 	dst.InputTokens += src.InputTokens
 	dst.OutputTokens += src.OutputTokens
 	dst.TotalTokens += src.TotalTokens
+	dst.Credits += src.Credits
 	dst.TotalRoundTripMs += src.TotalRoundTripMs
 }
 
@@ -245,6 +266,7 @@ func (agg *ProjectAggregate) finalizeCostAnalysis() {
 		analysis.Totals.CacheCreationInputTokens += statCopy.CacheCreationTokens
 		analysis.Totals.ServerToolUseRequests += statCopy.ServerToolUseRequests
 		analysis.Totals.TotalTokens += statCopy.TotalTokens
+		analysis.Totals.Credits += statCopy.Credits
 		analysis.Totals.RequestCount += statCopy.RequestCount
 		analysis.Totals.TotalRoundTripMs += statCopy.TotalRoundTripMs
 		analysis.ByModel = append(analysis.ByModel, statCopy)

@@ -9,7 +9,14 @@
 
 ## [Unreleased]
 
+### 新增
+- **Qoder provider 支持**：新增 `--provider qoder`（默认数据目录 `~/.qoder`）。Qoder 的 transcript 是 Claude 兼容 schema，会话、项目、工具调用、结构化失败、任务与技能诊断开箱可用；子代理 transcript 位于 `projects/<slug>/<session>/subagents/agent-*.jsonl`，其可读名字（`Explore` / `general-purpose`）从同级 `.meta.json` 的 `agentType` 补全。Qoder 官方**不下发 token**（实测 transcript 与运行日志的 `input_tokens`/`output_tokens` 恒为 0），因此消耗改用 `credits` 口径展示，上下文压力改用 `usage.context_usage_ratio` 峰值；AppData 下的 `main.sqlite` 作为只读增强层，补充 turn 级 `failed`/`interrupted` 结局与整轮耗时。Linux 平台的状态库路径尚未核实，探测不到时整层静默跳过。
+- **Qoder 模型别名还原真实名称**：transcript 的 `message.model` 是内部别名（`qfmodel`、`smodel`、`qmodel_38max`、`dfmodel`），真名只出现在 `logs/runs/*/qodercli.log`。现在从 `model_config={"key":..,"display_name":..}` 与 `[Routing] Validated model 'x' (Y) from catalog` 两类行解析别名→真名（实测 5 个别名全部命中），`tok`/`sum` 表格、Markdown、JSON 的 `model_name` 字段与 Web 图表、模型筛选下拉同步展示。真名只在渲染边缘套用，聚合 key 与缓存仍是别名——日志随时可能被清掉，用真名聚合会让同一模型在缓存里裂成两个桶；查不到就退回别名，统计口径不变。扫描仅在 provider 为 `qoder`/`all` 时发生（实测 73MB 日志 0.15s，Claude 路径零成本），并按 run 目录从新到旧设字节预算，超预算的日志跳过。
+
 ### 修复
+- **模型请求数与 token/成本重复计数**：一次 API 响应在 transcript 里被拆成多条 assistant 记录（`thinking`/`text`/`tool_use` 各一条），Claude 还会把同一份 `usage` 原样重复写在这几条记录上（实测 572 个多记录响应中 535 个 usage 完全相同，最多重复 8 次）。此前按记录逐条记账，导致请求数虚高约 2.3 倍、token 与成本虚高约 2.0 倍。现按 `message.id` 去重，`tok`/`sum` 与缓存口径同步修正（实测某机器 `--provider claude -p all` 由 1,919 请求 / 209.0M token 修正为 844 / 103.6M）。无 `message.id` 的记录保持逐条计数。
+- **`-p 7d/30d/90d` 排除当天数据**：时间窗口的 `End` 被归一到"今天 00:00"，当天进行中的会话整段消失（实测 24h 结果集反而大于 30d）。`End` 改为当天 23:59:59。
+- **上下文压缩缺少代价证据**：`system/compact_boundary` 行此前未被采集，现在压缩次数、释放的 token、压缩自身耗时与单次压缩前的上下文峰值都会进入按天快照，可在 `tok` 与 Web 中查看（Claude 与 Qoder 都写这类记录）。
 - **Web 忽略 `--data` 参数**：Dashboard 收到带 `provider=claude`/`codex` 的请求时，会无条件把数据目录重置为该 provider 的默认目录（如 `~/.claude`），导致用户通过 `--data` 指定的自定义数据目录被丢弃、预建缓存无法复用、每次请求都全量重扫并触发 60s 超时（HTTP 408）。现新增 `Config.DataDirExplicit` 标记：用户显式传入 `--data` 时，切换 provider 不再覆盖数据目录。
 - **损坏 JSONL 行导致解析死循环**：当 `projects/*.jsonl`、`history.jsonl` 或 Codex session 文件中存在被 NUL 字节污染的损坏行（崩溃/截断写入的产物）时，流式 `json.Decoder` 既不返回 EOF 也不前移读取位置，配合“遇错 continue”的循环会陷入 100% CPU 死循环。现改为有内存上限的逐行读取与 `json.Unmarshal`，可安全跳过损坏行并继续解析其余有效行。
 

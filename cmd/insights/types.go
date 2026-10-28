@@ -84,6 +84,7 @@ type WeekdayItem struct {
 // ModelUsageItem 单个模型使用统计
 type ModelUsageItem struct {
 	Model                 string `json:"model"`
+	ModelName             string `json:"model_name,omitempty"` // Qoder 别名对应的真实模型名，仅渲染期填充；Claude 等 provider 恒定为空
 	Count                 int    `json:"count"`
 	Tokens                int    `json:"tokens"`
 	InputTokens           int    `json:"input_tokens,omitempty"`
@@ -549,6 +550,7 @@ type TokenUsageBreakdown struct {
 	CacheCreationInputTokens int     `json:"cache_creation_input_tokens"`
 	ServerToolUseRequests    int     `json:"server_tool_use_requests"`
 	TotalTokens              int     `json:"total_tokens"`
+	Credits                  float64 `json:"credits,omitempty"`
 	BillableInputTokens      int     `json:"billable_input_tokens"`
 	RequestCount             int     `json:"request_count"`
 	InputCostCNY             float64 `json:"input_cost_cny"`
@@ -570,26 +572,29 @@ type TokenUsageBreakdown struct {
 
 // CostModelStat 按模型统计 token
 type CostModelStat struct {
-	Model                 string  `json:"model"`
-	RequestCount          int     `json:"request_count"`
-	InputTokens           int     `json:"input_tokens"`
-	OutputTokens          int     `json:"output_tokens"`
-	CacheReadTokens       int     `json:"cache_read_input_tokens"`
-	CacheCreationTokens   int     `json:"cache_creation_input_tokens"`
-	ServerToolUseRequests int     `json:"server_tool_use_requests"`
-	TotalTokens           int     `json:"total_tokens"`
-	AvgOutputTokens       float64 `json:"avg_output_tokens"`
-	CacheReadRatio        float64 `json:"cache_read_ratio"`
-	InputCostCNY          float64 `json:"input_cost_cny"`
-	OutputCostCNY         float64 `json:"output_cost_cny"`
-	CacheReadCostCNY      float64 `json:"cache_read_cost_cny"`
-	CacheCreationCostCNY  float64 `json:"cache_creation_cost_cny"`
-	CostCNY               float64 `json:"cost_cny"`
-	InputCostUSD          float64 `json:"input_cost_usd,omitempty"`
-	OutputCostUSD         float64 `json:"output_cost_usd,omitempty"`
-	CacheReadCostUSD      float64 `json:"cache_read_cost_usd,omitempty"`
-	CacheCreationCostUSD  float64 `json:"cache_creation_cost_usd,omitempty"`
-	CostUSD               float64 `json:"cost_usd,omitempty"`
+	Model                 string `json:"model"`
+	ModelName             string `json:"model_name,omitempty"` // Qoder 别名对应的真实模型名，仅渲染期填充；Claude 等 provider 恒定为空
+	RequestCount          int    `json:"request_count"`
+	InputTokens           int    `json:"input_tokens"`
+	OutputTokens          int    `json:"output_tokens"`
+	CacheReadTokens       int    `json:"cache_read_input_tokens"`
+	CacheCreationTokens   int    `json:"cache_creation_input_tokens"`
+	ServerToolUseRequests int    `json:"server_tool_use_requests"`
+	TotalTokens           int    `json:"total_tokens"`
+	// Credits 是 Qoder 口径的消耗（token 恒 0，无法按单价折算现金）。
+	Credits              float64 `json:"credits,omitempty"`
+	AvgOutputTokens      float64 `json:"avg_output_tokens"`
+	CacheReadRatio       float64 `json:"cache_read_ratio"`
+	InputCostCNY         float64 `json:"input_cost_cny"`
+	OutputCostCNY        float64 `json:"output_cost_cny"`
+	CacheReadCostCNY     float64 `json:"cache_read_cost_cny"`
+	CacheCreationCostCNY float64 `json:"cache_creation_cost_cny"`
+	CostCNY              float64 `json:"cost_cny"`
+	InputCostUSD         float64 `json:"input_cost_usd,omitempty"`
+	OutputCostUSD        float64 `json:"output_cost_usd,omitempty"`
+	CacheReadCostUSD     float64 `json:"cache_read_cost_usd,omitempty"`
+	CacheCreationCostUSD float64 `json:"cache_creation_cost_usd,omitempty"`
+	CostUSD              float64 `json:"cost_usd,omitempty"`
 	// 单请求 round-trip 累计耗时（ms），用于派生 AvgRoundTripMs / OutputTokensPerSec。
 	TotalRoundTripMs int64 `json:"total_round_trip_ms,omitempty"`
 	// 首 token 延迟累计（ms，zcode model_usage.time_to_first_token_ms），派生 AvgTTFTMs。
@@ -601,35 +606,38 @@ type CostModelStat struct {
 
 // CostProjectStat 按项目统计 token
 type CostProjectStat struct {
-	Project          string `json:"project"`
-	RequestCount     int    `json:"request_count"`
-	TotalTokens      int    `json:"total_tokens"`
-	InputTokens      int    `json:"input_tokens"`
-	OutputTokens     int    `json:"output_tokens"`
-	TotalRoundTripMs int64  `json:"total_round_trip_ms,omitempty"`
+	Project          string  `json:"project"`
+	RequestCount     int     `json:"request_count"`
+	TotalTokens      int     `json:"total_tokens"`
+	Credits          float64 `json:"credits,omitempty"`
+	InputTokens      int     `json:"input_tokens"`
+	OutputTokens     int     `json:"output_tokens"`
+	TotalRoundTripMs int64   `json:"total_round_trip_ms,omitempty"`
 }
 
 // CostSessionStat 按会话统计 token
 type CostSessionStat struct {
-	SessionID        string `json:"session_id"`
-	Project          string `json:"project"`
-	Model            string `json:"model,omitempty"`
-	RequestCount     int    `json:"request_count"`
-	TotalTokens      int    `json:"total_tokens"`
-	InputTokens      int    `json:"input_tokens"`
-	OutputTokens     int    `json:"output_tokens"`
-	TotalRoundTripMs int64  `json:"total_round_trip_ms,omitempty"`
+	SessionID        string  `json:"session_id"`
+	Project          string  `json:"project"`
+	Model            string  `json:"model,omitempty"`
+	RequestCount     int     `json:"request_count"`
+	TotalTokens      int     `json:"total_tokens"`
+	Credits          float64 `json:"credits,omitempty"`
+	InputTokens      int     `json:"input_tokens"`
+	OutputTokens     int     `json:"output_tokens"`
+	TotalRoundTripMs int64   `json:"total_round_trip_ms,omitempty"`
 }
 
 // CostAgentStat 按 agent/subagent 统计 token
 type CostAgentStat struct {
-	AgentID          string `json:"agent_id"`
-	IsSidechain      bool   `json:"is_sidechain"`
-	RequestCount     int    `json:"request_count"`
-	TotalTokens      int    `json:"total_tokens"`
-	InputTokens      int    `json:"input_tokens"`
-	OutputTokens     int    `json:"output_tokens"`
-	TotalRoundTripMs int64  `json:"total_round_trip_ms,omitempty"`
+	AgentID          string  `json:"agent_id"`
+	IsSidechain      bool    `json:"is_sidechain"`
+	RequestCount     int     `json:"request_count"`
+	TotalTokens      int     `json:"total_tokens"`
+	Credits          float64 `json:"credits,omitempty"`
+	InputTokens      int     `json:"input_tokens"`
+	OutputTokens     int     `json:"output_tokens"`
+	TotalRoundTripMs int64   `json:"total_round_trip_ms,omitempty"`
 }
 
 // CostAnalysisData token/成本分析结果
@@ -645,16 +653,27 @@ type CostAnalysisData struct {
 }
 
 type ContextAnalysisData struct {
-	TokenEvents            int     `json:"token_events"`
-	ContextCompactions     int     `json:"context_compactions"`
-	MaxInputTokens         int     `json:"max_input_tokens"`
-	MaxTotalTokens         int     `json:"max_total_tokens"`
-	CacheHitRate           float64 `json:"cache_hit_rate"`
-	ReasoningOutputRatio   float64 `json:"reasoning_output_ratio"`
-	AvgInputTokens         float64 `json:"avg_input_tokens"`
-	AvgReasoningTokens     float64 `json:"avg_reasoning_tokens"`
-	TotalCachedInputTokens int     `json:"total_cached_input_tokens"`
-	TotalReasoningTokens   int     `json:"total_reasoning_tokens"`
+	TokenEvents        int `json:"token_events"`
+	ContextCompactions int `json:"context_compactions"`
+	// 压缩代价来自 system/compact_boundary 行的 compactMetadata（Claude 与 Qoder 都写），
+	// 比按 usage 比例回落推断准确。以下为累加量：丢掉的 token、压缩自身耗时、被摘要的消息数。
+	CompactDroppedTokens   int   `json:"compact_dropped_tokens,omitempty"`
+	CompactDurationMs      int64 `json:"compact_duration_ms,omitempty"`
+	CompactMessagesSummary int   `json:"compact_messages_summarized,omitempty"`
+	// CompactMaxPreTokens 是单次压缩前的上下文峰值（max 语义，反映最坏情况）。
+	CompactMaxPreTokens int `json:"compact_max_pre_tokens,omitempty"`
+	// PeakContextRatio 是会话内观测到的最高上下文占用比例（Qoder 的
+	// usage.context_usage_ratio；Claude 不下发该字段，保持 0）。
+	PeakContextRatio       float64            `json:"peak_context_ratio,omitempty"`
+	CategoryShares         map[string]float64 `json:"category_shares,omitempty"`
+	MaxInputTokens         int                `json:"max_input_tokens"`
+	MaxTotalTokens         int                `json:"max_total_tokens"`
+	CacheHitRate           float64            `json:"cache_hit_rate"`
+	ReasoningOutputRatio   float64            `json:"reasoning_output_ratio"`
+	AvgInputTokens         float64            `json:"avg_input_tokens"`
+	AvgReasoningTokens     float64            `json:"avg_reasoning_tokens"`
+	TotalCachedInputTokens int                `json:"total_cached_input_tokens"`
+	TotalReasoningTokens   int                `json:"total_reasoning_tokens"`
 }
 
 // FileAnalysisData 文件与编辑质量分析结果
@@ -1216,23 +1235,26 @@ type ProjectAggregate struct {
 
 // ProjectRecord projects/*.jsonl 记录
 type ProjectRecord struct {
-	ParentUUID            string          `json:"parentUuid"`
-	IsSidechain           bool            `json:"isSidechain"`
-	UserType              string          `json:"userType"`
-	Cwd                   string          `json:"cwd"`
-	SessionID             string          `json:"sessionId"`
-	Version               string          `json:"version"`
-	GitBranch             string          `json:"gitBranch"`
-	AgentID               string          `json:"agentId"`
-	AttributionSkill      string          `json:"attributionSkill"`
-	Type                  string          `json:"type"`    // "user" | "assistant"
-	Message               json.RawMessage `json:"message"` // 可以是 user 或 assistant 消息
-	Attachment            json.RawMessage `json:"attachment"`
-	Content               json.RawMessage `json:"content"`
-	Name                  string          `json:"name"`
-	PermissionMode        string          `json:"permissionMode"`
-	Mode                  string          `json:"mode"`
-	Subtype               string          `json:"subtype"`
+	ParentUUID       string          `json:"parentUuid"`
+	IsSidechain      bool            `json:"isSidechain"`
+	UserType         string          `json:"userType"`
+	Cwd              string          `json:"cwd"`
+	SessionID        string          `json:"sessionId"`
+	Version          string          `json:"version"`
+	GitBranch        string          `json:"gitBranch"`
+	AgentID          string          `json:"agentId"`
+	AttributionSkill string          `json:"attributionSkill"`
+	Type             string          `json:"type"`    // "user" | "assistant"
+	Message          json.RawMessage `json:"message"` // 可以是 user 或 assistant 消息
+	Attachment       json.RawMessage `json:"attachment"`
+	Content          json.RawMessage `json:"content"`
+	Name             string          `json:"name"`
+	PermissionMode   string          `json:"permissionMode"`
+	Mode             string          `json:"mode"`
+	Subtype          string          `json:"subtype"`
+	// CompactMetadata 是 system/compact_boundary 行的压缩元数据：
+	// trigger/preTokens/postTokens/messagesSummarized/durationMs。
+	CompactMetadata       json.RawMessage `json:"compactMetadata"`
 	StopReason            string          `json:"stopReason"`
 	Status                string          `json:"status"`
 	LastPrompt            string          `json:"lastPrompt"`
@@ -1254,16 +1276,31 @@ type AssistantMessage struct {
 	Role    string             `json:"role"`
 	Model   string             `json:"model"`
 	Content []AssistantContent `json:"content"`
-	Usage   struct {
-		InputTokens              int `json:"input_tokens"`
-		OutputTokens             int `json:"output_tokens"`
-		CacheReadInputTokens     int `json:"cache_read_input_tokens"`
-		CacheCreationInputTokens int `json:"cache_creation_input_tokens"`
-		ServerToolUse            struct {
-			WebSearchRequests int `json:"web_search_requests"`
-			WebFetchRequests  int `json:"web_fetch_requests"`
-		} `json:"server_tool_use"`
-	} `json:"usage"`
+	Usage   MessageUsage       `json:"usage"`
+}
+
+// MessageUsage 是 Claude 兼容 transcript 的用量载体。
+//
+// Claude/Codex 走 token 口径。Qoder 的 token 字段恒为 0（实测 transcript 与运行日志
+// 都下发 0，339/339 条 usage 记录全零），改用 credits 计费；context_usage_ratio 是
+// 该次请求的上下文占用比例，只用于取峰值——压缩计数认 compact_boundary 行。
+type MessageUsage struct {
+	InputTokens              int `json:"input_tokens"`
+	OutputTokens             int `json:"output_tokens"`
+	CacheReadInputTokens     int `json:"cache_read_input_tokens"`
+	CacheCreationInputTokens int `json:"cache_creation_input_tokens"`
+	ServerToolUse            struct {
+		WebSearchRequests int `json:"web_search_requests"`
+		WebFetchRequests  int `json:"web_fetch_requests"`
+	} `json:"server_tool_use"`
+	Credits           float64 `json:"credits,omitempty"`
+	ContextUsageRatio float64 `json:"context_usage_ratio,omitempty"`
+}
+
+// hasAccounting 判断这条 usage 是否携带可记账的用量。
+// 用于在同一次 API 响应的多条拆分记录里挑出该计哪一条。
+func (u MessageUsage) hasAccounting() bool {
+	return u.InputTokens+u.OutputTokens+u.CacheReadInputTokens+u.CacheCreationInputTokens > 0 || u.Credits > 0
 }
 
 // AssistantContent 支持多种内容类型（text, thinking）

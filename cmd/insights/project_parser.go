@@ -66,12 +66,22 @@ func ParseProjectsConcurrentOnceFromDir(tf TimeFilter, dataDir string) (*Project
 		mergeProjectAggregate(aggregate, fileAggregate)
 	}
 
-	if provider == ProviderClaude {
+	if provider == ProviderClaude || provider == ProviderQoder {
 		recordInstalledSkillsLocked(aggregate, dataDir)
 	}
 	if provider == ProviderCodex {
 		if err := recordCodexSQLiteHooksLocked(aggregate, dataDir, tf); err != nil {
 			Warn("Codex hook SQLite 扫描失败", "error", err.Error())
+		}
+	}
+	if provider == ProviderQoder {
+		if dbPath := qoderStateDBPath(); dbPath != "" {
+			if err := recordQoderStateDBLocked(aggregate, dbPath, tf); err != nil {
+				Warn("Qoder 状态库扫描失败", "path", dbPath, "error", err.Error())
+			}
+			if err := recordQoderContextCategories(aggregate, dbPath, tf); err != nil {
+				Warn("Qoder 上下文构成读取失败", "path", dbPath, "error", err.Error())
+			}
 		}
 	}
 
@@ -83,6 +93,12 @@ func ParseProjectsConcurrentOnceFromDir(tf TimeFilter, dataDir string) (*Project
 
 // parseProjectFileAggregate 解析单个项目文件并更新聚合数据
 func parseProjectFileAggregate(filePath string, tf TimeFilter, agg *ProjectAggregate) {
+	parseProjectFileAggregateWithAgentName(filePath, tf, agg, "")
+}
+
+// parseProjectFileAggregateWithAgentName 额外接受一个子代理可读名字：Qoder 不为子代理
+// 写 Claude 那种 agent-name 记录，名字只能由调用方从 subagents/*.meta.json 取。
+func parseProjectFileAggregateWithAgentName(filePath string, tf TimeFilter, agg *ProjectAggregate, agentName string) {
 	f, err := os.Open(filePath)
 	if err != nil {
 		return
@@ -92,11 +108,18 @@ func parseProjectFileAggregate(filePath string, tf TimeFilter, agg *ProjectAggre
 	pendingTools := make(map[string]pendingToolCall)
 	sessionActiveSkills := make(map[string][]string)
 	lastMsgTs := make(map[string]time.Time) // sessionID -> 上一条带 timestamp 的 message 行时间，用于算单请求 round-trip
+	// 一次 API 响应的用量只记一次（见 shouldAccountResponse）。
+	accountedResponses := make(map[string]bool)
+	// 子代理文件里出现过的 agentId，解析结束后统一补可读名字。
+	seenAgentIDs := make(map[string]bool)
 	scanner := newJSONLScanner(f)
 	for scanner.Scan() {
 		var record ProjectRecord
 		if err := json.Unmarshal(scanner.Bytes(), &record); err != nil {
 			continue // 跳过损坏/非法 JSON 行
+		}
+		if agentName != "" && record.AgentID != "" {
+			seenAgentIDs[record.AgentID] = true
 		}
 
 		timestamp, hasTimestamp := parseProjectRecordTimestamp(record.Timestamp)
@@ -124,6 +147,13 @@ func parseProjectFileAggregate(filePath string, tf TimeFilter, agg *ProjectAggre
 					sessionActiveSkills[record.SessionID] = appendUniqueStrings(sessionActiveSkills[record.SessionID], activeNames...)
 				}
 			}
+		}
+
+		// system/compact_boundary：Claude 与 Qoder 都会写，compactMetadata 带压缩前后
+		// token、被摘要的消息数与压缩自身耗时。这是权威的压缩证据，不再按上下文比例回落推断。
+		if record.Type == "system" && record.Subtype == "compact_boundary" && hasTimestamp {
+			recordCompactBoundaryLocked(agg, record, timestamp.Format("2006-01-02"))
+			continue
 		}
 
 		// system/turn_duration：官方一整轮耗时，按 project/daily/session 四层累积（session 维度
@@ -200,7 +230,7 @@ func parseProjectFileAggregate(filePath string, tf TimeFilter, agg *ProjectAggre
 		dailyRuntimeAgg := ensureDailyRuntimeAggregate(agg, dateKey)
 		dailyProjectRuntimeAgg := ensureDailyProjectRuntimeAggregate(agg, dateKey, projectName)
 		dailySessionRuntimeAgg := ensureDailySessionRuntimeAggregate(agg, dateKey, record.SessionID)
-		if msg.Model != "" {
+		if msg.Model != "" && shouldAccountResponse(msg.ID, msg.Usage, accountedResponses) {
 			tokens := msg.Usage.InputTokens + msg.Usage.OutputTokens
 			recordModelUsageLocked(agg, msg.Model, tokens)
 			recordModelUsageLocked(dailyRuntimeAgg, msg.Model, tokens)
@@ -320,6 +350,9 @@ func parseProjectFileAggregate(filePath string, tf TimeFilter, agg *ProjectAggre
 			}
 		}
 	}
+
+	// 名字要在所有计数都落完之后补，才能覆盖缺失结果路径新建的 agent 桶。
+	applyQoderAgentName(agg, agentName, seenAgentIDs)
 }
 
 // requestRoundTripMs 计算本次 assistant 响应与上一条 message 行的时间差(ms)。
@@ -352,4 +385,66 @@ func parseProjectRecordTimestamp(value string) (time.Time, bool) {
 
 func hasTimeFilter(tf TimeFilter) bool {
 	return tf.Start != nil || tf.End != nil
+}
+
+// shouldAccountResponse 判断这条 assistant 记录是否代表一次尚未记账的 API 响应。
+//
+// 一次响应在 transcript 里被拆成多条记录（thinking/text/tool_use 各一条），Claude 会把
+// 同一份 usage 原样重复在每条上（实测 572 个多记录响应中 535 个 usage 完全相同，最多重复
+// 8 次）；Qoder 只在其中一条上带 usage。不去重会让请求数虚高 2.3-2.8 倍，token 与成本
+// 同步虚高。无 message.id 时无法去重，退回逐条计数以保持旧行为。
+func shouldAccountResponse(id string, usage MessageUsage, seen map[string]bool) bool {
+	if id == "" {
+		return true
+	}
+	if !usage.hasAccounting() {
+		// 不占用记账名额：先遇到的无用量拆分记录不能把真正带 usage 的那条挡在门外。
+		return false
+	}
+	if seen[id] {
+		return false
+	}
+	seen[id] = true
+	return true
+}
+
+// recordCompactBoundaryLocked 记一次上下文压缩及其代价。
+// dropped 用单次 preTokens-postTokens 差值：compactMetadata 里的
+// cumulativeDroppedTokens 是全 session 累计量，逐条再求和会重复计数。
+func recordCompactBoundaryLocked(agg *ProjectAggregate, record ProjectRecord, dateKey string) {
+	var meta struct {
+		Trigger            string `json:"trigger"`
+		PreTokens          int    `json:"preTokens"`
+		PostTokens         int    `json:"postTokens"`
+		MessagesSummarized int    `json:"messagesSummarized"`
+		DurationMs         int64  `json:"durationMs"`
+	}
+	// 元数据缺失（旧版本只写 subtype）时仍然计一次压缩。
+	_ = json.Unmarshal(record.CompactMetadata, &meta)
+
+	dropped := meta.PreTokens - meta.PostTokens
+	if dropped < 0 {
+		dropped = 0
+	}
+	targets := []*ProjectAggregate{agg}
+	if dateKey != "" && dateKey != "0001-01-01" {
+		targets = append(targets, ensureDailyRuntimeAggregate(agg, dateKey))
+	}
+	for _, target := range targets {
+		stats := ensureContextStats(target)
+		stats.ContextCompactions++
+		stats.CompactDroppedTokens += dropped
+		stats.CompactDurationMs += meta.DurationMs
+		stats.CompactMessagesSummary += meta.MessagesSummarized
+		if meta.PreTokens > stats.CompactMaxPreTokens {
+			stats.CompactMaxPreTokens = meta.PreTokens
+		}
+	}
+}
+
+func ensureContextStats(agg *ProjectAggregate) *ContextAnalysisData {
+	if agg.ContextStats == nil {
+		agg.ContextStats = &ContextAnalysisData{}
+	}
+	return agg.ContextStats
 }

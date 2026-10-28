@@ -25,8 +25,11 @@ type TimeFilter struct {
 // NewTimeFilterFromPreset 从预设创建时间过滤器
 func NewTimeFilterFromPreset(preset RangePreset) TimeFilter {
 	now := time.Now()
-	// 归一化到今天开始（00:00:00），避免时间部分影响日期比较
+	// 起点归一到"当天 00:00 起算 N 天前"，终点归一到"今天 23:59:59"。
+	// 终点若取今天 00:00，当天进行中的会话会被整段排除——实测表现为
+	// 24h 的结果集反而大于 30d，Desktop/CLI 的当日活跃数据永远查不到。
 	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	endOfToday := time.Date(now.Year(), now.Month(), now.Day(), 23, 59, 59, 0, now.Location())
 	var start time.Time
 
 	switch preset {
@@ -34,7 +37,7 @@ func NewTimeFilterFromPreset(preset RangePreset) TimeFilter {
 		start = today.AddDate(0, 0, -7)
 		return TimeFilter{
 			Start: &start,
-			End:   &today,
+			End:   &endOfToday,
 		}
 	case Range24Hours:
 		start = now.Add(-24 * time.Hour)
@@ -46,13 +49,13 @@ func NewTimeFilterFromPreset(preset RangePreset) TimeFilter {
 		start = today.AddDate(0, 0, -30)
 		return TimeFilter{
 			Start: &start,
-			End:   &today,
+			End:   &endOfToday,
 		}
 	case Range90Days:
 		start = today.AddDate(0, 0, -90)
 		return TimeFilter{
 			Start: &start,
-			End:   &today,
+			End:   &endOfToday,
 		}
 	case RangeAll:
 		return TimeFilter{

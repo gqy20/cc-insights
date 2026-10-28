@@ -54,6 +54,7 @@ type cliSummary struct {
 	Tools           int           `json:"tools"`
 	ToolFailureRate float64       `json:"tool_failure_rate"`
 	Tokens          int           `json:"tokens"`
+	Credits         float64       `json:"credits,omitempty"`
 	TopProject      string        `json:"top_project"`
 	TopModel        string        `json:"top_model"`
 	Insights        []string      `json:"insights"`
@@ -459,13 +460,17 @@ func buildCLISummary(data *DashboardData) cliSummary {
 			tokens += model.Tokens
 		}
 	}
+	credits := 0.0
+	if data.CostAnalysis != nil {
+		credits = data.CostAnalysis.Totals.Credits
+	}
 	topProject := "-"
 	if data.ProjectStats != nil && len(data.ProjectStats.Projects) > 0 {
 		topProject = data.ProjectStats.Projects[0].Project
 	}
 	topModel := "-"
 	if len(data.ModelUsage) > 0 {
-		topModel = data.ModelUsage[0].Model
+		topModel = modelDisplayLabel(data.ModelUsage[0].Model, data.ModelUsage[0].ModelName)
 	}
 	failureRate := 0.0
 	if data.ToolAnalysis != nil && data.ToolAnalysis.TotalCalls > 0 {
@@ -480,6 +485,7 @@ func buildCLISummary(data *DashboardData) cliSummary {
 		Tools:           totalTools,
 		ToolFailureRate: failureRate,
 		Tokens:          tokens,
+		Credits:         credits,
 		TopProject:      topProject,
 		TopModel:        topModel,
 	}
@@ -543,10 +549,14 @@ func buildCLIFailureReport(data *DashboardData, limit int) cliFailureReport {
 
 func buildCLICostReport(data *DashboardData, limit int) cliCostReport {
 	report := cliCostReport{Provider: data.Provider, TimeRange: data.TimeRange}
-	if data.CostAnalysis == nil || (data.CostAnalysis.Totals.TotalTokens == 0 && len(data.ModelUsage) > 0) {
+	// CostAnalysis 缺位、或完全没有任何可记账用量时，退回 ModelUsage 视图（至少给出请求数）。
+	// Qoder 的 token 恒 0 但有 credits 与上下文峰值，不能落到这条退回路径上丢数据。
+	if data.CostAnalysis == nil ||
+		(data.CostAnalysis.Totals.TotalTokens == 0 && data.CostAnalysis.Totals.Credits == 0 && len(data.ModelUsage) > 0) {
 		for _, model := range limitSlice(data.ModelUsage, limit) {
 			report.ByModel = append(report.ByModel, CostModelStat{
 				Model:           model.Model,
+				ModelName:       model.ModelName,
 				RequestCount:    model.Count,
 				TotalTokens:     model.Tokens,
 				InputTokens:     model.InputTokens,
@@ -560,7 +570,7 @@ func buildCLICostReport(data *DashboardData, limit int) cliCostReport {
 			report.Totals.CacheReadInputTokens += model.CachedInputTokens
 		}
 		if len(report.ByModel) > 0 {
-			report.Insights = append(report.Insights, fmt.Sprintf("Token 最高模型是 %s，共 %s。", report.ByModel[0].Model, formatCompactInt(report.ByModel[0].TotalTokens)))
+			report.Insights = append(report.Insights, fmt.Sprintf("Token 最高模型是 %s，共 %s。", modelDisplayLabel(report.ByModel[0].Model, report.ByModel[0].ModelName), formatCompactInt(report.ByModel[0].TotalTokens)))
 		}
 		return report
 	}
@@ -573,7 +583,19 @@ func buildCLICostReport(data *DashboardData, limit int) cliCostReport {
 	report.ByProject = limitSlice(data.CostAnalysis.ByProject, limit)
 	report.BySession = limitSlice(data.CostAnalysis.BySession, limit)
 	if len(report.ByModel) > 0 {
-		report.Insights = append(report.Insights, fmt.Sprintf("Token 最高模型是 %s，共 %s。", report.ByModel[0].Model, formatCompactInt(report.ByModel[0].TotalTokens)))
+		if report.Totals.TotalTokens == 0 && report.Totals.Credits > 0 {
+			// ByModel 按 token 排序，而 Qoder 的 token 恒 0，首行不代表消耗最高，
+			// 需要按积分重新取最值。
+			top := report.ByModel[0]
+			for _, model := range report.ByModel {
+				if model.Credits > top.Credits {
+					top = model
+				}
+			}
+			report.Insights = append(report.Insights, fmt.Sprintf("积分最高模型是 %s，共 %s（Qoder 口径，官方不下发 token）。", modelDisplayLabel(top.Model, top.ModelName), formatCredits(top.Credits)))
+		} else {
+			report.Insights = append(report.Insights, fmt.Sprintf("Token 最高模型是 %s，共 %s。", modelDisplayLabel(report.ByModel[0].Model, report.ByModel[0].ModelName), formatCompactInt(report.ByModel[0].TotalTokens)))
+		}
 	}
 	if len(report.ByProject) > 0 {
 		report.Insights = append(report.Insights, fmt.Sprintf("Token 最高项目是 %s，共 %s。", report.ByProject[0].Project, formatCompactInt(report.ByProject[0].TotalTokens)))

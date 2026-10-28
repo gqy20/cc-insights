@@ -16,7 +16,12 @@ func writeTable(value any, w io.Writer) error {
 		fmt.Fprintf(w, "%-12s %s\n", "命令调用", formatInt(v.Commands))
 		fmt.Fprintf(w, "%-12s %s\n", "工具调用", formatInt(v.Tools))
 		fmt.Fprintf(w, "%-12s %.1f%%\n", "工具失败率", v.ToolFailureRate)
-		fmt.Fprintf(w, "%-12s %s\n", "Token", formatCompactInt(v.Tokens))
+		if v.Tokens == 0 && v.Credits > 0 {
+			// Qoder 不下发 token，消耗改积分口径，避免显示成"Token 0"的假空数据。
+			fmt.Fprintf(w, "%-12s %s\n", "积分", formatCredits(v.Credits))
+		} else {
+			fmt.Fprintf(w, "%-12s %s\n", "Token", formatCompactInt(v.Tokens))
+		}
 		fmt.Fprintf(w, "%-12s %s\n", "Top 项目", v.TopProject)
 		fmt.Fprintf(w, "%-12s %s\n", "Top 模型", v.TopModel)
 		writeInsights(w, v.Insights)
@@ -36,15 +41,30 @@ func writeTable(value any, w io.Writer) error {
 		writeInsights(w, v.Insights)
 	case cliCostReport:
 		fmt.Fprintf(w, "%s Cost · %s\n\n", providerTitle(v.Provider), formatRange(v.TimeRange))
-		fmt.Fprintf(w, "请求: %s  Token: %s  输出: %s  成本: %s  缓存读取: %s\n\n",
-			formatInt(v.Totals.RequestCount),
-			formatCompactInt(v.Totals.TotalTokens),
-			formatCompactInt(v.Totals.OutputTokens),
-			formatCost(v.Totals.CostCNY, v.Totals.CostUSD),
-			formatCompactInt(v.Totals.CacheReadInputTokens))
+		if v.Totals.TotalTokens == 0 && v.Totals.Credits > 0 {
+			// Qoder 口径：官方不下发 token（实测 transcript 与运行日志全为 0），消耗以积分计。
+			fmt.Fprintf(w, "请求: %s  积分: %s\n\n", formatInt(v.Totals.RequestCount), formatCredits(v.Totals.Credits))
+		} else {
+			fmt.Fprintf(w, "请求: %s  Token: %s  输出: %s  成本: %s  缓存读取: %s",
+				formatInt(v.Totals.RequestCount),
+				formatCompactInt(v.Totals.TotalTokens),
+				formatCompactInt(v.Totals.OutputTokens),
+				formatCost(v.Totals.CostCNY, v.Totals.CostUSD),
+				formatCompactInt(v.Totals.CacheReadInputTokens))
+			if v.Totals.Credits > 0 {
+				fmt.Fprintf(w, "  积分: %s", formatCredits(v.Totals.Credits))
+			}
+			fmt.Fprint(w, "\n\n")
+		}
+		writeContextEvidence(w, v.Context)
 		fmt.Fprintln(w, "Top 模型:")
 		for _, item := range v.ByModel {
-			fmt.Fprintf(w, "  %-26s %10s  %10s  %s requests\n", item.Model, formatCompactInt(item.TotalTokens), formatCost(item.CostCNY, item.CostUSD), formatInt(item.RequestCount))
+			name := modelDisplayLabel(item.Model, item.ModelName)
+			if item.TotalTokens == 0 && item.Credits > 0 {
+				fmt.Fprintf(w, "  %-26s %10s  %10s  %s requests\n", name, formatCredits(item.Credits), "  --  ", formatInt(item.RequestCount))
+				continue
+			}
+			fmt.Fprintf(w, "  %-26s %10s  %10s  %s requests\n", name, formatCompactInt(item.TotalTokens), formatCost(item.CostCNY, item.CostUSD), formatInt(item.RequestCount))
 		}
 		writeInsights(w, v.Insights)
 	case cliCommandReport:
@@ -104,7 +124,7 @@ func writeTable(value any, w io.Writer) error {
 		}
 		writeInsights(w, v.Insights)
 	case cliPromptReport:
-		fmt.Fprintf(w, "Claude Code Prompt Profile · %s\n\n", formatRange(v.TimeRange))
+		fmt.Fprintf(w, "%s Prompt Profile · %s\n\n", providerTitle(cliProviderLabel()), formatRange(v.TimeRange))
 		writePromptFilter(w, v.Filter)
 		fmt.Fprintf(w, "真实输入: %s  清洗后: %s  噪声: %s  工具回传: %s  项目: %s  Session: %s\n\n",
 			formatInt(v.RawPrompts),
@@ -161,7 +181,7 @@ func writeTable(value any, w io.Writer) error {
 		}
 		writeInsights(w, v.Insights)
 	case cliInspectFailuresReport:
-		fmt.Fprintf(w, "Claude Code Failure Inspection · %s\n\n", formatRange(v.TimeRange))
+		fmt.Fprintf(w, "%s Failure Inspection · %s\n\n", providerTitle(cliProviderLabel()), formatRange(v.TimeRange))
 		writeFailureFilter(w, v.Filter)
 		fmt.Fprintf(w, "样例: %s/%s matched\n\n", formatInt(v.Summary.MatchedSamples), formatInt(v.Summary.AvailableSamples))
 		writeNameCounts(w, "Top 工具", v.Summary.TopTools)
@@ -188,8 +208,12 @@ func writeMarkdown(value any, w io.Writer) error {
 	switch v := value.(type) {
 	case cliSummary:
 		fmt.Fprintf(w, "# %s Insights\n\n范围: %s\n\n", providerTitle(v.Provider), formatRange(v.TimeRange))
-		fmt.Fprintf(w, "- 消息数: %s\n- 会话数: %s\n- Token: %s\n- 工具失败率: %.1f%%\n- Top 项目: %s\n- Top 模型: %s\n",
-			formatInt(v.Messages), formatInt(v.Sessions), formatCompactInt(v.Tokens), v.ToolFailureRate, v.TopProject, v.TopModel)
+		metricLabel, metricValue := "Token", formatCompactInt(v.Tokens)
+		if v.Tokens == 0 && v.Credits > 0 {
+			metricLabel, metricValue = "积分", formatCredits(v.Credits)
+		}
+		fmt.Fprintf(w, "- 消息数: %s\n- 会话数: %s\n- %s: %s\n- 工具失败率: %.1f%%\n- Top 项目: %s\n- Top 模型: %s\n",
+			formatInt(v.Messages), formatInt(v.Sessions), metricLabel, metricValue, v.ToolFailureRate, v.TopProject, v.TopModel)
 		writeMarkdownInsights(w, v.Insights)
 	case cliFailureReport:
 		fmt.Fprintf(w, "# %s Failures\n\n范围: %s\n\n", providerTitle(v.Provider), formatRange(v.TimeRange))
@@ -202,11 +226,26 @@ func writeMarkdown(value any, w io.Writer) error {
 		writeMarkdownInsights(w, v.Insights)
 	case cliCostReport:
 		fmt.Fprintf(w, "# %s Cost\n\n范围: %s\n\n", providerTitle(v.Provider), formatRange(v.TimeRange))
-		fmt.Fprintf(w, "- 请求: %s\n- Token: %s\n- 输出: %s\n- 成本: %s\n- 缓存读取: %s\n\n", formatInt(v.Totals.RequestCount), formatCompactInt(v.Totals.TotalTokens), formatCompactInt(v.Totals.OutputTokens), formatCost(v.Totals.CostCNY, v.Totals.CostUSD), formatCompactInt(v.Totals.CacheReadInputTokens))
-		fmt.Fprintln(w, "## Top 模型")
+		fmt.Fprintf(w, "- 请求: %s\n", formatInt(v.Totals.RequestCount))
+		if v.Totals.TotalTokens == 0 && v.Totals.Credits > 0 {
+			fmt.Fprintf(w, "- 积分: %s\n", formatCredits(v.Totals.Credits))
+		} else {
+			fmt.Fprintf(w, "- Token: %s\n- 输出: %s\n- 成本: %s\n- 缓存读取: %s\n", formatCompactInt(v.Totals.TotalTokens), formatCompactInt(v.Totals.OutputTokens), formatCost(v.Totals.CostCNY, v.Totals.CostUSD), formatCompactInt(v.Totals.CacheReadInputTokens))
+			if v.Totals.Credits > 0 {
+				fmt.Fprintf(w, "- 积分: %s\n", formatCredits(v.Totals.Credits))
+			}
+		}
+		for _, line := range contextEvidence(v.Context) {
+			fmt.Fprintf(w, "- %s\n", line)
+		}
+		fmt.Fprintln(w, "\n## Top 模型")
 		fmt.Fprintln(w)
 		for _, item := range v.ByModel {
-			fmt.Fprintf(w, "- `%s`: %s · %s (%s requests)\n", item.Model, formatCompactInt(item.TotalTokens), formatCost(item.CostCNY, item.CostUSD), formatInt(item.RequestCount))
+			metric := fmt.Sprintf("%s · %s", formatCompactInt(item.TotalTokens), formatCost(item.CostCNY, item.CostUSD))
+			if item.TotalTokens == 0 && item.Credits > 0 {
+				metric = formatCredits(item.Credits)
+			}
+			fmt.Fprintf(w, "- `%s`: %s (%s requests)\n", modelDisplayLabel(item.Model, item.ModelName), metric, formatInt(item.RequestCount))
 		}
 		writeMarkdownInsights(w, v.Insights)
 	case cliCommandReport:
@@ -269,7 +308,7 @@ func writeMarkdown(value any, w io.Writer) error {
 		}
 		writeMarkdownInsights(w, v.Insights)
 	case cliPromptReport:
-		fmt.Fprintf(w, "# Claude Code Prompt Profile\n\n范围: %s\n\n", formatRange(v.TimeRange))
+		fmt.Fprintf(w, "# %s Prompt Profile\n\n范围: %s\n\n", providerTitle(cliProviderLabel()), formatRange(v.TimeRange))
 		fmt.Fprintf(w, "- 真实输入: %s\n- 清洗后: %s\n- 噪声: %s\n- 工具回传: %s\n- 项目: %s\n- Session: %s\n\n",
 			formatInt(v.RawPrompts),
 			formatInt(v.CleanPrompts),
@@ -326,7 +365,7 @@ func writeMarkdown(value any, w io.Writer) error {
 		}
 		writeMarkdownInsights(w, v.Insights)
 	case cliInspectFailuresReport:
-		fmt.Fprintf(w, "# Claude Code Failure Inspection\n\n范围: %s\n\n", formatRange(v.TimeRange))
+		fmt.Fprintf(w, "# %s Failure Inspection\n\n范围: %s\n\n", providerTitle(cliProviderLabel()), formatRange(v.TimeRange))
 		fmt.Fprintf(w, "匹配样例: %s/%s\n\n", formatInt(v.Summary.MatchedSamples), formatInt(v.Summary.AvailableSamples))
 		writeMarkdownNameCounts(w, "Top 工具", v.Summary.TopTools)
 		writeMarkdownNameCounts(w, "Top 项目", v.Summary.TopProjects)
@@ -790,6 +829,11 @@ func writeInsights(w io.Writer, insights []string) {
 	}
 }
 
+// cliProviderLabel 取当前 CLI 运行配置的 provider 名（已按数据目录归一化）。
+func cliProviderLabel() string {
+	return string(resolveProvider(cfg.Provider, cfg.DataDir))
+}
+
 func providerTitle(provider string) string {
 	switch Provider(provider) {
 	case ProviderCodex:
@@ -800,6 +844,8 @@ func providerTitle(provider string) string {
 		return "Pi"
 	case ProviderZcode:
 		return "ZCode"
+	case ProviderQoder:
+		return "Qoder"
 	case ProviderAll:
 		return "All Agents"
 	default:
@@ -875,6 +921,62 @@ func formatCost(cny, usd float64) string {
 		return formatUSD(usd)
 	}
 	return formatCNY(cny)
+}
+
+// formatCredits 渲染 Qoder 的积分口径（官方不下发 token，无法折算现金单价）。
+func formatCredits(value float64) string {
+	switch {
+	case value >= 1000:
+		return fmt.Sprintf("%.0f cr", value)
+	case value >= 10:
+		return fmt.Sprintf("%.1f cr", value)
+	default:
+		return fmt.Sprintf("%.2f cr", value)
+	}
+}
+
+// writeContextEvidence 输出上下文压力证据，返回渲染出的行。
+// 压缩代价来自 transcript 的 compact_boundary 行（Claude 与 Qoder 都写），
+// 上下文构成占比来自 Qoder 状态库。
+func contextEvidence(context *ContextAnalysisData) []string {
+	if context == nil {
+		return nil
+	}
+	lines := make([]string, 0, 4)
+	if context.ContextCompactions > 0 {
+		// messagesSummarized 只有 Qoder 写，Claude 的 compactMetadata 没这个字段；
+		// 取不到就不渲染，避免"摘要 0 条消息"看起来像真实数据。
+		summary := ""
+		if context.CompactMessagesSummary > 0 {
+			summary = fmt.Sprintf("  摘要 %s 条消息", formatInt(context.CompactMessagesSummary))
+		}
+		lines = append(lines, fmt.Sprintf("上下文压缩: %s 次  释放 %s token  耗时 %s%s",
+			formatInt(context.ContextCompactions),
+			formatCompactInt(context.CompactDroppedTokens),
+			formatDurationMs(context.CompactDurationMs),
+			summary))
+	}
+	if context.CompactMaxPreTokens > 0 {
+		lines = append(lines, fmt.Sprintf("单次压缩前最大上下文: %s token", formatCompactInt(context.CompactMaxPreTokens)))
+	}
+	if line := formatContextCategoryShares(context.CategoryShares, 4); line != "" {
+		lines = append(lines, "上下文构成: "+line)
+	}
+	if context.PeakContextRatio > 0 {
+		lines = append(lines, fmt.Sprintf("上下文峰值占比: %.0f%%", context.PeakContextRatio*100))
+	}
+	return lines
+}
+
+func writeContextEvidence(w io.Writer, context *ContextAnalysisData) {
+	lines := contextEvidence(context)
+	if len(lines) == 0 {
+		return
+	}
+	for _, line := range lines {
+		fmt.Fprintln(w, line)
+	}
+	fmt.Fprintln(w)
 }
 
 func formatUSD(value float64) string {

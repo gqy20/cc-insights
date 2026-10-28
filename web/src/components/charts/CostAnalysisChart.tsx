@@ -10,6 +10,7 @@ import {
   YAxis,
 } from 'recharts'
 import type { CostAnalysisData, CostByModel } from '@/api/types'
+import { modelLabel } from '@/lib/utils'
 import { ChartCard, ChartEmpty } from './ChartCard'
 
 const tooltipStyle = {
@@ -52,7 +53,8 @@ export function CostAnalysisChart({
 }) {
   const [metric, setMetric] = useState<Metric>('cost')
 
-  const rows = (data?.by_model ?? []).slice()
+  // 轴标签用真实模型名（Qoder 的 model 只是内部别名）。
+  const rows = (data?.by_model ?? []).slice().map((x) => ({ ...x, label: modelLabel(x.model, x.model_name) }))
   const has = rows.length > 0
   const currency = rows.some((x) => Number(x.cost_usd ?? 0) > 0) || data?.currency === 'USD' ? 'USD' : 'CNY'
   const costKey = currency === 'USD' ? 'cost_usd' : 'cost_cny'
@@ -93,7 +95,7 @@ export function CostAnalysisChart({
             共 <strong>{compact(totalTokens)}</strong> Token、成本{' '}
             <strong>{formatMoney(totalCost, currency)}</strong>（输入 {formatMoney(breakdown.input, currency)} / 输出{' '}
             {formatMoney(breakdown.output, currency)} / 缓存读 {formatMoney(breakdown.cacheRead, currency)}），主力{' '}
-            <strong className="font-mono">{top.model}</strong>。
+            <strong className="font-mono">{top.label}</strong>。
           </>
         ) : loading ? (
           '加载中…'
@@ -133,7 +135,7 @@ export function CostAnalysisChart({
             />
             <YAxis
               type="category"
-              dataKey="model"
+              dataKey="label"
               width={120}
               stroke="rgb(var(--muted-foreground))"
               fontSize={11}
